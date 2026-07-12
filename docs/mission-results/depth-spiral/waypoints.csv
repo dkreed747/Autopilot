@@ -1,0 +1,4 @@
+index,lat_deg,lon_deg,capture_radius_m,arrival_yaw_rad,elev_value_m,elev_frame
+0,39.00180155,-76.5,4,,5,depth
+1,39.00405349,-76.5,4,,45,depth
+2,39.00405347,-76.49826833,4,,40,asf
