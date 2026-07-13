@@ -76,9 +76,14 @@ RUN set -e; \
 # ===========================================================================
 FROM ${RUNTIME_IMAGE} AS runtime
 
-# apr/apr-util (log4cxx), libuuid, libstdc++; shadow-utils only to create the
-# user, then removed.
-RUN microdnf -y install shadow-utils libstdc++ libuuid apr apr-util \
+# System halves of the direct-NEEDED closure of the shipped binaries/libs:
+#   apr + apr-util           <- log4cxx
+#   openldap (ldap/lber)     <- log4cxx via apr-util's LDAP linkage
+#   openssl-libs (ssl/crypto)<- CycloneDDS
+#   libuuid                  <- libumaa-cpp
+#   libstdc++                <- everything
+# shadow-utils only to create the user, then removed.
+RUN microdnf -y install shadow-utils libstdc++ libuuid apr apr-util openldap openssl-libs \
     && useradd --uid 1000 --create-home autopilot \
     && microdnf -y remove shadow-utils \
     && microdnf clean all \
@@ -87,6 +92,15 @@ RUN microdnf -y install shadow-utils libstdc++ libuuid apr apr-util \
 COPY --from=build /opt/autopilot /opt/autopilot
 RUN echo /opt/autopilot/lib64 > /etc/ld.so.conf.d/autopilot.conf && ldconfig \
     && chown -R autopilot:autopilot /opt/autopilot
+
+# Loader gate IN the runtime stage: with a nonexistent config every binary
+# exits 1 after its libraries load; a missing shared library exits 127 before
+# main() runs. Catches microdnf-list gaps at build time (the build-stage ldd
+# gate cannot -- the full UBI base has system libs that ubi-minimal lacks).
+RUN set -e; for b in autopilot mission_console mission_runner; do \
+      rc=0; timeout 20 /opt/autopilot/bin/${b} /nonexistent.yaml >/dev/null 2>&1 || rc=$?; \
+      [ "${rc}" -eq 1 ] || { echo "ERROR: ${b} failed to load (rc=${rc})" >&2; exit 1; }; \
+    done
 
 USER autopilot
 WORKDIR /opt/autopilot
