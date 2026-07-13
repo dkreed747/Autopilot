@@ -1,0 +1,13 @@
+**/build/
+**/build-*/
+**/install/
+**/dist/
+**/.cache/
+**/*.tar.gz
+.git/
+.devcontainer/
+.vscode/
+docs/
+umaa-cpp/.git
+umaa-cpp/.devcontainer/
+umaa-cpp/.vscode/

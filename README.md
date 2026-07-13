@@ -81,31 +81,58 @@ specs and capabilities reports are published once. Capabilities also feed the pl
 
 ## Build
 
-The app builds as part of the SDK when `BUILD_AUTOPILOT_APP=ON` (default). It requires the
-SDK's toolchain (CycloneDDS-CXX, GeographicLib, log4cxx, yaml-cpp, and the generated
-`umaa-cyclone-cxx-types`), which is provided by the SDK development container.
+The autopilot builds the [umaa-cpp](https://gitlab.bongo-barley.ts.net/poseidon/utility/umaa/umaa-cpp)
+SDK from its pinned git submodule (`add_subdirectory(umaa-cpp)`). Everything else
+(CycloneDDS-CXX, the `umaa_cyclone_cpp` UMAA type libraries, GeographicLib, log4cxx,
+yaml-cpp, GoogleTest) comes from the
+[umaa-cyclone-cpp](https://gitlab.bongo-barley.ts.net/poseidon/utility/development-containers/umaa-cyclone-cpp)
+development container — open this repo with the included `.devcontainer/`, or work under
+`/workspace/projects` inside the shared dev container.
 
-> **Toolchain baseline**: build against CycloneDDS/CycloneDDS-CXX **master** (validated at
-> `cyclonedds@8425e2e343` + `cyclonedds-cxx@53a9f114e6`, July 2026), not the 0.10.5 release.
-> The 0.10.5 release needs several patches this codebase no longer carries: C++20 rejects its
-> template-id destructors, `QosProviderDelegate` is declared but not implemented (the QoS XML
-> profiles silently cannot load), topic names containing `::` are rejected, and — worst —
-> types with `@optional` members (most UMAA reports) hit a fixed-size serialization cache, so
-> a sample whose optionals are set after a smaller first write fails `dds_write` with
-> `Bad Parameter`. All of these are fixed upstream on master, and the generated types build
-> from the vendored IDLs with a stock `idlc -l cxx` invocation.
+> **Toolchain baseline**: the dev image builds CycloneDDS/CycloneDDS-CXX from pinned
+> post-11.0.1 **master** commits (`cyclonedds@8425e2e343` + `cyclonedds-cxx@53a9f114e6`),
+> not the 0.10.5 release. The 0.10.5 release needs several patches this codebase no longer
+> carries: C++20 rejects its template-id destructors, `QosProviderDelegate` is declared but
+> not implemented (the QoS XML profiles silently cannot load), topic names containing `::`
+> are rejected, and — worst — types with `@optional` members (most UMAA reports) hit a
+> fixed-size serialization cache, so a sample whose optionals are set after a smaller first
+> write fails `dds_write` with `Bad Parameter`. All of these are fixed upstream on master.
 
 ```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_AUTOPILOT_APP=1 -DTEST_COMMON=1
-make -j"$(nproc)"
-ctest --verbose            # runs autopilot_test among others
-./autopilot autopilot.yaml # run the app
+git submodule update --init --recursive   # once, after cloning
+cmake --preset dev-debug                  # Debug + tests (build/)
+cmake --build --preset dev-debug
+ctest --preset dev-debug                  # autopilot_test + the SDK's suites
+cd build && ./autopilot autopilot.yaml    # run the app
 ```
+
+Presets: `dev-debug` (Debug + tests, `build/`), `dev-release` (Release,
+`build-release/`), `ci` (Release + tests, `build/`, installs to `install/`). To build
+against an installed SDK instead of the submodule, configure with
+`-DAUTOPILOT_USE_SYSTEM_UMAA_CPP=ON` (the `umaa-cpp::umaa-cpp` target name is identical in
+both modes).
+
+## Application image
+
+CI publishes a single artifact: a trimmed `ubi10-minimal` application image carrying
+`autopilot`, `mission_console`, `mission_runner`, the mission-control web app, and their
+shared-library closure (~tens of MB on top of the base). Built from the pinned submodule via
+the multi-stage `Dockerfile`. The default entry point runs the autopilot and the mission
+console together (console on port 8080):
+
+```bash
+docker run -p 8080:8080 <registry>/poseidon/platform/autopilot:latest    # both
+docker run <image> bin/autopilot autopilot.yaml                          # app only
+docker run -p 8080:8080 <image> bin/mission_console autopilot.yaml 8080 web
+```
+
+Tags: `:<short-sha>` + `:<ref-slug>` on every branch push, `:latest` on the default branch,
+`:<tag>` + `:latest` on tags.
 
 ## Tests
 
-Unit tests live under `test/` (GoogleTest), enabled with `-DTEST_COMMON=1`:
+Unit tests live under `test/` (GoogleTest), enabled with `AUTOPILOT_BUILD_TESTS=ON`
+(the `dev-debug` and `ci` presets turn it on):
 
 - `DubinsPathTest` — Dubins solver: word selection, degenerate cases, and randomized
   endpoint correctness (2000 configurations).

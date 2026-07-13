@@ -202,14 +202,17 @@ void AutopilotApp::run() {
     step();
     std::this_thread::sleep_for(period);
   }
+  // Vehicle teardown happens here on the loop thread, NOT in stop(): stop()
+  // runs in signal-handler context on an arbitrary thread, and a repeated
+  // SIGTERM delivered on the sim thread would make it join itself (EDEADLK).
+  if (vehicle_) {
+    vehicle_->shutdown();
+  }
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot control loop stopped")
 }
 
 void AutopilotApp::stop() {
   running_ = false;
-  if (vehicle_) {
-    vehicle_->shutdown();
-  }
 }
 
 }  // namespace arlcore::autopilot

@@ -12,7 +12,7 @@ browser app (no external web dependencies — works on an air-gapped network):
 
 ```bash
 # alongside a running autopilot (same YAML/domain):
-./apps/autopilot/mission_console autopilot.yaml 8080 web
+./mission_console autopilot.yaml 8080 web
 # then open http://localhost:8080/
 ```
 
@@ -57,15 +57,15 @@ vehicle's configured start position.
 
 ```bash
 # terminal 1 (from the build directory): the autopilot with the sim vehicle
-./apps/autopilot/autopilot autopilot.yaml
+./autopilot autopilot.yaml
 
 # terminal 2: run the built-in mission and record outputs
-./apps/autopilot/mission_runner autopilot.yaml mission-out
+./mission_runner autopilot.yaml mission-out
 
 # ... or fly a custom route (local tangent-plane CSV, one waypoint per line:
 # east_m,north_m,speed_mps,capture_radius_m[,arrival_yaw_rad][,elev_value_m,elev_frame]
 # where elev_frame is `depth` or `asf`)
-./apps/autopilot/mission_runner autopilot.yaml mission-out my-mission.csv
+./mission_runner autopilot.yaml mission-out my-mission.csv
 ```
 
 Outputs in the chosen directory:
@@ -85,7 +85,7 @@ Exit code 0 iff the command COMPLETED.
 Renders the recorded mission (requires python3 + matplotlib):
 
 ```bash
-python3 ../apps/autopilot/tools/plot_mission.py mission-out mission-out/mission_plot.png
+python3 ../tools/plot_mission.py mission-out mission-out/mission_plot.png
 ```
 
 Produces a figure with the ground track vs the planned waypoints (with capture radii), the
