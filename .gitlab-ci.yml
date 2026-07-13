@@ -1,0 +1,128 @@
+# =============================================================================
+# autopilot CI
+#
+# Single artifact: the autopilot application image -> GitLab Container
+# Registry ($CI_REGISTRY_IMAGE). A trimmed ubi10-minimal runtime carrying the
+# autopilot, the mission-control web console (port 8080), and their shared-
+# library closure -- built from the pinned umaa-cpp submodule inside the
+# umaa-cyclone-cpp dev image (multi-stage Dockerfile).
+#
+# Pipeline: build -> image -> integration
+#   * build-test       full build + ctest (autopilot + SDK submodule tests)
+#                      in the DEV image; gates the image build
+#   * build-app-image  builds/pushes the app image (Kaniko, rootless); the
+#                      kaniko context includes the checked-out submodule
+#   * image-smoke      runs IN the freshly built app image: boots the mission
+#                      console + autopilot over loopback DDS and probes the
+#                      web UI -- proves the lib closure and bundled web root
+#
+# While the dev-container branch is unmerged, override BASE_IMAGE_TAG with a
+# ref-slug or short-sha tag of the umaa-cyclone-cpp image.
+#
+# Cross-project auth (job-token allowlists):
+#   * umaa-cyclone-cpp must allowlist this project (dev-image pulls)
+#   * umaa-cpp must allowlist this project (submodule clone)
+# =============================================================================
+
+stages:
+  - build
+  - image
+  - integration
+
+variables:
+  DEV_IMAGE: "${CI_REGISTRY}/poseidon/utility/development-containers/umaa-cyclone-cpp"
+  BASE_IMAGE_TAG: "latest"
+  # The umaa-cpp submodule is required to build (and must be in the kaniko
+  # context). Relative URL in .gitmodules + FORCE_HTTPS lets the runner clone
+  # it with the job token.
+  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_SUBMODULE_FORCE_HTTPS: "true"
+
+# Run one pipeline per branch push and per tag (no duplicate MR pipelines).
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH'
+
+# -----------------------------------------------------------------------------
+# 1) Full build + test in the dev image (gates the image build)
+# -----------------------------------------------------------------------------
+build-test:
+  stage: build
+  image: "${DEV_IMAGE}:${BASE_IMAGE_TAG}"
+  script: |
+    set -e
+    cmake --preset ci
+    cmake --build --preset ci
+    mkdir -p reports
+    ctest --preset ci --output-junit "${CI_PROJECT_DIR}/reports/ctest-junit.xml"
+  artifacts:
+    when: always
+    reports:
+      junit: reports/ctest-junit.xml
+    expire_in: 1 week
+
+# -----------------------------------------------------------------------------
+# 2) Build & push the application image with Kaniko
+# -----------------------------------------------------------------------------
+build-app-image:
+  stage: image
+  needs: ["build-test"]
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  script: |
+    set -e
+    mkdir -p /kaniko/.docker
+    AUTH="$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')"
+    printf '{"auths":{"%s":{"auth":"%s"}}}' "${CI_REGISTRY}" "${AUTH}" > /kaniko/.docker/config.json
+    /kaniko/executor \
+      --context "${CI_PROJECT_DIR}" \
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
+      --build-arg "BASE_IMAGE=${DEV_IMAGE}:${BASE_IMAGE_TAG}" \
+      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}" \
+      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}" \
+      ${EXTRA_DESTINATIONS} \
+      --cache=true \
+      --cache-repo "${CI_REGISTRY_IMAGE}/cache"
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      variables:
+        EXTRA_DESTINATIONS: "--destination ${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG} --destination ${CI_REGISTRY_IMAGE}:latest"
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      variables:
+        EXTRA_DESTINATIONS: "--destination ${CI_REGISTRY_IMAGE}:latest"
+    - if: '$CI_COMMIT_BRANCH'      # feature branches: validate build, sha tag only
+
+# -----------------------------------------------------------------------------
+# 3) Smoke test the built image itself (lib closure + bundled web root)
+# -----------------------------------------------------------------------------
+# Uses bash's /dev/tcp for the HTTP probe so the runtime image needs no curl.
+image-smoke:
+  stage: integration
+  image: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+  needs: ["build-app-image"]
+  variables:
+    GIT_STRATEGY: none
+    CYCLONEDDS_URI: "file:///opt/autopilot/share/umaa-cpp/config/cyclonedds-loopback.xml"
+  script: |
+    set -e
+    cd /opt/autopilot
+    ./run-all.sh &
+    RUNNER=$!
+    http_get() {
+      exec 3<>"/dev/tcp/127.0.0.1/8080"
+      printf 'GET %s HTTP/1.0\r\nHost: localhost\r\n\r\n' "$1" >&3
+      cat <&3
+      exec 3<&-
+    }
+    up=""
+    for i in $(seq 1 30); do
+      if http_get / 2>/dev/null | grep -qi '<html'; then up=1; break; fi
+      sleep 1
+    done
+    [ -n "${up}" ] || { echo "web UI never came up"; exit 1; }
+    http_get /api/state | grep -q '"telemetry"' || { echo "/api/state missing telemetry"; exit 1; }
+    kill -TERM "${RUNNER}"
+    wait "${RUNNER}" || true
+    echo "image smoke OK: web UI served, autopilot + console ran and shut down"

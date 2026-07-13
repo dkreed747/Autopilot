@@ -1,0 +1,5 @@
+east_m,north_m,speed_mps,capture_radius_m,arrival_yaw_rad,elev_value_m,elev_frame
+0,350,3.0,2.5
+250,600,3.0,2.5
+500,350,3.0,2.5
+250,100,3.0,2.5

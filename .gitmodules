@@ -1,0 +1,3 @@
+[submodule "umaa-cpp"]
+	path = umaa-cpp
+	url = ../../utility/umaa/umaa-cpp.git

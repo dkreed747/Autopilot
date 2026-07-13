@@ -1,0 +1,56 @@
+// Autopilot dev container -- registry variant.
+//
+// Pulls the umaa-cyclone-cpp development image published by CI (UBI 10 +
+// gcc-toolset-15 + CycloneDDS + UMAA types + SDK dependencies). The autopilot
+// builds the umaa-cpp SDK from its pinned submodule, so the plain dev image
+// (not the SDK image) is the right base: cmake --preset dev-debug.
+//
+// Testing a feature-branch image: point `image` at `:<short-sha>` (always
+// fresh) or the branch's `:<ref-slug>` tag, then
+// "Dev Containers: Rebuild Container". Revert before merging.
+{
+  "name": "autopilot (registry image)",
+  "image": "gitlab.bongo-barley.ts.net/poseidon/utility/development-containers/umaa-cyclone-cpp:latest",
+
+  "workspaceFolder": "/workspace/autopilot",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/autopilot,type=bind,consistency=cached",
+  "mounts": [
+    "source=autopilot-home,target=/home/dev,type=volume"
+  ],
+
+  "remoteUser": "dev",
+  "postCreateCommand": "git submodule update --init --recursive",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "C_Cpp.intelliSenseEngine": "disabled",
+        "clangd.path": "clangd",
+        "clangd.arguments": [
+          "--background-index",
+          "--clang-tidy",
+          "--header-insertion=iwyu",
+          "--completion-style=detailed",
+          "--function-arg-placeholders",
+          "--compile-commands-dir=build"
+        ],
+        "cmake.generator": "Ninja",
+        "cmake.configureOnOpen": true,
+        "cmake.useCMakePresets": "always",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+        "[cpp]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
+        "[c]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
+        "files.associations": { "*.idl": "cpp" },
+        "cSpell.enabled": true
+      },
+      "extensions": [
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-vscode.cmake-tools",
+        "cheshirekow.cmake-format",
+        "ms-vscode.makefile-tools",
+        "streetsidesoftware.code-spell-checker"
+      ]
+    }
+  }
+}

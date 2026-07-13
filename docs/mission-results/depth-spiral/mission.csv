@@ -1,0 +1,4 @@
+east_m,north_m,speed_mps,capture_radius_m,arrival_yaw_rad,elev_value_m,elev_frame
+0,200,3.0,4.0,,5,depth
+0,450,3.0,4.0,,45,depth
+150,450,3.0,4.0,,40,asf

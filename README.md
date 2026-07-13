@@ -1,93 +1,196 @@
-# Autopilot
+# Autopilot Application
 
+An autopilot built on the umaa-cpp SDK. It consumes UMAA MO **Global Vector** and **Global
+Waypoint** driving commands, deconflicts them over a single driving resource, and drives a
+swappable vehicle-control strategy off the latest SA navigation data.
 
+## Architecture
 
-## Getting started
+Three layers (namespace `arlcore::autopilot`):
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+1. **`AutopilotApp`** — aggregator/main class. Owns the DDS participant, the three SA nav
+   consumers (Global Pose / Speed / Velocity), the two MO command providers, the autopilot
+   brain, the vehicle-control strategy, and the platform report providers. Runs one control
+   loop (`step()` per tick).
+2. **`AutopilotBrain` (`IAutopilot`)** — the shared driving controller. Holds the active mode
+   and setpoint, recomputes a `ControlVector` from the latest nav on every pose update, and
+   pushes it to the vehicle. Owns the `DrivingResourceArbiter`.
+3. **`IVehicleControl` strategy** — hardware abstraction (`SimVehicleControl` provided). Sends
+   the control vector and serves the platform specs/capabilities. The sim strategy keeps an
+   internal kinematic vehicle (limits from the platform capabilities), integrates it on its
+   own thread at `vehicle_control.sim.cycle_rate_hz` acting on the latest setpoint, and
+   publishes the three SA navigation reports (Global Pose / Speed / Velocity) — closing the
+   control loop exactly as a real vehicle's navigation suite would. With underwater
+   capabilities enabled it also simulates depth against a configurable sea floor
+   (`vehicle_control.sim.floor_depth_m`), honoring both `depth` and above-sea-floor
+   setpoints, and reports depth + altitudeASF in the Global Pose.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+Key components:
 
-## Add your files
+- **`DrivingResourceArbiter`** — priority deconfliction. Vector is high priority and preempts
+  an active waypoint route (-> `FAILED`/`INTERRUPTED`); a waypoint arriving while a vector
+  drives is rejected (-> `FAILED`/`RESOURCE_REJECTED`). Priorities are configurable.
+- **`VectorControlServiceProvider` / `WaypointControlServiceProvider`** — UMAA command
+  providers (on `CommandProviderBase`). Vector is mostly pass-through with validation against
+  the platform speed limit. Waypoint reads its route from the large-list element topic, plans a
+  Dubins path, and reports capture progress.
+- **`DubinsPathPlanner`** — a true Dubins planner and path tracker. Every leg (previous
+  waypoint or the plan/replan pose, to the next waypoint) is solved as the shortest
+  curvature-bounded Dubins path over all six words (LSL/RSR/LSR/RSL/RLR/LRL, closed forms in
+  `DubinsPath`). The platform capabilities drive it: the planned turn radius is the kinematic
+  minimum (speed / max turn rate) inflated by `turn_radius_margin` so the tracker keeps turn
+  authority, and every leg ends with a straight final-approach runway through the waypoint so
+  arrival happens settled on position and attitude (waypoints without an attitude requirement
+  get a natural fly-through heading).
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+  *Tracking* is a path-frame guidance law fed by the live nav reports: commanded heading =
+  planned-path tangent (sampled ~1 s ahead for actuation phase lead) + a cross-track
+  correction `atan(xte / turn_radius)`. Cross-track error — and the UMAA track tolerance —
+  are measured against the planned Dubins path itself, not the straight lines between
+  waypoints.
 
+  *Capture* is a **gate**, not a bubble: a segment of half-width `position_m` (or the
+  waypoint's own tolerance) through the waypoint, perpendicular to the arrival heading. The
+  waypoint is captured the instant the vehicle crosses the gate plane inside the half-width
+  with attitude/elevation satisfied, so the vehicle always flies *through* the waypoint
+  (default gate half-width: 2.5 m). Crossing outside the gate or overflying the path is a
+  miss and replans the leg from the live pose, bounded by `max_misses_per_waypoint` and
+  `max_replans`.
+
+  *Depth-rate-limited legs spiral by design*: when the commanded elevation change needs more
+  time than one pass of the 2D path provides (from the platform's `max_depth_change_rate`),
+  the planner budgets the expected number of loop-back passes up front and elevation-only
+  gate failures within that budget replan for free. Because the up-front estimate uses the
+  first (usually longer) leg, the budget is recomputed from the remaining elevation error and
+  the actual loop time as passes complete — but only while the elevation keeps converging at
+  the platform depth rate, so a vehicle that cannot make depth still consumes the miss
+  budget. Both `depth` (positive down from the surface) and `asf` (altitude above the sea
+  floor, positive up) elevation frames are supported. On completion the planner commands
+  zero speed.
+
+Navigation drives the control tick: the pose observer fires inside the nav consumer's
+`cycle()` and triggers the brain's recompute, so control always uses the latest fix. The
+design is single-threaded (one control loop); the mutexes are defensive.
+
+## Configuration
+
+All parameters — including the platform specs/capabilities (which nothing else currently
+publishes) — are loaded from YAML (see `config/autopilot.yaml`). On startup the platform
+specs and capabilities reports are published once. Capabilities also feed the planner
+(turn radius = speed / max turn rate).
+
+## Build
+
+The autopilot builds the [umaa-cpp](https://gitlab.bongo-barley.ts.net/poseidon/utility/umaa/umaa-cpp)
+SDK from its pinned git submodule (`add_subdirectory(umaa-cpp)`). Everything else
+(CycloneDDS-CXX, the `umaa_cyclone_cpp` UMAA type libraries, GeographicLib, log4cxx,
+yaml-cpp, GoogleTest) comes from the
+[umaa-cyclone-cpp](https://gitlab.bongo-barley.ts.net/poseidon/utility/development-containers/umaa-cyclone-cpp)
+development container — open this repo with the included `.devcontainer/`, or work under
+`/workspace/projects` inside the shared dev container.
+
+> **Toolchain baseline**: the dev image builds CycloneDDS/CycloneDDS-CXX from pinned
+> post-11.0.1 **master** commits (`cyclonedds@8425e2e343` + `cyclonedds-cxx@53a9f114e6`),
+> not the 0.10.5 release. The 0.10.5 release needs several patches this codebase no longer
+> carries: C++20 rejects its template-id destructors, `QosProviderDelegate` is declared but
+> not implemented (the QoS XML profiles silently cannot load), topic names containing `::`
+> are rejected, and — worst — types with `@optional` members (most UMAA reports) hit a
+> fixed-size serialization cache, so a sample whose optionals are set after a smaller first
+> write fails `dds_write` with `Bad Parameter`. All of these are fixed upstream on master.
+
+```bash
+git submodule update --init --recursive   # once, after cloning
+cmake --preset dev-debug                  # Debug + tests (build/)
+cmake --build --preset dev-debug
+ctest --preset dev-debug                  # autopilot_test + the SDK's suites
+cd build && ./autopilot autopilot.yaml    # run the app
 ```
-cd existing_repo
-git remote add origin https://gitlab.bongo-barley.ts.net/poseidon/platform/autopilot.git
-git branch -M main
-git push -uf origin main
+
+Presets: `dev-debug` (Debug + tests, `build/`), `dev-release` (Release,
+`build-release/`), `ci` (Release + tests, `build/`, installs to `install/`). To build
+against an installed SDK instead of the submodule, configure with
+`-DAUTOPILOT_USE_SYSTEM_UMAA_CPP=ON` (the `umaa-cpp::umaa-cpp` target name is identical in
+both modes).
+
+## Application image
+
+CI publishes a single artifact: a trimmed `ubi10-minimal` application image carrying
+`autopilot`, `mission_console`, `mission_runner`, the mission-control web app, and their
+shared-library closure (~tens of MB on top of the base). Built from the pinned submodule via
+the multi-stage `Dockerfile`. The default entry point runs the autopilot and the mission
+console together (console on port 8080):
+
+```bash
+docker run -p 8080:8080 <registry>/poseidon/platform/autopilot:latest    # both
+docker run <image> bin/autopilot autopilot.yaml                          # app only
+docker run -p 8080:8080 <image> bin/mission_console autopilot.yaml 8080 web
 ```
 
-## Integrate with your tools
+Tags: `:<short-sha>` + `:<ref-slug>` on every branch push, `:latest` on the default branch,
+`:<tag>` + `:latest` on tags.
 
-* [Set up project integrations](https://gitlab.bongo-barley.ts.net/poseidon/platform/autopilot/-/settings/integrations)
+## Tests
 
-## Collaborate with your team
+Unit tests live under `test/` (GoogleTest), enabled with `AUTOPILOT_BUILD_TESTS=ON`
+(the `dev-debug` and `ci` presets turn it on):
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+- `DubinsPathTest` — Dubins solver: word selection, degenerate cases, and randomized
+  endpoint correctness (2000 configurations).
+- `DubinsPathPlannerTest` — route following to completion, arrival-attitude capture,
+  loop-around for waypoints behind the vehicle, miss/replan budgets, progress metrics.
+- `SimVehicleControlTest` — kinematic limits (turn rate, acceleration, speed caps) and the
+  three nav reports, using the SDK's `LocalReaderSender` loopback IO.
+- `DrivingResourceArbiterTest` — priority/preempt/reject/release behavior.
+- `YamlConfigLoaderTest` — config parsing and defaults.
 
-## Test and Deploy
+The full suite (solver randomized endpoint checks, planner follow/replan/miss behavior with a
+kinematic sim vehicle, `SimVehicleControl` kinematics + report publishing, arbiter, config)
+runs green with `ctest`. An end-to-end waypoint mission over Cyclone DDS is exercised by
+`tools/mission_runner` (see `tools/README.md`), which publishes a `GlobalWaypointCommandType`
+plus its large-list route, records the vehicle track from the Global Pose reports, and exits
+when the command completes.
 
-Use the built-in continuous integration in GitLab.
+Recorded end-to-end runs (sim vehicle at 3 m/s over Cyclone DDS on one host, every command
+reaching COMPLETED) live in `docs/mission-results/`: mission/track/waypoint/planned-path
+CSVs, command status logs, and rendered plots. The plots overlay the executed track on the
+ideal planned Dubins route, so tracker deviation is directly visible against the plan the
+UMAA track tolerance is judged on.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+The baseline 4-waypoint diamond (no attitude requirements — natural fly-through headings,
+2.5 m capture gates):
 
-***
+![Recorded waypoint mission](docs/mission-results/mission_plot.png)
 
-# Editing this README
+Survey lawnmower missions with **required arrival attitudes** (north/south lanes) at three
+lane spacings — 40 m (wider than the ~28.6 m planned turning circle: simple U-turns), 20 m,
+and 10 m (tighter than the planned turn radius: the Dubins solver produces bulb turns that
+swing outside the lane ends and re-enter on attitude), all captured through 2.5 m gates with
+zero misses. Two planner behaviors make these capture reliably: legs are planned with a
+turn-radius margin over the vehicle's kinematic minimum (`planner.turn_radius_margin`) so
+the controller retains authority to close tracking error mid-turn, and every leg ends with a
+straight final-approach runway through the waypoint so arrival happens with position and
+attitude already settled rather than on the tail of an arc.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+![Lawnmower 10 m lanes](docs/mission-results/lawnmower-10m/mission_plot.png)
+![Lawnmower 40 m lanes](docs/mission-results/lawnmower-40m/mission_plot.png)
 
-## Suggestions for a good README
+A depth-change mission (`docs/mission-results/depth-spiral/`) exercises the spiral behavior:
+waypoints command 40 m and 25 m elevation changes (one in the `depth` frame, one in `asf`)
+while the platform's 0.2 m/s depth-rate limit makes each change impossible in a single pass
+of the 2D path. The planner budgets the loop-back passes up front, the vehicle corkscrews on
+repeated 2D replans until the elevation converges, and the passes consume no miss budget.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+![Depth spiral mission](docs/mission-results/depth-spiral/mission_plot.png)
 
-## Name
-Choose a self-explaining name for your project.
+## Mission console
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+`tools/mission_console` serves a live mission-control web GUI (self-contained, no external
+web dependencies): the vehicle and its trail on a pan/zoom chart, the active mission's
+waypoints with per-waypoint status (completed faded, current pulsing, animated active
+leg), the ideal planned Dubins route, live readouts (position, heading, speed, depth,
+altitude above floor, cross-track error, distances), and a click-to-build mission editor
+with per-waypoint speed / capture / arrival-heading / elevation, a Dubins route preview,
+and an EXECUTE/CANCEL button wired to the full UMAA command lifecycle (ack + status
+surfaced in the GUI). See `tools/README.md`.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+![Mission console executing](docs/console/console_executing.png)

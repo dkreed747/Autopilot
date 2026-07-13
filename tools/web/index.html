@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<!--
+  Copyright 2025 Pennsylvania State University
+  Applied Research Laboratory, Pennsylvania State University
+
+  DISTRIBUTION STATEMENT A. Approved for public release. Distribution is unlimited.
+  This software was developed by the Department of the Navy, NAVSEA Unmanned and
+  Small Combatants. It is provided under the terms of use found in the LICENSE
+  file at the source code root directory.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UMAA Mission Console</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><circle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%231a1a19%22 stroke=%22%233987e5%22 stroke-width=%222%22/><path d=%22M8 3 L11 12 L8 10 L5 12 Z%22 fill=%22%233987e5%22/></svg>">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main id="layout">
+    <section id="chart-pane">
+      <div id="chart-toolbar">
+        <button id="btn-new-mission" class="tool-btn">New mission</button>
+        <button id="btn-clear" class="tool-btn" hidden>Clear</button>
+        <button id="btn-done-edit" class="tool-btn" hidden>Done</button>
+        <span id="edit-hint" hidden>Click the chart to drop waypoints &mdash; click a marker to edit it</span>
+        <label id="follow-wrap"><input type="checkbox" id="follow-vehicle" checked> Follow vehicle</label>
+      </div>
+      <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="chart-footer">
+        <span id="cursor-pos">&mdash;</span>
+        <span id="scale-readout"></span>
+      </div>
+      <div id="wp-popup" hidden></div>
+      <div id="execute-dock">
+        <div id="cmd-chips">
+          <span id="cmd-status-chip" class="chip chip-idle">NO MISSION</span>
+          <span id="ack-chip" class="chip chip-idle" hidden>AWAITING ACK</span>
+        </div>
+        <button id="btn-execute" disabled>EXECUTE</button>
+      </div>
+    </section>
+
+    <aside id="sidebar">
+      <h1>Mission Console</h1>
+
+      <section class="panel" id="panel-vehicle">
+        <h2>Vehicle</h2>
+        <div class="readouts" id="vehicle-readouts">
+          <div class="ro"><span class="ro-label">Latitude</span><span class="ro-value" id="ro-lat">&mdash;</span></div>
+          <div class="ro"><span class="ro-label">Longitude</span><span class="ro-value" id="ro-lon">&mdash;</span></div>
+          <div class="ro"><span class="ro-label">Heading</span><span class="ro-value" id="ro-hdg">&mdash;</span></div>
+          <div class="ro"><span class="ro-label">Speed (SOG)</span><span class="ro-value" id="ro-sog">&mdash;</span></div>
+          <div class="ro"><span class="ro-label">Depth</span><span class="ro-value" id="ro-depth">&mdash;</span></div>
+          <div class="ro"><span class="ro-label">Alt above floor</span><span class="ro-value" id="ro-asf">&mdash;</span></div>
+          <div class="ro"><span class="ro-label">Nav age</span><span class="ro-value" id="ro-age">&mdash;</span></div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-progress">
+        <h2>Execution</h2>
+        <div class="readouts">
+          <div class="ro"><span class="ro-label">To waypoint</span><span class="ro-value" id="ro-dist-wp">&mdash;</span></div>
+          <div class="ro"><span class="ro-label">Remaining</span><span class="ro-value" id="ro-dist-rem">&mdash;</span></div>
+          <div class="ro"><span class="ro-label">Cross-track</span><span class="ro-value" id="ro-xte">&mdash;</span></div>
+          <div class="ro"><span class="ro-label">Waypoints left</span><span class="ro-value" id="ro-wp-rem">&mdash;</span></div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-waypoints">
+        <h2>Waypoints</h2>
+        <ol id="wp-list"></ol>
+        <div id="wp-editor" hidden>
+          <h3 id="wp-editor-title">Waypoint</h3>
+          <label>Speed (m/s) <input type="number" id="ed-speed" step="0.1" min="0.1"></label>
+          <label>Capture radius (m) <input type="number" id="ed-capture" step="0.5" min="0.5"></label>
+          <label class="opt-row"><input type="checkbox" id="ed-yaw-on"> Arrival heading (&deg;T)
+            <input type="number" id="ed-yaw" step="1" disabled></label>
+          <label class="opt-row"><input type="checkbox" id="ed-elev-on"> Elevation (m)
+            <input type="number" id="ed-elev" step="1" disabled>
+            <select id="ed-frame" disabled>
+              <option value="depth">depth</option>
+              <option value="asf">above floor</option>
+            </select></label>
+          <button id="ed-delete" class="danger">Delete waypoint</button>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-log">
+        <h2>Command status</h2>
+        <ul id="status-log"></ul>
+      </section>
+    </aside>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
