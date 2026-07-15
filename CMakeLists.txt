@@ -114,10 +114,14 @@ target_include_directories(mission_console SYSTEM PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/third-party)
 target_link_libraries(mission_console PRIVATE mission-tools Threads::Threads)
 
-# The console GUI is served from a web root next to the binary.
-add_custom_command(TARGET mission_console POST_BUILD
+# The console GUI is served from a web root next to the binary. An always-run target (not a
+# POST_BUILD step): web-only edits must land in the build dir even when the console binary is
+# already up to date.
+add_custom_target(console-web ALL
   COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/tools/web ${CMAKE_BINARY_DIR}/web)
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/web ${CMAKE_BINARY_DIR}/web
+  COMMENT "Mirroring tools/web into the build directory")
+add_dependencies(mission_console console-web)
 
 # ---------------------------------------------------------------------------
 # Tests (in-memory LocalReaderSender loopback IO from umaa-cpp::test-utils)

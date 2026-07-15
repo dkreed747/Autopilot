@@ -29,6 +29,7 @@ const state = {
   lastFinal: null,        // last terminal command status
   constraints: { enabled: false, items: [], active_ids: [], active_known: false },
   conSelected: null,      // selected constraint id (opens the editor)
+  conDraft: null,         // local edit buffer for the selected constraint (see bindConstraintEditor)
   zoneDraft: null,        // { kind: 'keep_in'|'keep_out', points: [[e,n],...] } in zone-draw mode
   pendingActive: null,    // optimistic active-id set awaiting the autopilot's ack echo
 };
@@ -726,50 +727,82 @@ function renderConstraintEditor() {
   const c = (state.constraints.items || []).find((x) => x.id === state.conSelected);
   if (!c) {
     ed.hidden = true;
+    state.conDraft = null;
     return;
   }
+  // The editor renders from a LOCAL draft, never from the live item: the SSE feed re-renders
+  // at 5 Hz, and rendering server values directly would stomp anything the user typed the
+  // moment the input blurs. Change events commit into the draft (bindConstraintEditor);
+  // Apply sends the draft. The draft is (re)seeded from the item when the selection changes.
+  if (!state.conDraft || state.conDraft.id !== c.id) {
+    state.conDraft = {
+      id: c.id,
+      name: c.name || '',
+      ceiling_m: c.ceiling_m ?? 0,
+      ceiling_frame: c.ceiling_frame || 'depth',
+      floor_m: c.floor_m ?? 100,
+      floor_frame: c.floor_frame || 'depth',
+      value: c.value ?? 0,
+      op: c.op || 'lte',
+    };
+  }
+  const d = state.conDraft;
   ed.hidden = false;
   const isZone = c.type === 'keep_in' || c.type === 'keep_out';
   $('con-editor-title').textContent = `${c.name || c.type} (${c.type.replace('_', '-')})`;
   $('con-zone-fields').hidden = !isZone;
   $('con-value-fields').hidden = isZone;
+  // Still never touch the input the user is typing in right now (its value is ahead of the
+  // draft until its change event fires on blur/Enter).
   const setVal = (inp, v) => { if (document.activeElement !== inp) inp.value = v; };
-  setVal($('con-name'), c.name || '');
+  setVal($('con-name'), d.name);
   if (isZone) {
-    setVal($('con-ceiling'), c.ceiling_m ?? 0);
-    setVal($('con-floor'), c.floor_m ?? 100);
-    if (document.activeElement !== $('con-ceiling-frame')) {
-      $('con-ceiling-frame').value = c.ceiling_frame || 'depth';
-    }
-    if (document.activeElement !== $('con-floor-frame')) {
-      $('con-floor-frame').value = c.floor_frame || 'depth';
-    }
+    setVal($('con-ceiling'), d.ceiling_m);
+    setVal($('con-floor'), d.floor_m);
+    setVal($('con-ceiling-frame'), d.ceiling_frame);
+    setVal($('con-floor-frame'), d.floor_frame);
   } else {
-    setVal($('con-value'), c.value ?? 0);
-    if (document.activeElement !== $('con-op')) $('con-op').value = c.op || 'lte';
+    setVal($('con-value'), d.value);
+    setVal($('con-op'), d.op);
     $('con-unit').textContent = c.type === 'speed' ? 'm/s' : 'm';
   }
 }
 
+//! Commit editor field changes into the local draft (bound once at boot).
+function bindConstraintEditor() {
+  const commit = (id, fn) => $(id).addEventListener('change', (ev) => {
+    if (state.conDraft) fn(ev.target);
+  });
+  commit('con-name', (t) => { state.conDraft.name = t.value; });
+  commit('con-ceiling', (t) => { state.conDraft.ceiling_m = parseFloat(t.value) || 0; });
+  commit('con-ceiling-frame', (t) => { state.conDraft.ceiling_frame = t.value; });
+  commit('con-floor', (t) => { state.conDraft.floor_m = parseFloat(t.value) || 0; });
+  commit('con-floor-frame', (t) => { state.conDraft.floor_frame = t.value; });
+  commit('con-value', (t) => { state.conDraft.value = parseFloat(t.value) || 0; });
+  commit('con-op', (t) => { state.conDraft.op = t.value; });
+}
+
 function selectConstraint(id) {
   state.conSelected = state.conSelected === id ? null : id;
+  state.conDraft = null;  // reseed the editor from the (possibly different) item
   lastConSignature = '';
   render();
 }
 
 async function applyConstraintEdit() {
   const c = (state.constraints.items || []).find((x) => x.id === state.conSelected);
-  if (!c) return;
-  const body = { id: c.id, type: c.type, name: $('con-name').value || c.type };
+  const d = state.conDraft;
+  if (!c || !d) return;
+  const body = { id: c.id, type: c.type, name: d.name || c.type };
   if (c.type === 'keep_in' || c.type === 'keep_out') {
     body.polygon = c.polygon;
-    body.ceiling_m = parseFloat($('con-ceiling').value) || 0;
-    body.ceiling_frame = $('con-ceiling-frame').value;
-    body.floor_m = parseFloat($('con-floor').value) || 100;
-    body.floor_frame = $('con-floor-frame').value;
+    body.ceiling_m = d.ceiling_m;
+    body.ceiling_frame = d.ceiling_frame;
+    body.floor_m = d.floor_m;
+    body.floor_frame = d.floor_frame;
   } else {
-    body.value = parseFloat($('con-value').value) || 0;
-    body.op = $('con-op').value;
+    body.value = d.value;
+    body.op = d.op;
   }
   try {
     await api('/api/constraints', body);
@@ -1067,6 +1100,7 @@ $('con-list').addEventListener('click', (ev) => {
 });
 $('con-apply').addEventListener('click', applyConstraintEdit);
 $('con-delete').addEventListener('click', deleteConstraint);
+bindConstraintEditor();
 $('btn-clear').addEventListener('click', () => {
   state.draft = [];
   state.draftPath = [];
