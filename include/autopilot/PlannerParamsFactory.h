@@ -55,6 +55,15 @@ inline PlannerParams derivePlannerParams(const AutopilotConfig& config) {
       config.platformCapabilities.underwater.maxDepthChangeRateMps.has_value()) {
     p.maxDepthRateMps = config.platformCapabilities.underwater.maxDepthChangeRateMps.value();
   }
+
+  p.zoneMarginM = config.zones.safetyMarginM;
+  p.rrt.seed = config.planner.rrt.seed;
+  p.rrt.maxIterations = config.planner.rrt.maxIterations;
+  p.rrt.timeBudgetMs = config.planner.rrt.timeBudgetMs;
+  p.rrt.goalBias = config.planner.rrt.goalBias;
+  p.rrt.nearK = config.planner.rrt.nearK;
+  p.rrt.edgeCheckStepM = config.planner.rrt.edgeCheckStepM;
+  p.rrt.finalCheckStepM = config.planner.rrt.finalCheckStepM;
   return p;
 }
 

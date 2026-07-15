@@ -72,6 +72,18 @@ void AutopilotBrain::setConstraintSource(const IConstraintSource* source) {
   constraintSource_ = source;
 }
 
+void AutopilotBrain::setZoneMap(const ZoneMap* zoneMap) {
+  std::lock_guard<std::mutex> lock(mtx_);
+  zoneMap_ = zoneMap;
+  planner_.setZones(zoneMap);
+  if (zoneMap != nullptr) {
+    vectorGuidance_ = std::make_unique<VectorZoneGuidance>(
+        config_.vectorAvoidance, derivePlannerParams().turnRadiusM, zoneMap->config().safetyMarginM);
+  } else {
+    vectorGuidance_.reset();
+  }
+}
+
 void AutopilotBrain::emitControl(const ControlVector& cv) {
   if (constraintSource_ == nullptr) {
     vehicle_->sendControlVector(cv);
@@ -106,6 +118,9 @@ void AutopilotBrain::setVectorSetpoint(
   vectorProgress_ = VectorProgress{};
   vectorEverAchieved_ = false;
   vectorViolationSince_.reset();
+  if (vectorGuidance_) {
+    vectorGuidance_->reset();
+  }
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: vector setpoint installed")
 }
 
@@ -119,6 +134,7 @@ bool AutopilotBrain::setWaypointSetpoint(
   }
   planner_.plan(waypoints, pose.value(), derivePlannerParams());
   waypointProgress_ = planner_.progress();
+  plannedConstraintRevision_ = constraintSource_ != nullptr ? constraintSource_->revision() : 0;
   mode_ = DriveSource::WAYPOINT;
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: waypoint route installed ("
     << waypoints.size() << " waypoints)")
@@ -195,6 +211,26 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
     }
   }
 
+  // Tangent-bug zone avoidance: the commanded heading is overridden while it would carry the
+  // vehicle into (or out of) an active zone within the lookahead.
+  bool avoiding = false;
+  if (vectorGuidance_ && zoneMap_ != nullptr && zoneMap_->hasZones() &&
+      zoneMap_->anchor().has_value()) {
+    const double depthM = pose.depth().has_value() ? pose.depth().value() : 0.0;
+    const ZoneSet zones = zoneMap_->activeSet(zoneMap_->anchor().value(),
+                                              ElevationEnvelope{depthM, depthM});
+    if (!zones.empty()) {
+      double xE = 0.0;
+      double yN = 0.0;
+      double z = 0.0;
+      zoneMap_->anchor()->Forward(pose.position().geodeticLatitude(),
+                                  pose.position().geodeticLongitude(), 0.0, xE, yN, z);
+      cv.headingRad = vectorGuidance_->steer(cv.headingRad, Vec2{xE, yN},
+                                             nav_->groundSpeedMps(), zones);
+      avoiding = vectorGuidance_->avoidanceActive();
+    }
+  }
+
   emitControl(cv);
 
   // Achieved-flag evaluation against the commanded tolerances (or configured defaults).
@@ -216,8 +252,11 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
 
   // Hard tolerances: after all criteria have been achieved once, a violation persisting
   // longer than the configured failure delay fails the command (UMAA failureDelay semantics).
+  // Suspended while zone avoidance overrides the heading: the deviation is deliberate.
   const bool allAchieved = prog.directionAchieved && prog.speedAchieved && prog.elevationAchieved;
-  if (allAchieved) {
+  if (avoiding) {
+    vectorViolationSince_.reset();
+  } else if (allAchieved) {
     vectorEverAchieved_ = true;
     vectorViolationSince_.reset();
   } else if (config_.vectorTolerances.hard && vectorEverAchieved_) {
@@ -236,6 +275,12 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
 }
 
 void AutopilotBrain::updateWaypointControl(const GlobalPoseReportType& pose) {
+  // A constraint-set change mid-route re-gates the zones and replans the current leg when it
+  // is now blocked (or fails the route when the target waypoint became non-compliant).
+  if (constraintSource_ != nullptr && constraintSource_->revision() != plannedConstraintRevision_) {
+    plannedConstraintRevision_ = constraintSource_->revision();
+    planner_.onConstraintsChanged(pose);
+  }
   const ControlVector cv = planner_.update(pose, nav_->groundSpeedMps());
   emitControl(cv);
 

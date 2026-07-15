@@ -81,6 +81,36 @@ double waypointSpeedMps(const GlobalWaypointType& wp) {
 
 }  // namespace
 
+DubinsPathPlanner::Leg::Leg(std::vector<DubinsPath> chain, double runway, double endAz)
+    : paths(std::move(chain)), runwayM(runway), endAzimuthRad(endAz) {
+  pathStartM.reserve(paths.size());
+  dubinsLengthM = 0.0;
+  for (const DubinsPath& p : paths) {
+    pathStartM.push_back(dubinsLengthM);
+    dubinsLengthM += p.lengthM();
+  }
+  lengthM = dubinsLengthM + runwayM;
+}
+
+Dubins2DPose DubinsPathPlanner::Leg::sampleChain(double sM) const {
+  std::size_t i = paths.size() - 1;
+  while (i > 0 && sM < pathStartM[i]) {
+    --i;
+  }
+  return paths[i].sample(sM - pathStartM[i]);
+}
+
+std::string DubinsPathPlanner::Leg::word() const {
+  std::string out;
+  for (const DubinsPath& p : paths) {
+    if (!out.empty()) {
+      out += "+";
+    }
+    out += p.word();
+  }
+  return out;
+}
+
 void DubinsPathPlanner::toLocal(double latDeg, double lonDeg, double* xE, double* yN) const {
   double z = 0.0;
   localFrame_.Forward(latDeg, lonDeg, 0.0, *xE, *yN, z);
@@ -88,15 +118,95 @@ void DubinsPathPlanner::toLocal(double latDeg, double lonDeg, double* xE, double
 
 Dubins2DPose DubinsPathPlanner::sampleExtended(const Leg& leg, double sM) {
   if (sM <= leg.dubinsLengthM) {
-    return leg.path.sample(sM);
+    return leg.sampleChain(sM);
   }
   // Straight continuation covers both the final-approach runway (up to lengthM, ending at
   // the waypoint) and the fly-through extension beyond it.
-  Dubins2DPose end = leg.path.sample(leg.dubinsLengthM);
+  Dubins2DPose end = leg.sampleChain(leg.dubinsLengthM);
   const double over = sM - leg.dubinsLengthM;
   end.x += over * std::cos(end.theta);
   end.y += over * std::sin(end.theta);
   return end;
+}
+
+bool DubinsPathPlanner::legClear(const Leg& leg, double fromS) const {
+  if (zoneSet_.empty()) {
+    return true;
+  }
+  const double step = std::max(0.25, params_.rrt.finalCheckStepM);
+  for (double s = std::max(0.0, fromS); s <= leg.lengthM; s += step) {
+    const Dubins2DPose p = sampleExtended(leg, s);
+    if (zoneSet_.clearanceM(Vec2{p.x, p.y}) < params_.zoneMarginM) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::optional<double> DubinsPathPlanner::compliantArrivalAzimuth(std::size_t wpIndex,
+                                                                 double naturalAz,
+                                                                 double runwayM) const {
+  const auto runwayCompliant = [&](double az) {
+    const double theta = azToMath(az);
+    const Vec2 wp{wpX_[wpIndex], wpY_[wpIndex]};
+    const Vec2 goal{wp.x - runwayM * std::cos(theta), wp.y - runwayM * std::sin(theta)};
+    return zoneSet_.segmentClear(goal, wp, params_.zoneMarginM,
+                                 std::max(0.25, params_.rrt.finalCheckStepM));
+  };
+
+  if (runwayCompliant(naturalAz)) {
+    return naturalAz;
+  }
+  if (waypoints_[wpIndex].attitude().has_value()) {
+    // The arrival attitude is commanded; there is no freedom to rotate the approach.
+    return std::nullopt;
+  }
+  // Scan alternates outward from the natural azimuth in 22.5-degree steps.
+  const double step = M_PI / 8.0;
+  for (int k = 1; k <= 8; ++k) {
+    for (const double sign : {1.0, -1.0}) {
+      const double az = wrapPi(naturalAz + sign * step * k);
+      if (runwayCompliant(az)) {
+        return az;
+      }
+      if (k == 8) {
+        break;  // +180 and -180 coincide
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+void DubinsPathPlanner::refreshZoneSet(const GlobalPoseReportType& pose) {
+  zoneSet_ = ZoneSet{};
+  if (zoneMap_ == nullptr || !zoneMap_->hasZones()) {
+    return;
+  }
+  // Depth envelope of the whole route: the current depth plus every commanded DEPTH-frame
+  // waypoint elevation (the spiral machinery can park the vehicle at any intermediate depth).
+  // Elevation frames with no depth equivalent make the envelope unbounded — conservative.
+  ElevationEnvelope envelope;
+  const double startDepth = pose.depth().has_value() ? pose.depth().value() : 0.0;
+  envelope.minDepthM = startDepth;
+  envelope.maxDepthM = startDepth;
+  bool unbounded = false;
+  for (const GlobalWaypointType& wp : waypoints_) {
+    if (!wp.elevation().has_value()) {
+      continue;
+    }
+    const std::optional<ElevationValue> el = tolerance::extractElevation(wp.elevation().value());
+    if (!el.has_value() || el->frame != ElevationFrame::DEPTH) {
+      unbounded = true;
+      break;
+    }
+    envelope.minDepthM = std::min(envelope.minDepthM, el->valueM);
+    envelope.maxDepthM = std::max(envelope.maxDepthM, el->valueM);
+  }
+  if (unbounded) {
+    envelope.minDepthM = -1.0e9;
+    envelope.maxDepthM = 1.0e9;
+  }
+  zoneSet_ = zoneMap_->activeSet(localFrame_, envelope);
 }
 
 double DubinsPathPlanner::arrivalAzimuth(std::size_t wpIndex, double fromXE, double fromYN) const {
@@ -121,12 +231,22 @@ double DubinsPathPlanner::arrivalAzimuth(std::size_t wpIndex, double fromXE, dou
   return std::atan2(dE, dN);
 }
 
-DubinsPathPlanner::Leg DubinsPathPlanner::buildLeg(const Dubins2DPose& startPose, std::size_t wpIndex) const {
-  const double endAz = arrivalAzimuth(wpIndex, startPose.x, startPose.y);
+std::optional<DubinsPathPlanner::Leg> DubinsPathPlanner::buildLeg(const Dubins2DPose& startPose,
+                                                                  std::size_t wpIndex) const {
+  const double runwayM = params_.turnRadiusM;
+  double endAz = arrivalAzimuth(wpIndex, startPose.x, startPose.y);
+  if (!zoneSet_.empty()) {
+    const std::optional<double> compliantAz = compliantArrivalAzimuth(wpIndex, endAz, runwayM);
+    if (!compliantAz.has_value()) {
+      UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "DubinsPathPlanner: no zone-compliant final approach to "
+        "waypoint " << wpIndex)
+      return std::nullopt;
+    }
+    endAz = compliantAz.value();
+  }
   const double endTheta = azToMath(endAz);
   // Solve the curved portion to a virtual goal one turn radius short of the waypoint along
   // the arrival bearing; the leg then finishes with a straight runway through the waypoint.
-  const double runwayM = params_.turnRadiusM;
   const Dubins2DPose virtualGoal{wpX_[wpIndex] - runwayM * std::cos(endTheta),
                                  wpY_[wpIndex] - runwayM * std::sin(endTheta), endTheta};
   std::optional<DubinsPath> path = DubinsPath::solve(startPose, virtualGoal, params_.turnRadiusM);
@@ -135,7 +255,24 @@ DubinsPathPlanner::Leg DubinsPathPlanner::buildLeg(const Dubins2DPose& startPose
     // sanitized origin so guidance can still make progress.
     path = DubinsPath::solve({0.0, 0.0, 0.0}, virtualGoal, 0.0);
   }
-  return Leg(path.value(), runwayM, endAz);
+  if (zoneSet_.empty() ||
+      zoneSet_.pathClear(path.value(), params_.zoneMarginM, std::max(0.25, params_.rrt.finalCheckStepM))) {
+    return Leg({path.value()}, runwayM, endAz);
+  }
+
+  // The direct solution clips a zone: fall back to Dubins-RRT*, salted by the waypoint index
+  // so the whole route stays deterministic under a fixed seed.
+  DubinsRrtParams rrt = params_.rrt;
+  rrt.rhoM = params_.turnRadiusM;
+  rrt.marginM = params_.zoneMarginM;
+  std::optional<std::vector<DubinsPath>> chain =
+      planDubinsRrtStar(startPose, virtualGoal, zoneSet_, rrt, static_cast<uint32_t>(wpIndex));
+  if (!chain.has_value()) {
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "DubinsPathPlanner: no zone-compliant path to waypoint "
+      << wpIndex << " (direct clipped, RRT* found no detour)")
+    return std::nullopt;
+  }
+  return Leg(std::move(chain.value()), runwayM, endAz);
 }
 
 void DubinsPathPlanner::plan(const std::vector<GlobalWaypointType>& waypoints,
@@ -172,12 +309,72 @@ void DubinsPathPlanner::plan(const std::vector<GlobalWaypointType>& waypoints,
     return;
   }
 
+  refreshZoneSet(start);
+
   const Dubins2DPose startPose{0.0, 0.0, azToMath(poseYaw(start))};
   planStartPose_ = startPose;
   currentLeg_ = buildLeg(startPose, 0);
+  if (!currentLeg_.has_value()) {
+    failed_ = true;
+    progress_.failed = true;
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "DubinsPathPlanner: first leg has no zone-compliant path;"
+      " failing route")
+    return;
+  }
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner planned route: " << waypoints_.size()
-    << " waypoints, first leg " << currentLeg_->lengthM << " m (" << currentLeg_->path.word()
+    << " waypoints, first leg " << currentLeg_->lengthM << " m (" << currentLeg_->word()
     << "), turn radius " << params_.turnRadiusM << " m")
+}
+
+void DubinsPathPlanner::onConstraintsChanged(const GlobalPoseReportType& pose) {
+  if (waypoints_.empty() || routeComplete_ || failed_) {
+    return;
+  }
+  refreshZoneSet(pose);
+  if (zoneSet_.empty()) {
+    return;  // constraints relaxed away; the current leg stays valid
+  }
+  // A target waypoint that is no longer compliant cannot be reached legally: fail the route
+  // (the provider reports OBJECTIVE_FAILED) rather than silently skipping it.
+  if (targetIndex_ < waypoints_.size() &&
+      !zoneSet_.pointCompliant(Vec2{wpX_[targetIndex_], wpY_[targetIndex_]}, 0.0)) {
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "DubinsPathPlanner: constraint change put waypoint "
+      << targetIndex_ << " inside a violating zone; failing route")
+    failed_ = true;
+    progress_.failed = true;
+    return;
+  }
+  if (currentLeg_.has_value() && !legClear(currentLeg_.value(), legProgressS_)) {
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner: constraint change blocked the current "
+      "leg; replanning from the live pose")
+    replanCurrentLegFrom(pose);
+  }
+}
+
+bool DubinsPathPlanner::replanCurrentLegFrom(const GlobalPoseReportType& pose) {
+  if (waypoints_.empty() || routeComplete_ || failed_ || targetIndex_ >= waypoints_.size()) {
+    return false;
+  }
+  double xE = 0.0;
+  double yN = 0.0;
+  toLocal(poseLat(pose), poseLon(pose), &xE, &yN);
+  const Dubins2DPose current{xE, yN, azToMath(poseYaw(pose))};
+  currentLeg_ = buildLeg(current, targetIndex_);
+  if (!currentLeg_.has_value()) {
+    failed_ = true;
+    progress_.failed = true;
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "DubinsPathPlanner: replan from live pose found no "
+      "zone-compliant leg to waypoint " << targetIndex_ << "; failing route")
+    return false;
+  }
+  legProgressS_ = 0.0;
+  lastGateAlongM_.reset();
+  elevApproachBudget_.reset();
+  elevApproachesUsed_ = 0;
+  lastSpiralElevErrM_.reset();
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner: current leg replanned from live pose: "
+    << currentLeg_->lengthM << " m (" << currentLeg_->word() << ")")
+  return true;
 }
 
 std::vector<std::pair<double, double>> DubinsPathPlanner::previewRoute(double stepM) const {
@@ -188,7 +385,11 @@ std::vector<std::pair<double, double>> DubinsPathPlanner::previewRoute(double st
   const double step = std::max(0.5, stepM);
   Dubins2DPose legStart = planStartPose_;
   for (std::size_t i = 0; i < waypoints_.size(); i++) {
-    const Leg leg = buildLeg(legStart, i);
+    const std::optional<Leg> built = buildLeg(legStart, i);
+    if (!built.has_value()) {
+      break;  // preview what is plannable; the live planner fails the route at this leg
+    }
+    const Leg& leg = built.value();
     for (double s = 0.0; s <= leg.lengthM + step * 0.5; s += step) {
       const Dubins2DPose p = sampleExtended(leg, std::min(s, leg.lengthM));
       double lat = 0.0;
@@ -249,8 +450,15 @@ void DubinsPathPlanner::advanceToNextWaypoint() {
   }
   const Dubins2DPose startPose{fromX, fromY, azToMath(arrivalAz)};
   currentLeg_ = buildLeg(startPose, targetIndex_);
+  if (!currentLeg_.has_value()) {
+    failed_ = true;
+    progress_.failed = true;
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "DubinsPathPlanner: no zone-compliant leg to waypoint "
+      << targetIndex_ << "; failing route")
+    return;
+  }
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner advancing to waypoint " << targetIndex_
-    << ", leg " << currentLeg_->lengthM << " m (" << currentLeg_->path.word() << ")")
+    << ", leg " << currentLeg_->lengthM << " m (" << currentLeg_->word() << ")")
 }
 
 void DubinsPathPlanner::registerMiss(const Dubins2DPose& current) {
@@ -270,6 +478,13 @@ void DubinsPathPlanner::registerMiss(const Dubins2DPose& current) {
   }
   replanCount_++;
   currentLeg_ = buildLeg(current, targetIndex_);
+  if (!currentLeg_.has_value()) {
+    failed_ = true;
+    progress_.failed = true;
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "DubinsPathPlanner: replan found no zone-compliant leg to "
+      "waypoint " << targetIndex_ << "; failing route")
+    return;
+  }
   legProgressS_ = 0.0;
   lastGateAlongM_.reset();
   elevApproachBudget_.reset();
@@ -277,18 +492,25 @@ void DubinsPathPlanner::registerMiss(const Dubins2DPose& current) {
   lastSpiralElevErrM_.reset();
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner replanned waypoint " << targetIndex_
     << " from live pose (replan " << replanCount_ << "/" << params_.maxReplans << "): leg "
-    << currentLeg_->lengthM << " m (" << currentLeg_->path.word() << ")")
+    << currentLeg_->lengthM << " m (" << currentLeg_->word() << ")")
 }
 
 void DubinsPathPlanner::spiralReplan(const Dubins2DPose& current) {
   elevApproachesUsed_++;
   currentLeg_ = buildLeg(current, targetIndex_);
+  if (!currentLeg_.has_value()) {
+    failed_ = true;
+    progress_.failed = true;
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "DubinsPathPlanner: spiral replan found no zone-compliant "
+      "loop leg for waypoint " << targetIndex_ << "; failing route")
+    return;
+  }
   legProgressS_ = 0.0;
   lastGateAlongM_.reset();
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner spiral pass " << elevApproachesUsed_
     << "/" << elevApproachBudget_.value_or(0) << " for waypoint " << targetIndex_
     << " (elevation still converging): loop leg " << currentLeg_->lengthM << " m ("
-    << currentLeg_->path.word() << ")")
+    << currentLeg_->word() << ")")
 }
 
 std::optional<double> DubinsPathPlanner::elevationErrorM(const GlobalPoseReportType& pose) const {
@@ -405,6 +627,13 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, double
 
   if (!currentLeg_.has_value()) {
     currentLeg_ = buildLeg(current, targetIndex_);
+    if (!currentLeg_.has_value()) {
+      failed_ = true;
+      progress_.failed = true;
+      ControlVector hold = lastVector_;
+      hold.speedMps = 0.0;
+      return hold;
+    }
     legProgressS_ = 0.0;
     lastGateAlongM_.reset();
     elevApproachBudget_.reset();

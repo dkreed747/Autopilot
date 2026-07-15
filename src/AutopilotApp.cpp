@@ -354,6 +354,7 @@ bool AutopilotApp::initializeConstraintServices() {
   conditionalReportConsumer_->registerObserver(supervisor_->conditionalSetObserver());
   activeConstraintsProvider_->registerObserver(supervisor_->activeSetObserver());
   brain_->setConstraintSource(supervisor_.get());
+  brain_->setZoneMap(zoneMap_.get());
 
   // --- Safe Return Path: loaded and validated at startup, executed by the SRP strategy ---
   std::string srpError;

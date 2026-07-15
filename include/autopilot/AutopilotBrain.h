@@ -22,6 +22,8 @@
 #include <optional>
 #include <vector>
 
+#include <memory>
+
 #include "AutopilotConfig.h"
 #include "ConstraintClamp.h"
 #include "ConstraintTypes.h"
@@ -29,6 +31,8 @@
 #include "IAutopilot.h"
 #include "IVehicleControl.h"
 #include "NavState.h"
+#include "VectorZoneGuidance.h"
+#include "ZoneMap.h"
 
 namespace arlcore::autopilot {
 
@@ -60,6 +64,11 @@ class AutopilotBrain : public IAutopilot {
   //! Nullable; without one the brain emits unclamped.
   void setConstraintSource(const IConstraintSource* source);
 
+  //! \brief Install the shared zone map: vector ticks route through the tangent-bug avoidance
+  //! and waypoint legs plan around the active zones (replanning when the constraint revision
+  //! changes mid-route). Nullable; without one guidance is zone-blind.
+  void setZoneMap(const ZoneMap* zoneMap);
+
  private:
   PlannerParams derivePlannerParams() const;
   void updateVectorControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
@@ -79,6 +88,9 @@ class AutopilotBrain : public IAutopilot {
   ClampLimits staticClampLimits_;
   bool lastSpeedClamped_ = false;
   bool lastElevationClamped_ = false;
+  const ZoneMap* zoneMap_ = nullptr;
+  std::unique_ptr<VectorZoneGuidance> vectorGuidance_;
+  uint64_t plannedConstraintRevision_ = 0;  // constraint revision the current route was planned under
 
   mutable std::mutex mtx_;
   DriveSource mode_ = DriveSource::NONE;

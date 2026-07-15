@@ -76,6 +76,10 @@ class ZoneMap {
   //! \brief Whether a commanded point keeps `marginM` clearance (command-time validation).
   bool pointCompliant(const GeoPoint& position, double depthM, double marginM) const;
 
+  //! \brief The map's own anchor frame (unset until the first zone is ingested). Callers that
+  //! need raw ZoneSet queries at the vehicle (vector avoidance, recovery) project through it.
+  const std::optional<GeographicLib::LocalCartesian>& anchor() const { return anchor_; }
+
   const ZonesConfig& config() const { return config_; }
 
  private:
