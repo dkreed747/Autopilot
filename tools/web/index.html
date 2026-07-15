@@ -91,7 +91,7 @@
 
       <section class="panel" id="panel-constraints">
         <h2>Constraints</h2>
-        <div id="con-banner" hidden>Active set unknown &mdash; awaiting the autopilot's acknowledgement</div>
+        <div id="con-banner" hidden>No applied set acknowledged yet &mdash; constraints are not enforced until toggled active</div>
         <ul id="con-list"></ul>
         <div id="con-actions">
           <button id="btn-add-kia" class="tool-btn">+ Keep-in</button>
@@ -103,8 +103,16 @@
           <h3 id="con-editor-title">Constraint</h3>
           <label>Name <input type="text" id="con-name"></label>
           <div id="con-zone-fields" hidden>
-            <label>Ceiling depth (m) <input type="number" id="con-ceiling" step="1" min="0"></label>
-            <label>Floor depth (m) <input type="number" id="con-floor" step="1" min="0"></label>
+            <label>Ceiling (m) <input type="number" id="con-ceiling" step="1" min="0">
+              <select id="con-ceiling-frame">
+                <option value="depth">depth</option>
+                <option value="asf">above floor</option>
+              </select></label>
+            <label>Floor (m) <input type="number" id="con-floor" step="1" min="0">
+              <select id="con-floor-frame">
+                <option value="depth">depth</option>
+                <option value="asf">above floor</option>
+              </select></label>
           </div>
           <div id="con-value-fields" hidden>
             <label>Limit <select id="con-op">

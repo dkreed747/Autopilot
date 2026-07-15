@@ -46,7 +46,7 @@ namespace {
 const DateTime kStamp(1, 100);
 
 std::shared_ptr<WaterZoneConditional> makeZone(WaterZoneKindEnumType kind, double ceilingDepthM,
-                                               double floorDepthM) {
+                                               double floorDepthM, bool floorAsAsf = false) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
 
@@ -56,8 +56,14 @@ std::shared_ptr<WaterZoneConditional> makeZone(WaterZoneKindEnumType kind, doubl
   spec.zoneKind(kind);
   spec.ceiling().ElevationVariantTypeSubtypes().DepthVariantVariant(UMAA::Common::Measurement::DepthVariantType());
   spec.ceiling().ElevationVariantTypeSubtypes().DepthVariantVariant().depth(ceilingDepthM);
-  spec.floor().ElevationVariantTypeSubtypes().DepthVariantVariant(UMAA::Common::Measurement::DepthVariantType());
-  spec.floor().ElevationVariantTypeSubtypes().DepthVariantVariant().depth(floorDepthM);
+  if (floorAsAsf) {
+    spec.floor().ElevationVariantTypeSubtypes().AltitudeASFVariantVariant(
+        UMAA::Common::Measurement::AltitudeASFVariantType());
+    spec.floor().ElevationVariantTypeSubtypes().AltitudeASFVariantVariant().altitude(floorDepthM);
+  } else {
+    spec.floor().ElevationVariantTypeSubtypes().DepthVariantVariant(UMAA::Common::Measurement::DepthVariantType());
+    spec.floor().ElevationVariantTypeSubtypes().DepthVariantVariant().depth(floorDepthM);
+  }
 
   UMAA::MM::BaseType::PolygonVariantType polygon;
   polygon.referencePoints().push_back(GeoPosition2D(39.000, -76.500));
@@ -127,9 +133,11 @@ TEST_F(ConstraintSupervisorTest, BuildsSnapshotFromActiveConditionals) {
   EXPECT_EQ(snapshot.zones[0].kind, ZoneKind::KEEP_OUT);
   ASSERT_EQ(snapshot.zones[0].shapes.size(), 1u);
   EXPECT_EQ(snapshot.zones[0].shapes[0].polygon.size(), 4u);
-  ASSERT_TRUE(snapshot.zones[0].band.ceilingDepthM.has_value());
-  EXPECT_DOUBLE_EQ(snapshot.zones[0].band.ceilingDepthM.value(), 5.0);
-  EXPECT_DOUBLE_EQ(snapshot.zones[0].band.floorDepthM.value(), 20.0);
+  ASSERT_TRUE(snapshot.zones[0].band.ceiling.has_value());
+  EXPECT_EQ(snapshot.zones[0].band.ceiling->frame, ElevationBound::Frame::DEPTH);
+  EXPECT_DOUBLE_EQ(snapshot.zones[0].band.ceiling->value, 5.0);
+  ASSERT_TRUE(snapshot.zones[0].band.floor.has_value());
+  EXPECT_DOUBLE_EQ(snapshot.zones[0].band.floor->value, 20.0);
 
   // Most restrictive of the two upper speed bounds; the lower bound rides along.
   ASSERT_TRUE(snapshot.maxSpeedMps.has_value());
@@ -143,6 +151,24 @@ TEST_F(ConstraintSupervisorTest, BuildsSnapshotFromActiveConditionals) {
   // Zones were pushed into the shared map.
   EXPECT_TRUE(zoneMap_->hasZones());
   EXPECT_EQ(zoneMap_->revision(), snapshot.revision);
+}
+
+TEST_F(ConstraintSupervisorTest, MixedFrameZoneBandConverts) {
+  // Ceiling at depth 0, floor 5 m above the sea floor: both bounds keep their frames.
+  supervisor_->activeSetObserver()->update({
+      makeZone(WaterZoneKindEnumType::OUTSIDE, 0.0, 5.0, /*floorAsAsf=*/true)});
+  supervisor_->update();
+
+  const ConstraintSnapshot snapshot = supervisor_->snapshot();
+  ASSERT_EQ(snapshot.zones.size(), 1u);
+  const ElevationBand& band = snapshot.zones[0].band;
+  EXPECT_TRUE(band.convertible);
+  ASSERT_TRUE(band.ceiling.has_value());
+  EXPECT_EQ(band.ceiling->frame, ElevationBound::Frame::DEPTH);
+  EXPECT_DOUBLE_EQ(band.ceiling->value, 0.0);
+  ASSERT_TRUE(band.floor.has_value());
+  EXPECT_EQ(band.floor->frame, ElevationBound::Frame::ASF);
+  EXPECT_DOUBLE_EQ(band.floor->value, 5.0);
 }
 
 TEST_F(ConstraintSupervisorTest, EmptyActiveSetClearsSnapshot) {

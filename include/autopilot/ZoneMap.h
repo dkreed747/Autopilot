@@ -28,13 +28,6 @@
 
 namespace arlcore::autopilot {
 
-//! \brief The depth interval (positive down, meters) a query applies to; zones whose elevation
-//! band does not overlap it are not obstacles for that query.
-struct ElevationEnvelope {
-  double minDepthM = 0.0;
-  double maxDepthM = 0.0;
-};
-
 //! \brief Compliance classification of a position against the active zones.
 enum class ZoneCompliance {
   COMPLIANT,  // clearance >= compliance hysteresis
@@ -67,14 +60,22 @@ class ZoneMap {
   //! overlaps `envelope` (padded by the configured elevation margin).
   ZoneSet activeSet(const GeographicLib::LocalCartesian& frame, const ElevationEnvelope& envelope) const;
 
-  //! \brief Classify a geodetic position at vehicle depth `depthM` against the active zones.
-  ZoneCompliance classify(const GeoPoint& position, double depthM) const;
+  //! \brief Classify a geodetic position at vehicle depth `depthM` (and, when known, altitude
+  //! above the sea floor `asfM` — required to gate ASF-framed zone bands) against the zones.
+  ZoneCompliance classify(const GeoPoint& position, double depthM,
+                          std::optional<double> asfM = std::nullopt) const;
 
-  //! \brief Compliance clearance (meters, positive = compliant) of a position at depth `depthM`.
-  double clearanceM(const GeoPoint& position, double depthM) const;
+  //! \brief Compliance clearance (meters, positive = compliant) of a position.
+  double clearanceM(const GeoPoint& position, double depthM,
+                    std::optional<double> asfM = std::nullopt) const;
 
   //! \brief Whether a commanded point keeps `marginM` clearance (command-time validation).
-  bool pointCompliant(const GeoPoint& position, double depthM, double marginM) const;
+  bool pointCompliant(const GeoPoint& position, double depthM, double marginM,
+                      std::optional<double> asfM = std::nullopt) const;
+
+  //! \brief Clearance of a position over an explicit vertical envelope (for points whose
+  //! depth is not known exactly, e.g. waypoints commanded in the ASF frame).
+  double clearanceM(const GeoPoint& position, const ElevationEnvelope& envelope) const;
 
   //! \brief The map's own anchor frame (unset until the first zone is ingested). Callers that
   //! need raw ZoneSet queries at the vehicle (vector avoidance, recovery) project through it.

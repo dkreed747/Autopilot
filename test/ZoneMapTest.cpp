@@ -88,8 +88,8 @@ TEST(ZoneMapTest, ClassifyAgainstKeepIn) {
 TEST(ZoneMapTest, ElevationBandGatesZones) {
   // Zone covers depths 10..20 m only.
   ElevationBand band;
-  band.ceilingDepthM = 10.0;
-  band.floorDepthM = 20.0;
+  band.ceiling = ElevationBound{ElevationBound::Frame::DEPTH, 10.0};
+  band.floor = ElevationBound{ElevationBound::Frame::DEPTH, 20.0};
   ZoneMap map(defaultZonesConfig());
   map.ingest(snapshotWith({squareZone(ZoneKind::KEEP_OUT, 100.0, band)}));
 
@@ -99,6 +99,37 @@ TEST(ZoneMapTest, ElevationBandGatesZones) {
   EXPECT_EQ(map.classify(at(50.0, 50.0), 15.0), ZoneCompliance::VIOLATION);
   // The elevation margin pads the vehicle envelope: 9 m depth + 2 m margin reaches the band.
   EXPECT_EQ(map.classify(at(50.0, 50.0), 9.0), ZoneCompliance::VIOLATION);
+}
+
+TEST(ZoneMapTest, AsfFloorBoundGatesByAltitudeAboveSeaFloor) {
+  // The common mixed-frame band: ceiling at depth 0 (the surface) with the floor 5 m above
+  // the sea floor — the zone covers the whole water column except a near-bottom corridor.
+  ElevationBand band;
+  band.ceiling = ElevationBound{ElevationBound::Frame::DEPTH, 0.0};
+  band.floor = ElevationBound{ElevationBound::Frame::ASF, 5.0};
+  ZoneMap map(defaultZonesConfig());
+  map.ingest(snapshotWith({squareZone(ZoneKind::KEEP_OUT, 100.0, band)}));
+
+  // Mid-column (well above the floor cutoff): the zone applies.
+  EXPECT_EQ(map.classify(at(50.0, 50.0), 10.0, 50.0), ZoneCompliance::VIOLATION);
+  // Hugging the bottom, below the floor cutoff (2 m ASF + 2 m margin < 5 m): gated out.
+  EXPECT_EQ(map.classify(at(50.0, 50.0), 55.0, 2.0), ZoneCompliance::COMPLIANT);
+  // Unknown altitude above the sea floor never exonerates an ASF bound (conservative).
+  EXPECT_EQ(map.classify(at(50.0, 50.0), 55.0), ZoneCompliance::VIOLATION);
+}
+
+TEST(ZoneMapTest, AsfCeilingBoundGates) {
+  // A near-bottom zone: from 10 m above the floor down to the floor itself.
+  ElevationBand band;
+  band.ceiling = ElevationBound{ElevationBound::Frame::ASF, 10.0};
+  band.floor = ElevationBound{ElevationBound::Frame::ASF, 0.0};
+  ZoneMap map(defaultZonesConfig());
+  map.ingest(snapshotWith({squareZone(ZoneKind::KEEP_OUT, 100.0, band)}));
+
+  // Sailing high above it (20 m ASF - 2 m margin > 10 m): gated out.
+  EXPECT_EQ(map.classify(at(50.0, 50.0), 5.0, 20.0), ZoneCompliance::COMPLIANT);
+  // Inside the near-bottom layer: active.
+  EXPECT_EQ(map.classify(at(50.0, 50.0), 55.0, 4.0), ZoneCompliance::VIOLATION);
 }
 
 TEST(ZoneMapTest, UnconvertibleBandIsAlwaysActive) {

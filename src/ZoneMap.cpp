@@ -102,10 +102,17 @@ void ZoneMap::ingest(const ConstraintSnapshot& snapshot) {
 ZoneSet ZoneMap::activeSet(const GeographicLib::LocalCartesian& frame,
                            const ElevationEnvelope& envelope) const {
   ZoneSet set;
-  const double lo = envelope.minDepthM - config_.elevationMarginM;
-  const double hi = envelope.maxDepthM + config_.elevationMarginM;
+  ElevationEnvelope padded = envelope;
+  padded.minDepthM -= config_.elevationMarginM;
+  padded.maxDepthM += config_.elevationMarginM;
+  if (padded.minAsfM.has_value()) {
+    padded.minAsfM = padded.minAsfM.value() - config_.elevationMarginM;
+  }
+  if (padded.maxAsfM.has_value()) {
+    padded.maxAsfM = padded.maxAsfM.value() + config_.elevationMarginM;
+  }
   for (const StoredZone& zone : zones_) {
-    if (!zone.band.overlaps(lo, hi)) {
+    if (!zone.band.overlaps(padded)) {
       continue;
     }
     for (const std::vector<GeoPoint>& ring : zone.rings) {
@@ -124,11 +131,11 @@ ZoneSet ZoneMap::activeSet(const GeographicLib::LocalCartesian& frame,
   return set;
 }
 
-double ZoneMap::clearanceM(const GeoPoint& position, double depthM) const {
+double ZoneMap::clearanceM(const GeoPoint& position, const ElevationEnvelope& envelope) const {
   if (!anchor_.has_value() || zones_.empty()) {
     return std::numeric_limits<double>::max();
   }
-  const ZoneSet set = activeSet(anchor_.value(), ElevationEnvelope{depthM, depthM});
+  const ZoneSet set = activeSet(anchor_.value(), envelope);
   if (set.empty()) {
     return std::numeric_limits<double>::max();
   }
@@ -139,8 +146,14 @@ double ZoneMap::clearanceM(const GeoPoint& position, double depthM) const {
   return set.clearanceM(Vec2{x, y});
 }
 
-ZoneCompliance ZoneMap::classify(const GeoPoint& position, double depthM) const {
-  const double clearance = clearanceM(position, depthM);
+double ZoneMap::clearanceM(const GeoPoint& position, double depthM,
+                           std::optional<double> asfM) const {
+  return clearanceM(position, ElevationEnvelope::atPoint(depthM, asfM));
+}
+
+ZoneCompliance ZoneMap::classify(const GeoPoint& position, double depthM,
+                                 std::optional<double> asfM) const {
+  const double clearance = clearanceM(position, depthM, asfM);
   if (clearance < 0.0) {
     return ZoneCompliance::VIOLATION;
   }
@@ -150,8 +163,9 @@ ZoneCompliance ZoneMap::classify(const GeoPoint& position, double depthM) const 
   return ZoneCompliance::COMPLIANT;
 }
 
-bool ZoneMap::pointCompliant(const GeoPoint& position, double depthM, double marginM) const {
-  return clearanceM(position, depthM) >= marginM;
+bool ZoneMap::pointCompliant(const GeoPoint& position, double depthM, double marginM,
+                             std::optional<double> asfM) const {
+  return clearanceM(position, depthM, asfM) >= marginM;
 }
 
 }  // namespace arlcore::autopilot

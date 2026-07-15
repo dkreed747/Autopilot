@@ -71,19 +71,19 @@ TEST(RecoveryGuidanceTest, DrivesOutOfKeepOut) {
 
   // Vehicle 20 m inside the west edge of the keep-out.
   const GeoPoint inside = at(20.0, 100.0);
-  ASSERT_TRUE(recovery.begin(inside, 0.0, map));
+  ASSERT_TRUE(recovery.begin(inside, 0.0, std::nullopt, map));
   EXPECT_TRUE(recovery.active());
 
-  const auto cv = recovery.tick(inside, 0.0, map);
+  const auto cv = recovery.tick(inside, 0.0, std::nullopt, map);
   ASSERT_TRUE(cv.has_value());
   EXPECT_DOUBLE_EQ(cv->speedMps, 1.5);
   // Nearest exit is due west (azimuth -pi/2).
   EXPECT_NEAR(cv->headingRad, -M_PI / 2.0, 0.3);
   EXPECT_FALSE(cv->elevationM.has_value());  // elevation held
 
-  EXPECT_FALSE(recovery.complete(inside, 0.0, map));
+  EXPECT_FALSE(recovery.complete(inside, 0.0, std::nullopt, map));
   // Once clear of the zone by more than the hysteresis, recovery completes.
-  EXPECT_TRUE(recovery.complete(at(-10.0, 100.0), 0.0, map));
+  EXPECT_TRUE(recovery.complete(at(-10.0, 100.0), 0.0, std::nullopt, map));
 }
 
 TEST(RecoveryGuidanceTest, DrivesBackIntoKeepIn) {
@@ -92,14 +92,14 @@ TEST(RecoveryGuidanceTest, DrivesBackIntoKeepIn) {
 
   // Vehicle 30 m west of the keep-in.
   const GeoPoint outside = at(-30.0, 100.0);
-  ASSERT_TRUE(recovery.begin(outside, 0.0, map));
-  const auto cv = recovery.tick(outside, 0.0, map);
+  ASSERT_TRUE(recovery.begin(outside, 0.0, std::nullopt, map));
+  const auto cv = recovery.tick(outside, 0.0, std::nullopt, map);
   ASSERT_TRUE(cv.has_value());
   // Back inside is due east.
   EXPECT_NEAR(cv->headingRad, M_PI / 2.0, 0.3);
 
-  EXPECT_FALSE(recovery.complete(outside, 0.0, map));
-  EXPECT_TRUE(recovery.complete(at(50.0, 100.0), 0.0, map));
+  EXPECT_FALSE(recovery.complete(outside, 0.0, std::nullopt, map));
+  EXPECT_TRUE(recovery.complete(at(50.0, 100.0), 0.0, std::nullopt, map));
 }
 
 TEST(RecoveryGuidanceTest, UsesCruiseSpeedWhenUnconfigured) {
@@ -109,8 +109,8 @@ TEST(RecoveryGuidanceTest, UsesCruiseSpeedWhenUnconfigured) {
   RecoveryGuidance recovery(config, 3.0, 5.0);
 
   const GeoPoint inside = at(20.0, 100.0);
-  ASSERT_TRUE(recovery.begin(inside, 0.0, map));
-  const auto cv = recovery.tick(inside, 0.0, map);
+  ASSERT_TRUE(recovery.begin(inside, 0.0, std::nullopt, map));
+  const auto cv = recovery.tick(inside, 0.0, std::nullopt, map);
   ASSERT_TRUE(cv.has_value());
   EXPECT_DOUBLE_EQ(cv->speedMps, 3.0);
 }
@@ -118,9 +118,9 @@ TEST(RecoveryGuidanceTest, UsesCruiseSpeedWhenUnconfigured) {
 TEST(RecoveryGuidanceTest, NoZonesMeansNoRecoveryTarget) {
   ZoneMap map(ZonesConfig{});
   RecoveryGuidance recovery(instantConfig(), 3.0, 5.0);
-  EXPECT_FALSE(recovery.begin(at(0.0, 0.0), 0.0, map));
+  EXPECT_FALSE(recovery.begin(at(0.0, 0.0), 0.0, std::nullopt, map));
   EXPECT_FALSE(recovery.active());
-  EXPECT_FALSE(recovery.tick(at(0.0, 0.0), 0.0, map).has_value());
+  EXPECT_FALSE(recovery.tick(at(0.0, 0.0), 0.0, std::nullopt, map).has_value());
 }
 
 }  // namespace arlcore::autopilot

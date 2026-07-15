@@ -667,8 +667,9 @@ function bindEditor() {
 function describeConstraint(c) {
   if (c.type === 'keep_in' || c.type === 'keep_out') {
     const kind = c.type === 'keep_in' ? 'keep-in' : 'keep-out';
+    const bound = (v, f) => f === 'asf' ? `${v} m ASF` : `${v} m`;
     const band = c.ceiling_m !== undefined && c.floor_m !== undefined
-        ? ` · ${c.ceiling_m}–${c.floor_m} m` : '';
+        ? ` · ${bound(c.ceiling_m, c.ceiling_frame)} → ${bound(c.floor_m, c.floor_frame)}` : '';
     return `${kind} · ${(c.polygon || []).length} pts${band}`;
   }
   const op = c.op === 'gte' ? '≥' : '≤';
@@ -681,9 +682,11 @@ let lastConSignature = '';
 
 function renderConstraintsPanel() {
   const con = state.constraints;
-  $('con-banner').hidden = !con.enabled || con.active_known;
-  const list = $('con-list');
   const items = con.items || [];
+  // The applied-set acknowledgement only exists after the FIRST activation command, so the
+  // unknown state must never block toggling (chicken-and-egg); it only warns.
+  $('con-banner').hidden = !con.enabled || con.active_known || !items.length;
+  const list = $('con-list');
   const signature = JSON.stringify([items, con.active_ids, state.pendingActive, state.conSelected,
                                     con.enabled]);
   if (signature !== lastConSignature) {
@@ -708,8 +711,7 @@ function renderConstraintsPanel() {
       const pending = state.pendingActive !== null &&
           state.pendingActive.includes(c.id) !== (con.active_ids || []).includes(c.id);
       li.innerHTML =
-          `<input type="checkbox" class="con-active" ${isActive(c.id) ? 'checked' : ''}` +
-          ` ${con.active_known ? '' : 'disabled'}>` +
+          `<input type="checkbox" class="con-active" ${isActive(c.id) ? 'checked' : ''}>` +
           `<span class="con-desc"><b>${c.name || c.type}</b> — ${describeConstraint(c)}` +
           `${pending ? ' <em class="pending">pending…</em>' : ''}` +
           `${c.state === false && isActive(c.id) ? ' <em class="viol">VIOLATED</em>' : ''}</span>`;
@@ -736,6 +738,12 @@ function renderConstraintEditor() {
   if (isZone) {
     setVal($('con-ceiling'), c.ceiling_m ?? 0);
     setVal($('con-floor'), c.floor_m ?? 100);
+    if (document.activeElement !== $('con-ceiling-frame')) {
+      $('con-ceiling-frame').value = c.ceiling_frame || 'depth';
+    }
+    if (document.activeElement !== $('con-floor-frame')) {
+      $('con-floor-frame').value = c.floor_frame || 'depth';
+    }
   } else {
     setVal($('con-value'), c.value ?? 0);
     if (document.activeElement !== $('con-op')) $('con-op').value = c.op || 'lte';
@@ -756,7 +764,9 @@ async function applyConstraintEdit() {
   if (c.type === 'keep_in' || c.type === 'keep_out') {
     body.polygon = c.polygon;
     body.ceiling_m = parseFloat($('con-ceiling').value) || 0;
+    body.ceiling_frame = $('con-ceiling-frame').value;
     body.floor_m = parseFloat($('con-floor').value) || 100;
+    body.floor_frame = $('con-floor-frame').value;
   } else {
     body.value = parseFloat($('con-value').value) || 0;
     body.op = $('con-op').value;
@@ -856,7 +866,8 @@ async function finishZoneDraw() {
                ((state.constraints.items || []).length + 1);
   try {
     await api('/api/constraints', {
-      type: draft.kind, name, polygon, ceiling_m: 0.0, floor_m: 100.0,
+      type: draft.kind, name, polygon,
+      ceiling_m: 0.0, ceiling_frame: 'depth', floor_m: 100.0, floor_frame: 'depth',
     });
     exitZoneDraw();
   } catch (e) {

@@ -130,10 +130,29 @@ void ConstraintsClient::sendAdd(const arlcore::NumericGuid& conditionalId, const
   addSender_->send(cmd);
 }
 
+namespace {
+
+//! \brief Fill a UMAA elevation bound in the requested frame ("depth" | "asf").
+void setElevationBound(UMAA::Common::Measurement::ElevationVariantType* bound, double value,
+                       const std::string& frame) {
+  if (frame == "asf") {
+    bound->ElevationVariantTypeSubtypes().AltitudeASFVariantVariant(
+        UMAA::Common::Measurement::AltitudeASFVariantType());
+    bound->ElevationVariantTypeSubtypes().AltitudeASFVariantVariant().altitude(value);
+  } else {
+    bound->ElevationVariantTypeSubtypes().DepthVariantVariant(
+        UMAA::Common::Measurement::DepthVariantType());
+    bound->ElevationVariantTypeSubtypes().DepthVariantVariant().depth(value);
+  }
+}
+
+}  // namespace
+
 std::string ConstraintsClient::upsertZone(const std::string& id, const std::string& name,
                                           bool keepIn,
                                           const std::vector<std::array<double, 2>>& polygonLatLon,
-                                          double ceilingDepthM, double floorDepthM) {
+                                          double ceilingM, const std::string& ceilingFrame,
+                                          double floorM, const std::string& floorFrame) {
   const arlcore::NumericGuid conditionalId = parseOrMint(id);
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const DateTime stamp = arlcore::umaa::getTimestamp();
@@ -142,12 +161,8 @@ std::string ConstraintsClient::upsertZone(const std::string& id, const std::stri
   spec.specializationReferenceID(specId.getGuid());
   spec.specializationReferenceTimestamp(stamp);
   spec.zoneKind(keepIn ? WaterZoneKindEnumType::INSIDE : WaterZoneKindEnumType::OUTSIDE);
-  spec.ceiling().ElevationVariantTypeSubtypes().DepthVariantVariant(
-      UMAA::Common::Measurement::DepthVariantType());
-  spec.ceiling().ElevationVariantTypeSubtypes().DepthVariantVariant().depth(ceilingDepthM);
-  spec.floor().ElevationVariantTypeSubtypes().DepthVariantVariant(
-      UMAA::Common::Measurement::DepthVariantType());
-  spec.floor().ElevationVariantTypeSubtypes().DepthVariantVariant().depth(floorDepthM);
+  setElevationBound(&spec.ceiling(), ceilingM, ceilingFrame);
+  setElevationBound(&spec.floor(), floorM, floorFrame);
 
   UMAA::MM::BaseType::PolygonVariantType polygon;
   for (const auto& [lat, lon] : polygonLatLon) {
@@ -307,10 +322,18 @@ void ConstraintsClient::rebuildRecords() {
         const auto& ceiling = spec->ceiling().ElevationVariantTypeSubtypes();
         if (ceiling._d() == ElevationVariantTypeEnum::DEPTHVARIANT_D) {
           record.ceilingM = ceiling.DepthVariantVariant().depth();
+          record.ceilingFrame = "depth";
+        } else if (ceiling._d() == ElevationVariantTypeEnum::ALTITUDEASFVARIANT_D) {
+          record.ceilingM = ceiling.AltitudeASFVariantVariant().altitude();
+          record.ceilingFrame = "asf";
         }
         const auto& floor = spec->floor().ElevationVariantTypeSubtypes();
         if (floor._d() == ElevationVariantTypeEnum::DEPTHVARIANT_D) {
           record.floorM = floor.DepthVariantVariant().depth();
+          record.floorFrame = "depth";
+        } else if (floor._d() == ElevationVariantTypeEnum::ALTITUDEASFVARIANT_D) {
+          record.floorM = floor.AltitudeASFVariantVariant().altitude();
+          record.floorFrame = "asf";
         }
         for (const auto& shape : spec->zone()) {
           if (shape.ShapeVariantTypeSubtypes()._d() ==

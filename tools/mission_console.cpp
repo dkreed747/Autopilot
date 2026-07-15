@@ -313,8 +313,14 @@ json constraintsJson(const ConstraintsClient& client) {
         item["polygon"].push_back({lat, lon});
       }
     }
-    if (record.ceilingM.has_value()) item["ceiling_m"] = record.ceilingM.value();
-    if (record.floorM.has_value()) item["floor_m"] = record.floorM.value();
+    if (record.ceilingM.has_value()) {
+      item["ceiling_m"] = record.ceilingM.value();
+      item["ceiling_frame"] = record.ceilingFrame;
+    }
+    if (record.floorM.has_value()) {
+      item["floor_m"] = record.floorM.value();
+      item["floor_frame"] = record.floorFrame;
+    }
     if (record.value.has_value()) item["value"] = record.value.value();
     if (!record.op.empty()) item["op"] = record.op;
     j["items"].push_back(item);
@@ -343,8 +349,23 @@ void validateConstraintBody(const json& body) {
     }
     const double ceiling = body.value("ceiling_m", 0.0);
     const double floor = body.value("floor_m", 100.0);
-    if (!(ceiling < floor)) {
-      throw std::runtime_error("zone ceiling_m (shallower) must be less than floor_m (deeper)");
+    const std::string ceilingFrame = body.value("ceiling_frame", "depth");
+    const std::string floorFrame = body.value("floor_frame", "depth");
+    for (const std::string& frame : {ceilingFrame, floorFrame}) {
+      if (frame != "depth" && frame != "asf") {
+        throw std::runtime_error("zone elevation frames must be 'depth' or 'asf'");
+      }
+    }
+    // Ordering (ceiling shallower than floor) is only checkable within one frame: shallower
+    // means a smaller depth but a larger altitude above the sea floor. Mixed frames (e.g.
+    // ceiling at depth 0, floor above the sea floor) are always accepted.
+    if (ceilingFrame == floorFrame) {
+      const bool ordered = ceilingFrame == "depth" ? ceiling < floor : ceiling > floor;
+      if (!ordered) {
+        throw std::runtime_error(ceilingFrame == "depth"
+            ? "zone ceiling_m (shallower) must be less than floor_m (deeper)"
+            : "zone ceiling_m (shallower) must be a larger above-floor altitude than floor_m");
+      }
     }
   } else if (type == "speed" || type == "depth") {
     const double value = body.at("value").get<double>();
@@ -550,7 +571,9 @@ int main(int argc, char** argv) {
         }
         newId = constraintsClient->upsertZone(id, name, type == "keep_in", polygon,
                                               body.value("ceiling_m", 0.0),
-                                              body.value("floor_m", 100.0));
+                                              body.value("ceiling_frame", "depth"),
+                                              body.value("floor_m", 100.0),
+                                              body.value("floor_frame", "depth"));
       } else if (type == "speed") {
         newId = constraintsClient->upsertSpeed(id, name, body.value("op", "lte"),
                                                body.at("value").get<double>());

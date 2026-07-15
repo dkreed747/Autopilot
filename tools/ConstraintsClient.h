@@ -58,8 +58,10 @@ struct ConstraintRecord {
   std::string name;
   std::string type;  // "keep_in" | "keep_out" | "speed" | "depth" | "other"
   std::vector<std::array<double, 2>> polygon;  // lat, lon (zones)
-  std::optional<double> ceilingM;              // zone band in depth, positive down
-  std::optional<double> floorM;
+  std::optional<double> ceilingM;              // zone shallow bound, in ceilingFrame
+  std::string ceilingFrame = "depth";          // "depth" (positive down) | "asf" (above sea floor)
+  std::optional<double> floorM;                // zone deep bound, in floorFrame
+  std::string floorFrame = "depth";
   std::optional<double> value;                 // speed (m/s) / depth (m)
   std::string op;                              // "lte" | "gte"
   bool active = false;
@@ -93,10 +95,13 @@ class ConstraintsClient {
                     const dds::sub::qos::DataReaderQos& largeSetRqos,
                     const arlcore::NumericGuid& destinationId);
 
-  //! \brief Create or update a water zone (empty `id` mints a new one). Returns the id.
+  //! \brief Create or update a water zone (empty `id` mints a new one). The ceiling/floor
+  //! frames are "depth" (meters below the surface) or "asf" (meters above the sea floor) —
+  //! mixable, e.g. a ceiling at depth 0 with a floor 5 m above the sea floor. Returns the id.
   std::string upsertZone(const std::string& id, const std::string& name, bool keepIn,
                          const std::vector<std::array<double, 2>>& polygonLatLon,
-                         double ceilingDepthM, double floorDepthM);
+                         double ceilingM, const std::string& ceilingFrame,
+                         double floorM, const std::string& floorFrame);
 
   //! \brief Create or update a speed constraint ("lte" = max speed, "gte" = min speed).
   std::string upsertSpeed(const std::string& id, const std::string& name, const std::string& op,

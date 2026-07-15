@@ -182,7 +182,9 @@ bool AutopilotBrain::beginRecovery() {
   }
   const GeoPoint at{pose->position().geodeticLatitude(), pose->position().geodeticLongitude()};
   const double depth = pose->depth().has_value() ? pose->depth().value() : 0.0;
-  const bool found = recovery_->begin(at, depth, *zoneMap_);
+  const std::optional<double> asf = pose->altitudeASF().has_value()
+      ? std::optional<double>(pose->altitudeASF().value()) : std::nullopt;
+  const bool found = recovery_->begin(at, depth, asf, *zoneMap_);
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: zone recovery engaged"
     << (found ? "" : " (no target found; holding zero speed while grace runs)"))
   return found;
@@ -199,7 +201,9 @@ bool AutopilotBrain::recoveryComplete() {
   }
   const GeoPoint at{pose->position().geodeticLatitude(), pose->position().geodeticLongitude()};
   const double depth = pose->depth().has_value() ? pose->depth().value() : 0.0;
-  return recovery_->complete(at, depth, *zoneMap_);
+  const std::optional<double> asf = pose->altitudeASF().has_value()
+      ? std::optional<double>(pose->altitudeASF().value()) : std::nullopt;
+  return recovery_->complete(at, depth, asf, *zoneMap_);
 }
 
 void AutopilotBrain::endRecovery() {
@@ -352,7 +356,9 @@ void AutopilotBrain::updateRecoveryControl(const GlobalPoseReportType& pose) {
   if (recovery_ && zoneMap_ != nullptr) {
     const GeoPoint at{pose.position().geodeticLatitude(), pose.position().geodeticLongitude()};
     const double depth = pose.depth().has_value() ? pose.depth().value() : 0.0;
-    const std::optional<ControlVector> cv = recovery_->tick(at, depth, *zoneMap_);
+    const std::optional<double> asf = pose.altitudeASF().has_value()
+        ? std::optional<double>(pose.altitudeASF().value()) : std::nullopt;
+    const std::optional<ControlVector> cv = recovery_->tick(at, depth, asf, *zoneMap_);
     if (cv.has_value()) {
       emitControl(cv.value());
       return;
@@ -394,8 +400,10 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
   if (vectorGuidance_ && zoneMap_ != nullptr && zoneMap_->hasZones() &&
       zoneMap_->anchor().has_value()) {
     const double depthM = pose.depth().has_value() ? pose.depth().value() : 0.0;
+    const std::optional<double> asfM = pose.altitudeASF().has_value()
+        ? std::optional<double>(pose.altitudeASF().value()) : std::nullopt;
     const ZoneSet zones = zoneMap_->activeSet(zoneMap_->anchor().value(),
-                                              ElevationEnvelope{depthM, depthM});
+                                              ElevationEnvelope::atPoint(depthM, asfM));
     if (!zones.empty()) {
       double xE = 0.0;
       double yN = 0.0;

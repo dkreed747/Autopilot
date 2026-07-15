@@ -143,15 +143,23 @@ bool WaypointControlServiceProvider::waypointsZoneCompliant(
     const GlobalWaypointType& wp = waypoints[i];
     const GeoPoint at{wp.position().value().geodeticLatitude(),
                       wp.position().value().geodeticLongitude()};
-    // Gate at the waypoint's commanded depth when it is expressed as one; surface otherwise.
-    double depthM = 0.0;
+    // Gate at the waypoint's commanded vertical position. A depth elevation gives an exact
+    // depth; an above-sea-floor elevation gives an exact ASF but an unknown depth (no
+    // bathymetry), so the depth interval widens to everything — conservative. No elevation
+    // means the surface.
+    ElevationEnvelope envelope = ElevationEnvelope::atPoint(0.0);
     if (wp.elevation().has_value()) {
       const std::optional<ElevationValue> el = tolerance::extractElevation(wp.elevation().value());
       if (el.has_value() && el->frame == ElevationFrame::DEPTH) {
-        depthM = el->valueM;
+        envelope = ElevationEnvelope::atPoint(el->valueM);
+      } else if (el.has_value() && el->frame == ElevationFrame::ALTITUDE_ASF) {
+        envelope.minDepthM = -1.0e9;
+        envelope.maxDepthM = 1.0e9;
+        envelope.minAsfM = el->valueM;
+        envelope.maxAsfM = el->valueM;
       }
     }
-    if (!zoneMap_->pointCompliant(at, depthM, marginM)) {
+    if (zoneMap_->clearanceM(at, envelope) < marginM) {
       if (message != nullptr) {
         *message = "Waypoint " + std::to_string(i + 1) + " violates an active water zone";
       }

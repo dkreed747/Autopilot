@@ -43,14 +43,19 @@ using UMAA::MM::ConditionalStateReport::ConditionalStateReportType;
 
 namespace {
 
-//! \brief Convert a UMAA elevation bound to canonical depth (positive down). MSL altitude is
-//! depth-negated; AGL/ASF/geodetic frames have no fixed depth equivalent and return nullopt.
-std::optional<double> elevationToDepth(const ElevationVariantTypeUnion& elevation) {
+//! \brief Convert a UMAA elevation bound to an evaluable zone bound. Depth is canonical, MSL
+//! altitude negates to depth, and above-sea-floor keeps its own frame (evaluated against the
+//! vehicle's altitudeASF). AGL/geodetic frames have no evaluable equivalent -> nullopt.
+std::optional<ElevationBound> toElevationBound(const ElevationVariantTypeUnion& elevation) {
   switch (elevation._d()) {
     case ElevationVariantTypeEnum::DEPTHVARIANT_D:
-      return elevation.DepthVariantVariant().depth();
+      return ElevationBound{ElevationBound::Frame::DEPTH, elevation.DepthVariantVariant().depth()};
     case ElevationVariantTypeEnum::ALTITUDEMSLVARIANT_D:
-      return -elevation.AltitudeMSLVariantVariant().altitude();
+      return ElevationBound{ElevationBound::Frame::DEPTH,
+                            -elevation.AltitudeMSLVariantVariant().altitude()};
+    case ElevationVariantTypeEnum::ALTITUDEASFVARIANT_D:
+      return ElevationBound{ElevationBound::Frame::ASF,
+                            elevation.AltitudeASFVariantVariant().altitude()};
     default:
       return std::nullopt;
   }
@@ -64,17 +69,24 @@ std::optional<ZoneRecord> convertWaterZone(const WaterZoneConditional& zone) {
   record.kind = zone.getConditionalWaterZoneKind() == WaterZoneKindEnumType::INSIDE
       ? ZoneKind::KEEP_IN : ZoneKind::KEEP_OUT;
 
-  // The zone's vertical extent: ceiling = shallower bound, floor = deeper bound. Frames that
-  // cannot convert to depth make the band conservatively always-applicable.
-  const std::optional<double> ceilingDepth = elevationToDepth(zone.getCeiling());
-  const std::optional<double> floorDepth = elevationToDepth(zone.getFloor());
-  if (!ceilingDepth.has_value() || !floorDepth.has_value()) {
+  // The zone's vertical extent: ceiling = shallow cutoff, floor = deep cutoff, each in its own
+  // frame (mixed depth/ASF bands are supported; e.g. ceiling at depth 0 with a floor above the
+  // sea floor). Frames with no evaluable equivalent make the band always-applicable.
+  record.band.ceiling = toElevationBound(zone.getCeiling());
+  record.band.floor = toElevationBound(zone.getFloor());
+  if (!record.band.ceiling.has_value() || !record.band.floor.has_value()) {
     record.band.convertible = false;
     UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Water zone " << record.conditionalId << " has a ceiling/floor "
-      "frame with no depth equivalent; treating the zone as active at every depth")
-  } else {
-    record.band.ceilingDepthM = std::min(ceilingDepth.value(), floorDepth.value());
-    record.band.floorDepthM = std::max(ceilingDepth.value(), floorDepth.value());
+      "frame with no evaluable equivalent; treating the zone as active at every depth")
+  } else if (record.band.ceiling->frame == record.band.floor->frame) {
+    // Same-frame bounds normalize so the ceiling is the shallow one: the smaller depth, or the
+    // larger altitude above the sea floor.
+    const bool depthFrame = record.band.ceiling->frame == ElevationBound::Frame::DEPTH;
+    const bool swapped = depthFrame ? record.band.ceiling->value > record.band.floor->value
+                                    : record.band.ceiling->value < record.band.floor->value;
+    if (swapped) {
+      std::swap(record.band.ceiling, record.band.floor);
+    }
   }
 
   for (const ShapeVariantType& shape : zone.getZones()) {
@@ -248,6 +260,8 @@ void ConstraintSupervisor::updateSafety() {
   const GeoPoint at{pose.has_value() ? pose->position().geodeticLatitude() : 0.0,
                     pose.has_value() ? pose->position().geodeticLongitude() : 0.0};
   const double depthM = (pose.has_value() && pose->depth().has_value()) ? pose->depth().value() : 0.0;
+  const std::optional<double> asfM = (pose.has_value() && pose->altitudeASF().has_value())
+      ? std::optional<double>(pose->altitudeASF().value()) : std::nullopt;
 
   bool anyConfirmed = false;
   bool anyConfirmedZone = false;
@@ -291,7 +305,7 @@ void ConstraintSupervisor::updateSafety() {
         // Clearing needs the predicate true for clear_hold_s — and, for zones, the position
         // classified COMPLIANT (outside the hysteresis band), not merely a hair's breadth in.
         const bool zoneCompliant = tracker.cls != ConstraintClass::ZONE || zoneMap_ == nullptr ||
-            zoneMap_->classify(at, depthM) == ZoneCompliance::COMPLIANT;
+            zoneMap_->classify(at, depthM, asfM) == ZoneCompliance::COMPLIANT;
         if (zoneCompliant) {
           if (!tracker.compliantSince.has_value()) {
             tracker.compliantSince = now;

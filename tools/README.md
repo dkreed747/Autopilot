@@ -53,7 +53,9 @@ the per-conditional state reports back. REST: `POST /api/constraints` (create; a
   to add vertices; double-click, press Enter, or click the first vertex to close (Esc
   cancels; self-intersecting rings are rejected). Keep-in areas render green, keep-out red,
   inactive ones faded/dashed, violated ones flashing. Click a zone (chart or list) to edit
-  its name and ceiling/floor depths.
+  its name and ceiling/floor bounds — each bound carries its own frame picker (depth, or
+  altitude above the sea floor), so a zone can span e.g. from the surface (depth 0) down to
+  5 m above the sea floor.
 - **Speed / depth limits**: *+ Speed* / *+ Depth* create at-most/at-least value constraints
   edited in the same panel.
 - Constraints are **global** (they outlive any one vector/waypoint session) and **toggled**

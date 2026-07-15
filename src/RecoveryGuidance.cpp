@@ -27,13 +27,14 @@ RecoveryGuidance::RecoveryGuidance(const RecoveryConfig& config, double cruiseSp
                                    double safetyMarginM)
     : config_(config), cruiseSpeedMps_(cruiseSpeedMps), safetyMarginM_(safetyMarginM) {}
 
-bool RecoveryGuidance::begin(const GeoPoint& position, double depthM, const ZoneMap& map) {
+bool RecoveryGuidance::begin(const GeoPoint& position, double depthM, std::optional<double> asfM,
+                             const ZoneMap& map) {
   end();
   const auto& anchor = map.anchor();
   if (!anchor.has_value() || !map.hasZones()) {
     return false;
   }
-  const ZoneSet zones = map.activeSet(anchor.value(), ElevationEnvelope{depthM, depthM});
+  const ZoneSet zones = map.activeSet(anchor.value(), ElevationEnvelope::atPoint(depthM, asfM));
   double x = 0.0;
   double y = 0.0;
   double z = 0.0;
@@ -53,14 +54,15 @@ bool RecoveryGuidance::begin(const GeoPoint& position, double depthM, const Zone
 }
 
 std::optional<ControlVector> RecoveryGuidance::tick(const GeoPoint& position, double depthM,
+                                                    std::optional<double> asfM,
                                                     const ZoneMap& map) {
   if (!target_.has_value()) {
     return std::nullopt;
   }
   // Re-validate the carrot: a constraint change can invalidate the picked point mid-recovery.
-  if (!map.pointCompliant(target_.value(), depthM, safetyMarginM_ - 1e-6)) {
+  if (!map.pointCompliant(target_.value(), depthM, safetyMarginM_ - 1e-6, asfM)) {
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Recovery: target no longer compliant; re-picking")
-    if (!begin(position, depthM, map)) {
+    if (!begin(position, depthM, asfM, map)) {
       return std::nullopt;
     }
   }
@@ -82,8 +84,9 @@ std::optional<ControlVector> RecoveryGuidance::tick(const GeoPoint& position, do
   return cv;
 }
 
-bool RecoveryGuidance::complete(const GeoPoint& position, double depthM, const ZoneMap& map) {
-  if (map.classify(position, depthM) == ZoneCompliance::COMPLIANT) {
+bool RecoveryGuidance::complete(const GeoPoint& position, double depthM,
+                                std::optional<double> asfM, const ZoneMap& map) {
+  if (map.classify(position, depthM, asfM) == ZoneCompliance::COMPLIANT) {
     const auto now = std::chrono::steady_clock::now();
     if (!compliantSince_.has_value()) {
       compliantSince_ = now;

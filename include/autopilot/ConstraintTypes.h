@@ -53,25 +53,70 @@ struct ZoneShape {
   std::optional<ZoneEllipse> ellipse;
 };
 
-//! \brief The vertical extent a zone applies to, in canonical depth (meters below the surface,
-//! positive down). A missing bound is unbounded in that direction. When the UMAA ceiling/floor
-//! frame cannot be converted to depth (AGL/ASF/geodetic), `convertible` is false and the zone
-//! is conservatively treated as always vertically applicable.
+//! \brief One vertical bound of a zone, in the frame it was commanded in. DEPTH is meters
+//! below the surface (positive down); ASF is meters above the sea floor (positive up).
+//! Mixed-frame bands are first-class: e.g. ceiling at depth 0 with a floor 5 m above the
+//! sea floor covers the whole water column except a near-bottom corridor.
+struct ElevationBound {
+  enum class Frame { DEPTH, ASF };
+  Frame frame = Frame::DEPTH;
+  double value = 0.0;
+};
+
+//! \brief The vertical extent a query applies to: a depth interval plus, when known, an
+//! above-sea-floor interval (from the vehicle's altitudeASF). An absent ASF interval is
+//! conservative: ASF-framed zone bounds cannot exonerate the zone without it.
+struct ElevationEnvelope {
+  double minDepthM = 0.0;
+  double maxDepthM = 0.0;
+  std::optional<double> minAsfM;
+  std::optional<double> maxAsfM;
+
+  static ElevationEnvelope atPoint(double depthM, std::optional<double> asfM = std::nullopt) {
+    ElevationEnvelope env;
+    env.minDepthM = depthM;
+    env.maxDepthM = depthM;
+    env.minAsfM = asfM;
+    env.maxAsfM = asfM;
+    return env;
+  }
+};
+
+//! \brief The vertical extent a zone applies to. The ceiling is the shallow cutoff, the floor
+//! the deep cutoff; each carries its own frame. A missing bound is unbounded in that
+//! direction. When a UMAA ceiling/floor frame has no evaluable equivalent (AGL/geodetic),
+//! `convertible` is false and the zone is conservatively treated as always applicable.
 struct ElevationBand {
-  std::optional<double> ceilingDepthM;  // shallowest depth the zone covers (smaller value)
-  std::optional<double> floorDepthM;    // deepest depth the zone covers (larger value)
+  std::optional<ElevationBound> ceiling;  // shallow cutoff
+  std::optional<ElevationBound> floor;    // deep cutoff
   bool convertible = true;
 
-  //! \brief Whether this band overlaps the depth interval [minDepthM, maxDepthM].
-  bool overlaps(double minDepthM, double maxDepthM) const {
+  //! \brief Whether this band overlaps the envelope. Unknown envelope components never
+  //! exonerate a bound (conservative).
+  bool overlaps(const ElevationEnvelope& env) const {
     if (!convertible) {
       return true;
     }
-    if (ceilingDepthM.has_value() && maxDepthM < ceilingDepthM.value()) {
-      return false;
+    if (ceiling.has_value()) {
+      // Everything shallower than the ceiling is outside the zone. Shallower means a smaller
+      // depth, or a larger altitude above the sea floor.
+      if (ceiling->frame == ElevationBound::Frame::DEPTH) {
+        if (env.maxDepthM < ceiling->value) {
+          return false;
+        }
+      } else if (env.minAsfM.has_value() && env.minAsfM.value() > ceiling->value) {
+        return false;
+      }
     }
-    if (floorDepthM.has_value() && minDepthM > floorDepthM.value()) {
-      return false;
+    if (floor.has_value()) {
+      // Everything deeper than the floor is outside the zone.
+      if (floor->frame == ElevationBound::Frame::DEPTH) {
+        if (env.minDepthM > floor->value) {
+          return false;
+        }
+      } else if (env.maxAsfM.has_value() && env.maxAsfM.value() < floor->value) {
+        return false;
+      }
     }
     return true;
   }
