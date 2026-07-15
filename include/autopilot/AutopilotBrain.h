@@ -23,6 +23,8 @@
 #include <vector>
 
 #include "AutopilotConfig.h"
+#include "ConstraintClamp.h"
+#include "ConstraintTypes.h"
 #include "DubinsPathPlanner.h"
 #include "IAutopilot.h"
 #include "IVehicleControl.h"
@@ -54,16 +56,29 @@ class AutopilotBrain : public IAutopilot {
   //! \brief Current active driving mode (for diagnostics/tests).
   DriveSource mode() const;
 
+  //! \brief Install the constraint source whose snapshot clamps every emitted control vector.
+  //! Nullable; without one the brain emits unclamped.
+  void setConstraintSource(const IConstraintSource* source);
+
  private:
   PlannerParams derivePlannerParams() const;
   void updateVectorControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
   void updateWaypointControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
+
+  //! \brief The single control-output funnel: applies the constraint clamps (most restrictive
+  //! of dynamic constraints, static settings, and platform capabilities) to every control
+  //! vector before it reaches the vehicle. All send sites route through here.
+  void emitControl(const ControlVector& cv);
 
   NavState* nav_;
   IVehicleControl* vehicle_;
   AutopilotConfig config_;
   DrivingResourceArbiter arbiter_;
   DubinsPathPlanner planner_;
+  const IConstraintSource* constraintSource_ = nullptr;
+  ClampLimits staticClampLimits_;
+  bool lastSpeedClamped_ = false;
+  bool lastElevationClamped_ = false;
 
   mutable std::mutex mtx_;
   DriveSource mode_ = DriveSource::NONE;

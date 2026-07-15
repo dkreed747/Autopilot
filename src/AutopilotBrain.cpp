@@ -52,7 +52,47 @@ AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const Au
     nav_(nav),
     vehicle_(vehicle),
     config_(config),
-    arbiter_(config.arbitration.vectorPriority, config.arbitration.waypointPriority) {}
+    arbiter_(config.arbitration.vectorPriority, config.arbitration.waypointPriority,
+             config.arbitration.safePriority) {
+  // Static side of the output clamp: the autopilot's own constraint settings merged with the
+  // platform's speed capability. Dynamic active constraints merge in per emit.
+  staticClampLimits_.minSpeedMps = config_.constraints.minSpeedMps;
+  staticClampLimits_.maxSpeedMps = config_.constraints.maxSpeedMps;
+  staticClampLimits_.minDepthM = config_.constraints.minDepthM;
+  staticClampLimits_.maxDepthM = config_.constraints.maxDepthM;
+  const std::optional<double>& capSpeed = config_.platformCapabilities.surface.maxForwardSpeedMps;
+  if (capSpeed.has_value() && (!staticClampLimits_.maxSpeedMps.has_value() ||
+                               capSpeed.value() < staticClampLimits_.maxSpeedMps.value())) {
+    staticClampLimits_.maxSpeedMps = capSpeed;
+  }
+}
+
+void AutopilotBrain::setConstraintSource(const IConstraintSource* source) {
+  std::lock_guard<std::mutex> lock(mtx_);
+  constraintSource_ = source;
+}
+
+void AutopilotBrain::emitControl(const ControlVector& cv) {
+  if (constraintSource_ == nullptr) {
+    vehicle_->sendControlVector(cv);
+    return;
+  }
+  const ClampResult result = applyConstraintClamps(cv, constraintSource_->snapshot(), staticClampLimits_);
+  if (result.speedClamped != lastSpeedClamped_ || result.elevationClamped != lastElevationClamped_) {
+    lastSpeedClamped_ = result.speedClamped;
+    lastElevationClamped_ = result.elevationClamped;
+    if (result.speedClamped || result.elevationClamped) {
+      UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Constraint clamp engaged (speed=" << result.speedClamped
+        << ", elevation=" << result.elevationClamped << ")")
+    } else {
+      UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Constraint clamp released")
+    }
+  }
+  if (result.conflict) {
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Contradictory speed/depth constraint bounds; the max bound won")
+  }
+  vehicle_->sendControlVector(result.cv);
+}
 
 PlannerParams AutopilotBrain::derivePlannerParams() const {
   return arlcore::autopilot::derivePlannerParams(config_);
@@ -95,7 +135,7 @@ void AutopilotBrain::clearSetpoint(DriveSource src) {
     ControlVector hold;
     hold.headingRad = pose.has_value() ? pose->attitude().yaw().yaw() : 0.0;
     hold.speedMps = 0.0;
-    vehicle_->sendControlVector(hold);
+    emitControl(hold);
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: setpoint cleared; commanding zero-speed hold")
   }
 }
@@ -113,7 +153,7 @@ void AutopilotBrain::enforceNavStaleness() {
   ControlVector hold;
   hold.headingRad = pose.has_value() ? pose->attitude().yaw().yaw() : 0.0;
   hold.speedMps = 0.0;
-  vehicle_->sendControlVector(hold);
+  emitControl(hold);
   UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Navigation stale (" << ageMs.value()
     << " ms > " << config_.loop.navStalenessTimeoutMs << " ms); commanding zero-speed hold")
 }
@@ -155,7 +195,7 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
     }
   }
 
-  vehicle_->sendControlVector(cv);
+  emitControl(cv);
 
   // Achieved-flag evaluation against the commanded tolerances (or configured defaults).
   VectorProgress prog;
@@ -197,7 +237,7 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
 
 void AutopilotBrain::updateWaypointControl(const GlobalPoseReportType& pose) {
   const ControlVector cv = planner_.update(pose, nav_->groundSpeedMps());
-  vehicle_->sendControlVector(cv);
+  emitControl(cv);
 
   WaypointProgress prog = planner_.progress();
   // The planner does not see speed; evaluate speed achievement here from the nav fix.
