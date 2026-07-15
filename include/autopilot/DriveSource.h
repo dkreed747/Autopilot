@@ -23,7 +23,8 @@ namespace arlcore::autopilot {
 enum class DriveSource {
   NONE,
   VECTOR,
-  WAYPOINT
+  WAYPOINT,
+  SAFE  // safe-mode maneuvers (SRP / hold); highest priority
 };
 
 }  // namespace arlcore::autopilot

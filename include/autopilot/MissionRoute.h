@@ -14,8 +14,8 @@
 //
 //---------------------------------------------------------------------------
 
-#ifndef APPS_AUTOPILOT_TOOLS_MISSIONROUTE_H_
-#define APPS_AUTOPILOT_TOOLS_MISSIONROUTE_H_
+#ifndef APPS_AUTOPILOT_INCLUDE_AUTOPILOT_MISSIONROUTE_H_
+#define APPS_AUTOPILOT_INCLUDE_AUTOPILOT_MISSIONROUTE_H_
 
 #include <optional>
 #include <string>
@@ -26,7 +26,7 @@
 #include <UMAA/Common/MaritimeEnumeration/MaritimeEnumerationSets.hpp>
 #include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
 
-namespace arlcore::autopilot::tools {
+namespace arlcore::autopilot {
 
 //! \brief One mission waypoint. Position is geodetic; the CSV loader fills it from local
 //! tangent-plane east/north, the console API supplies it directly.
@@ -58,6 +58,6 @@ std::string statusName(
 std::string statusReasonName(
     UMAA::Common::MaritimeEnumeration::CommandStatusReasonEnumModule::CommandStatusReasonEnumType r);
 
-}  // namespace arlcore::autopilot::tools
+}  // namespace arlcore::autopilot
 
-#endif  // APPS_AUTOPILOT_TOOLS_MISSIONROUTE_H_
+#endif  // APPS_AUTOPILOT_INCLUDE_AUTOPILOT_MISSIONROUTE_H_

@@ -58,7 +58,7 @@
 
 namespace {
 
-using arlcore::autopilot::tools::MissionWaypoint;
+using arlcore::autopilot::MissionWaypoint;
 using arlcore::autopilot::tools::WaypointMissionClient;
 using arlcore::io::CycloneReader;
 using arlcore::io::ReadStatus;
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
                                       config.simVehicle.initialLongitudeDeg, 0.0);
   std::vector<MissionWaypoint> route;
   if (!missionPath.empty()) {
-    route = arlcore::autopilot::tools::loadMissionCsv(missionPath, frame);
+    route = arlcore::autopilot::loadMissionCsv(missionPath, frame);
     if (route.empty()) {
       std::cerr << "Failed to load mission from " << missionPath << std::endl;
       return 1;
@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
   }
   std::vector<GlobalWaypointType> waypoints;
   for (const MissionWaypoint& wp : route) {
-    waypoints.push_back(arlcore::autopilot::tools::makeWaypoint(wp));
+    waypoints.push_back(arlcore::autopilot::makeWaypoint(wp));
   }
 
   {

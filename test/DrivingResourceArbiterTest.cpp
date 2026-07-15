@@ -91,4 +91,27 @@ TEST(DrivingResourceArbiterTest, ConfigurablePriorityFlip) {
   EXPECT_TRUE(arbiter.wasRevoked(DriveSource::VECTOR));
 }
 
+TEST(DrivingResourceArbiterTest, SafePreemptsEverything) {
+  DrivingResourceArbiter arbiter(kVectorPriority, kWaypointPriority, /*safe=*/1000);
+  ASSERT_TRUE(arbiter.acquire(DriveSource::VECTOR));
+
+  EXPECT_TRUE(arbiter.acquire(DriveSource::SAFE));
+  EXPECT_EQ(arbiter.currentHolder(), DriveSource::SAFE);
+  EXPECT_TRUE(arbiter.wasRevoked(DriveSource::VECTOR));
+}
+
+TEST(DrivingResourceArbiterTest, NothingPreemptsSafe) {
+  DrivingResourceArbiter arbiter(kVectorPriority, kWaypointPriority, /*safe=*/1000);
+  ASSERT_TRUE(arbiter.acquire(DriveSource::SAFE));
+
+  EXPECT_FALSE(arbiter.acquire(DriveSource::VECTOR));
+  EXPECT_FALSE(arbiter.acquire(DriveSource::WAYPOINT));
+  EXPECT_FALSE(arbiter.canDrive(DriveSource::VECTOR));
+  EXPECT_EQ(arbiter.currentHolder(), DriveSource::SAFE);
+
+  // Once safe mode releases, normal commands flow again.
+  arbiter.release(DriveSource::SAFE);
+  EXPECT_TRUE(arbiter.acquire(DriveSource::WAYPOINT));
+}
+
 }  // namespace arlcore::autopilot

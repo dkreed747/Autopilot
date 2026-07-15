@@ -70,7 +70,7 @@
 namespace {
 
 using arlcore::autopilot::AutopilotConfig;
-using arlcore::autopilot::tools::MissionWaypoint;
+using arlcore::autopilot::MissionWaypoint;
 using arlcore::autopilot::tools::WaypointMissionClient;
 using arlcore::io::CycloneReader;
 using arlcore::io::ReadStatus;
@@ -268,7 +268,7 @@ json previewPath(const std::vector<MissionWaypoint>& route, const GlobalPoseRepo
                  const AutopilotConfig& config) {
   std::vector<GlobalWaypointType> waypoints;
   for (const auto& wp : route) {
-    waypoints.push_back(arlcore::autopilot::tools::makeWaypoint(wp));
+    waypoints.push_back(arlcore::autopilot::makeWaypoint(wp));
   }
   arlcore::autopilot::DubinsPathPlanner planner;
   planner.plan(waypoints, start, arlcore::autopilot::derivePlannerParams(config));
@@ -395,7 +395,7 @@ int main(int argc, char** argv) {
       }
       std::vector<GlobalWaypointType> waypoints;
       for (const auto& wp : route) {
-        waypoints.push_back(arlcore::autopilot::tools::makeWaypoint(wp));
+        waypoints.push_back(arlcore::autopilot::makeWaypoint(wp));
       }
       const GlobalPoseReportType start =
           state.latestPose().value_or(fallbackStartPose(config));

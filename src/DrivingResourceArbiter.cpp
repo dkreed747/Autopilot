@@ -20,8 +20,8 @@
 
 namespace arlcore::autopilot {
 
-DrivingResourceArbiter::DrivingResourceArbiter(int vectorPriority, int waypointPriority) :
-    vectorPriority_(vectorPriority), waypointPriority_(waypointPriority) {}
+DrivingResourceArbiter::DrivingResourceArbiter(int vectorPriority, int waypointPriority, int safePriority) :
+    vectorPriority_(vectorPriority), waypointPriority_(waypointPriority), safePriority_(safePriority) {}
 
 int DrivingResourceArbiter::priorityOf(DriveSource who) const {
   switch (who) {
@@ -29,6 +29,8 @@ int DrivingResourceArbiter::priorityOf(DriveSource who) const {
       return vectorPriority_;
     case DriveSource::WAYPOINT:
       return waypointPriority_;
+    case DriveSource::SAFE:
+      return safePriority_;
     default:
       return -1;
   }

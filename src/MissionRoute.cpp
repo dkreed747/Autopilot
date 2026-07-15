@@ -24,7 +24,7 @@
 
 #include "UuidFactory.h"
 
-namespace arlcore::autopilot::tools {
+namespace arlcore::autopilot {
 
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using CommandStatusEnumType =
@@ -137,4 +137,4 @@ std::string statusReasonName(CommandStatusReasonEnumType r) {
   }
 }
 
-}  // namespace arlcore::autopilot::tools
+}  // namespace arlcore::autopilot
