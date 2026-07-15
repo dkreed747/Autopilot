@@ -131,6 +131,12 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
   speedConsumer_->getReportSubject().registerObserver(speedObserver_);
   velocityConsumer_->getReportSubject().registerObserver(velocityObserver_);
 
+  // MM constraint services first: the command providers take the supervisor's safety gate and
+  // the shared zone map at construction.
+  if (!initializeConstraintServices()) {
+    return false;
+  }
+
   const double maxForwardSpeed = config_.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
 
   // --- Vector control provider ---
@@ -144,7 +150,8 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
       std::make_shared<CycloneSender<GlobalVectorExecutionStatusReportType>>(
           participant_, UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportTypeTopic, wqos));
   vectorProvider_ = std::make_unique<VectorControlServiceProvider>(
-      parseId(config_.identity.vectorSourceId), vectorIo, brain_.get(), maxForwardSpeed);
+      parseId(config_.identity.vectorSourceId), vectorIo, brain_.get(), maxForwardSpeed,
+      supervisor_.get());
 
   // --- Waypoint control provider (with large-list element reader) ---
   auto waypointIo = std::make_shared<WaypointControlServiceProviderIo>(
@@ -161,7 +168,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
           largeListRqos));
   waypointProvider_ = std::make_unique<WaypointControlServiceProvider>(
       parseId(config_.identity.waypointSourceId), waypointIo, brain_.get(), maxForwardSpeed,
-      config_.planner.maxListWaitCycles);
+      config_.planner.maxListWaitCycles, supervisor_.get(), zoneMap_.get());
 
   // --- Platform report providers: publish specs + capabilities once on startup ---
   specsReportProvider_ = std::make_unique<ReportProvider<UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>>(
@@ -178,10 +185,6 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
   auto capabilities = vehicle_->getPlatformCapabilities();
   specsReportProvider_->send(&specs);
   capabilitiesReportProvider_->send(&capabilities);
-
-  if (!initializeConstraintServices()) {
-    return false;
-  }
 
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot initialized on domain " << config_.dds.domainId)
   return true;
@@ -374,6 +377,9 @@ bool AutopilotApp::initializeConstraintServices() {
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "safe_mode.strategy is 'srp' with no CSV configured; "
       "falling back to zero-speed hold")
   }
+
+  // Arm the violation FSM with the configured safe-mode strategy.
+  supervisor_->attachSafety(brain_.get(), makeSafeModeStrategy(config_.safety, safeReturnPath_));
 
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "MM constraint services initialized (source "
     << config_.identity.constraintsSourceId << ")")

@@ -31,6 +31,7 @@
 #include "IAutopilot.h"
 #include "IVehicleControl.h"
 #include "NavState.h"
+#include "RecoveryGuidance.h"
 #include "VectorZoneGuidance.h"
 #include "ZoneMap.h"
 
@@ -69,10 +70,53 @@ class AutopilotBrain : public IAutopilot {
   //! changes mid-route). Nullable; without one guidance is zone-blind.
   void setZoneMap(const ZoneMap* zoneMap);
 
+  // --- Safe mode (driven by the safety supervisor's strategy) -------------------------------
+
+  //! \brief Enter SAFE mode running a waypoint route on the dedicated safe planner (keeps SRP
+  //! progress out of the failing mission provider's teardown). Preempts the current driving
+  //! command through the arbiter (the provider surfaces INTERRUPTED). Falls back to a
+  //! zero-speed hold (returning false) when the route cannot be planned.
+  bool activateSafeRoute(const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints);
+
+  //! \brief Enter SAFE mode holding zero speed at the current heading.
+  void activateSafeHold();
+
+  //! \brief Progress of the safe route (valid while a safe route is active).
+  WaypointProgress safeProgress() const;
+  bool safeRouteComplete() const;
+  bool safeRouteFailed() const;
+
+  //! \brief Leave SAFE mode and release the driving resource (commands flow again).
+  void clearSafeMode();
+
+  // --- Zone-violation recovery ---------------------------------------------------------------
+
+  //! \brief Begin the recovery maneuver: the active command stays installed (and EXECUTING)
+  //! but ticks route through RecoveryGuidance toward the nearest compliant point. Returns
+  //! false when no recovery target could be found (the brain holds zero speed instead).
+  bool beginRecovery();
+
+  //! \brief Whether the recovery has held COMPLIANT long enough to count as recovered.
+  bool recoveryComplete();
+
+  //! \brief End recovery and resume the interrupted command: a waypoint route replans its
+  //! current leg from the live pose; a vector setpoint simply resumes.
+  void endRecovery();
+
+  //! \brief Drop recovery without resuming (the supervisor is escalating to safe mode).
+  void abortRecovery();
+
+  bool recovering() const;
+
  private:
   PlannerParams derivePlannerParams() const;
   void updateVectorControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
   void updateWaypointControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
+  void updateSafeControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
+  void updateRecoveryControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
+
+  //! \brief Zero-speed hold at the current (or last known) heading.
+  void emitHold(const std::optional<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>& pose);
 
   //! \brief The single control-output funnel: applies the constraint clamps (most restrictive
   //! of dynamic constraints, static settings, and platform capabilities) to every control
@@ -91,6 +135,15 @@ class AutopilotBrain : public IAutopilot {
   const ZoneMap* zoneMap_ = nullptr;
   std::unique_ptr<VectorZoneGuidance> vectorGuidance_;
   uint64_t plannedConstraintRevision_ = 0;  // constraint revision the current route was planned under
+
+  // Safe mode: a dedicated planner so SRP progress survives the preempted mission provider's
+  // teardown, or a zero-speed hold when no safe route is available.
+  DubinsPathPlanner safePlanner_;
+  bool safeHold_ = false;
+
+  // Zone-violation recovery (owned here; the supervisor drives begin/complete/end).
+  std::unique_ptr<RecoveryGuidance> recovery_;
+  bool recovering_ = false;
 
   mutable std::mutex mtx_;
   DriveSource mode_ = DriveSource::NONE;

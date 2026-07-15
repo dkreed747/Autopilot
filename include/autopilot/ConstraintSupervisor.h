@@ -35,9 +35,12 @@
 #include "AutopilotConfig.h"
 #include "ConstraintTypes.h"
 #include "NavState.h"
+#include "SafeModeStrategy.h"
 #include "ZoneMap.h"
 
 namespace arlcore::autopilot {
+
+class AutopilotBrain;
 
 //! \brief Observer adapter forwarding a Subject's notifications to a std::function, so one class
 //! can observe several subjects of the same payload type.
@@ -70,20 +73,52 @@ class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
   std::shared_ptr<CallbackObserver<ConditionalList>> conditionalSetObserver() { return setObserver_; }
   std::shared_ptr<CallbackObserver<ConditionalList>> activeSetObserver() { return activeObserver_; }
 
-  //! \brief Per-tick work: rebuild the snapshot if the active set changed and publish
-  //! ConditionalStateReports at the configured period.
+  //! \brief The violation-response states. RECOVERING = a zone violation is being driven back
+  //! to compliance while the grace timer runs; SAFE_MODE = latched escalation running the
+  //! configured strategy.
+  enum class SafetyState { MONITORING, RECOVERING, SAFE_MODE };
+
+  //! \brief Arm the violation FSM: violations confirmed against the active conditionals drive
+  //! the brain's recovery hooks and, past their grace deadline, the safe-mode strategy.
+  //! Without this the supervisor only monitors and reports.
+  void attachSafety(AutopilotBrain* brain, std::unique_ptr<SafeModeStrategy> strategy);
+
+  SafetyState safetyState() const;
+
+  //! \brief Per-tick work: rebuild the snapshot if the active set changed, publish
+  //! ConditionalStateReports at the configured period, and run the violation FSM.
   void update();
 
   // IConstraintSource
   ConstraintSnapshot snapshot() const override;
   uint64_t revision() const override;
 
-  // ISafetyGate (the violation FSM drives this; until it engages, commands are allowed)
+  // ISafetyGate: commands are accepted only while MONITORING.
   bool commandsAllowed() const override;
 
  private:
+  //! \brief The kind of constraint a violation belongs to (selects its grace override).
+  enum class ConstraintClass { ZONE, SPEED, ELEVATION, OTHER };
+
+  //! \brief Debounce/clear state for one active conditional.
+  struct ViolationTracker {
+    ConstraintClass cls = ConstraintClass::OTHER;
+    int rawViolatingTicks = 0;
+    bool confirmed = false;
+    std::chrono::steady_clock::time_point confirmedAt{};
+    std::optional<std::chrono::steady_clock::time_point> compliantSince;
+  };
+
   void onConditionalSetChanged(const ConditionalList& all);
   void onActiveSetChanged(const ConditionalList& active);
+
+  //! \brief Advance violation trackers and the MONITORING/RECOVERING/SAFE_MODE transitions.
+  void updateSafety();
+
+  //! \brief Grace period for a constraint class (per-class override or the global default).
+  double gracePeriodS(ConstraintClass cls) const;
+
+  void enterSafeMode(const char* why);
 
   //! \brief Rebuild the ConstraintSnapshot from the current active conditionals and push the
   //! zones into the ZoneMap.
@@ -111,6 +146,14 @@ class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
 
   std::set<arlcore::NumericGuid> publishedStateIds_;
   std::chrono::steady_clock::time_point lastStateReport_{};
+
+  // Violation FSM (armed by attachSafety).
+  AutopilotBrain* brain_ = nullptr;
+  std::unique_ptr<SafeModeStrategy> strategy_;
+  SafetyState state_ = SafetyState::MONITORING;
+  std::map<arlcore::NumericGuid, ViolationTracker> trackers_;
+  std::optional<std::chrono::steady_clock::time_point> lastSafetyTick_;
+  std::optional<std::chrono::steady_clock::time_point> allCompliantSince_;
 };
 
 }  // namespace arlcore::autopilot

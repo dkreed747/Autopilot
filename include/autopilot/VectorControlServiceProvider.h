@@ -20,6 +20,7 @@
 #include <memory>
 
 #include "CommandProviderBase.h"
+#include "ConstraintTypes.h"
 #include "IAutopilot.h"
 #include "VectorControlServiceProviderIo.h"
 
@@ -38,7 +39,8 @@ class VectorControlServiceProvider : public arlcore::umaa::services::CommandProv
   VectorControlServiceProvider(const arlcore::NumericGuid& source,
                                std::shared_ptr<VectorControlServiceProviderIo> io,
                                IAutopilot* autopilot,
-                               double maxForwardSpeedMps);
+                               double maxForwardSpeedMps,
+                               const ISafetyGate* safetyGate = nullptr);
 
  protected:
   bool isCommandValid(const GlobalVectorCommandType& cmd) override;
@@ -59,7 +61,8 @@ class VectorControlServiceProvider : public arlcore::umaa::services::CommandProv
 
   arlcore::NumericGuid sourceId_;
   IAutopilot* autopilot_;
-  double maxForwardSpeedMps_;  // <= 0 means no limit
+  double maxForwardSpeedMps_;
+  const ISafetyGate* safetyGate_;  // <= 0 means no limit
 };
 
 }  // namespace arlcore::autopilot

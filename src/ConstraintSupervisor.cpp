@@ -18,7 +18,9 @@
 
 #include <algorithm>
 #include <optional>
+#include <utility>
 
+#include "AutopilotBrain.h"
 #include "DepthConditional.h"
 #include "Logger.h"
 #include "SpeedConditional.h"
@@ -152,6 +154,19 @@ void ConstraintSupervisor::onActiveSetChanged(const ConditionalList& active) {
   activeDirty_ = true;
 }
 
+void ConstraintSupervisor::attachSafety(AutopilotBrain* brain,
+                                        std::unique_ptr<SafeModeStrategy> strategy) {
+  brain_ = brain;
+  strategy_ = std::move(strategy);
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Safety supervisor armed (safe-mode strategy: "
+    << (strategy_ ? strategy_->name() : "none") << ", grace " << config_.safety.gracePeriodS << " s)")
+}
+
+ConstraintSupervisor::SafetyState ConstraintSupervisor::safetyState() const {
+  std::lock_guard<std::mutex> lock(mtx_);
+  return state_;
+}
+
 void ConstraintSupervisor::update() {
   bool rebuild = false;
   {
@@ -167,6 +182,208 @@ void ConstraintSupervisor::update() {
   if (now - lastStateReport_ >= std::chrono::milliseconds(config_.safety.stateReportPeriodMs)) {
     lastStateReport_ = now;
     publishStateReports();
+  }
+
+  if (brain_ != nullptr && strategy_) {
+    updateSafety();
+  }
+}
+
+double ConstraintSupervisor::gracePeriodS(ConstraintClass cls) const {
+  switch (cls) {
+    case ConstraintClass::ZONE:
+      return config_.safety.graceZoneS.value_or(config_.safety.gracePeriodS);
+    case ConstraintClass::SPEED:
+      return config_.safety.graceSpeedS.value_or(config_.safety.gracePeriodS);
+    case ConstraintClass::ELEVATION:
+      return config_.safety.graceElevationS.value_or(config_.safety.gracePeriodS);
+    default:
+      return config_.safety.gracePeriodS;
+  }
+}
+
+void ConstraintSupervisor::enterSafeMode(const char* why) {
+  // The caller has already moved state_ to SAFE_MODE; this runs the entry actions unlocked.
+  UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "SAFE MODE engaged: " << why << " (strategy: "
+    << strategy_->name() << ")")
+  brain_->abortRecovery();
+  strategy_->onEnter(brain_, nav_);
+}
+
+void ConstraintSupervisor::updateSafety() {
+  const auto now = std::chrono::steady_clock::now();
+  const std::optional<int64_t> poseAge = nav_->poseAgeMs();
+  const bool poseStale = !poseAge.has_value() ||
+                         poseAge.value() > config_.loop.navStalenessTimeoutMs;
+
+  ConditionalList active;
+  {
+    std::lock_guard<std::mutex> lock(mtx_);
+    active = activeConditionals_;
+  }
+
+  if (poseStale) {
+    // Freeze every deadline while navigation is unusable (the brain is zero-holding anyway):
+    // shift the reference timestamps forward by the elapsed interval.
+    if (lastSafetyTick_.has_value()) {
+      const auto dt = now - lastSafetyTick_.value();
+      std::lock_guard<std::mutex> lock(mtx_);
+      for (auto& [id, tracker] : trackers_) {
+        tracker.confirmedAt += dt;
+        if (tracker.compliantSince.has_value()) {
+          tracker.compliantSince.value() += dt;
+        }
+      }
+      if (allCompliantSince_.has_value()) {
+        allCompliantSince_.value() += dt;
+      }
+    }
+    lastSafetyTick_ = now;
+    return;
+  }
+  lastSafetyTick_ = now;
+
+  // --- Advance per-conditional violation trackers -------------------------------------------
+  const std::optional<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType> pose = nav_->pose();
+  const GeoPoint at{pose.has_value() ? pose->position().geodeticLatitude() : 0.0,
+                    pose.has_value() ? pose->position().geodeticLongitude() : 0.0};
+  const double depthM = (pose.has_value() && pose->depth().has_value()) ? pose->depth().value() : 0.0;
+
+  bool anyConfirmed = false;
+  bool anyConfirmedZone = false;
+  std::optional<std::chrono::steady_clock::time_point> earliestDeadline;
+
+  {
+  std::lock_guard<std::mutex> lock(mtx_);
+  std::set<arlcore::NumericGuid> activeIds;
+  for (const auto& conditional : active) {
+    if (!conditional) {
+      continue;
+    }
+    const arlcore::NumericGuid id = conditional->getConditionalId();
+    activeIds.insert(id);
+    ViolationTracker& tracker = trackers_[id];
+    if (dynamic_cast<WaterZoneConditional*>(conditional.get()) != nullptr) {
+      tracker.cls = ConstraintClass::ZONE;
+    } else if (dynamic_cast<SpeedConditional*>(conditional.get()) != nullptr) {
+      tracker.cls = ConstraintClass::SPEED;
+    } else if (dynamic_cast<DepthConditional*>(conditional.get()) != nullptr) {
+      tracker.cls = ConstraintClass::ELEVATION;
+    }
+
+    const std::optional<bool> eval = conditional->evaluateConditional();
+    if (!eval.has_value()) {
+      continue;  // not evaluable this tick; hold state
+    }
+    const bool violated = !eval.value();
+    if (violated) {
+      tracker.compliantSince.reset();
+      if (!tracker.confirmed && ++tracker.rawViolatingTicks >= config_.safety.violationConfirmTicks) {
+        tracker.confirmed = true;
+        tracker.confirmedAt = now;
+        UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Constraint violation confirmed: "
+          << conditional->getName() << " (" << id << "), grace "
+          << gracePeriodS(tracker.cls) << " s")
+      }
+    } else {
+      tracker.rawViolatingTicks = 0;
+      if (tracker.confirmed) {
+        // Clearing needs the predicate true for clear_hold_s — and, for zones, the position
+        // classified COMPLIANT (outside the hysteresis band), not merely a hair's breadth in.
+        const bool zoneCompliant = tracker.cls != ConstraintClass::ZONE || zoneMap_ == nullptr ||
+            zoneMap_->classify(at, depthM) == ZoneCompliance::COMPLIANT;
+        if (zoneCompliant) {
+          if (!tracker.compliantSince.has_value()) {
+            tracker.compliantSince = now;
+          }
+          if (std::chrono::duration<double>(now - tracker.compliantSince.value()).count() >=
+              config_.safety.clearHoldS) {
+            tracker.confirmed = false;
+            UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Constraint violation cleared: "
+              << conditional->getName() << " (" << id << ")")
+          }
+        } else {
+          tracker.compliantSince.reset();
+        }
+      }
+    }
+
+    if (tracker.confirmed) {
+      anyConfirmed = true;
+      anyConfirmedZone = anyConfirmedZone || tracker.cls == ConstraintClass::ZONE;
+      const auto deadline = tracker.confirmedAt + std::chrono::duration_cast<
+          std::chrono::steady_clock::duration>(std::chrono::duration<double>(gracePeriodS(tracker.cls)));
+      if (!earliestDeadline.has_value() || deadline < earliestDeadline.value()) {
+        earliestDeadline = deadline;
+      }
+    }
+  }
+  // Deactivated conditionals stop tracking (deleting an active constraint deactivates it).
+  for (auto it = trackers_.begin(); it != trackers_.end();) {
+    it = activeIds.count(it->first) == 0 ? trackers_.erase(it) : std::next(it);
+  }
+
+  if (anyConfirmed) {
+    allCompliantSince_.reset();
+  } else if (!allCompliantSince_.has_value()) {
+    allCompliantSince_ = now;
+  }
+  }  // release the lock: the brain/strategy calls below must run unlocked
+
+  // --- State transitions ----------------------------------------------------------------------
+  // Everything runs on the single control thread; state_ writes take the lock briefly, the
+  // brain/strategy calls happen unlocked (they take their own locks).
+  const bool graceExpired = anyConfirmed && earliestDeadline.has_value() &&
+                            now >= earliestDeadline.value();
+  double allClearS = 0.0;
+  SafetyState state = SafetyState::MONITORING;
+  {
+    std::lock_guard<std::mutex> lock(mtx_);
+    state = state_;
+    if (allCompliantSince_.has_value()) {
+      allClearS = std::chrono::duration<double>(now - allCompliantSince_.value()).count();
+    }
+  }
+  const auto setState = [this](SafetyState next) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    state_ = next;
+  };
+
+  switch (state) {
+    case SafetyState::MONITORING:
+      if (graceExpired) {
+        setState(SafetyState::SAFE_MODE);
+        enterSafeMode("violation grace period expired");
+      } else if (anyConfirmedZone) {
+        setState(SafetyState::RECOVERING);
+        UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Zone violation: engaging recovery while the grace "
+          "timer runs")
+        brain_->beginRecovery();
+      }
+      break;
+    case SafetyState::RECOVERING:
+      if (graceExpired) {
+        setState(SafetyState::SAFE_MODE);
+        enterSafeMode("violation persisted past the grace period");
+      } else if (!anyConfirmed) {
+        setState(SafetyState::MONITORING);
+        brain_->endRecovery();
+      }
+      break;
+    case SafetyState::SAFE_MODE: {
+      strategy_->onTick(brain_, nav_);
+      // A strategy that manages its own release (SRP with accept_commands_after_srp) wins;
+      // exit_on_all_clear additionally releases strategies that never signal readiness
+      // (zero-speed hold) once every violation has stayed clear for the hold time.
+      const bool allClearRelease = config_.safety.exitOnAllClear && !anyConfirmed &&
+                                   allClearS >= config_.safety.clearHoldS;
+      if (strategy_->readyToRelease() || allClearRelease) {
+        setState(SafetyState::MONITORING);
+        UMAA_LOG_INFO(util::SYSTEM_LOGGER, "SAFE MODE released; monitoring resumes")
+        strategy_->onExit(brain_);
+      }
+      break;
+    }
   }
 }
 
@@ -267,8 +484,9 @@ uint64_t ConstraintSupervisor::revision() const {
 }
 
 bool ConstraintSupervisor::commandsAllowed() const {
-  // The violation FSM (safe mode) will gate this; without it engaged, commands are allowed.
-  return true;
+  std::lock_guard<std::mutex> lock(mtx_);
+  // Recovery and safe mode both hold the vehicle; only MONITORING accepts new commands.
+  return brain_ == nullptr || state_ == SafetyState::MONITORING;
 }
 
 }  // namespace arlcore::autopilot

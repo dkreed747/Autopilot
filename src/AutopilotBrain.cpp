@@ -76,12 +76,159 @@ void AutopilotBrain::setZoneMap(const ZoneMap* zoneMap) {
   std::lock_guard<std::mutex> lock(mtx_);
   zoneMap_ = zoneMap;
   planner_.setZones(zoneMap);
+  safePlanner_.setZones(zoneMap);
   if (zoneMap != nullptr) {
     vectorGuidance_ = std::make_unique<VectorZoneGuidance>(
         config_.vectorAvoidance, derivePlannerParams().turnRadiusM, zoneMap->config().safetyMarginM);
+    const CapabilityLimits& surf = config_.platformCapabilities.surface;
+    const double cruise = surf.cruisingSpeedMps.value_or(surf.maxForwardSpeedMps.value_or(1.5));
+    recovery_ = std::make_unique<RecoveryGuidance>(config_.recovery, cruise,
+                                                   zoneMap->config().safetyMarginM);
   } else {
     vectorGuidance_.reset();
+    recovery_.reset();
   }
+}
+
+void AutopilotBrain::emitHold(const std::optional<GlobalPoseReportType>& pose) {
+  ControlVector hold;
+  hold.headingRad = pose.has_value() ? pose->attitude().yaw().yaw() : 0.0;
+  hold.speedMps = 0.0;
+  emitControl(hold);
+}
+
+bool AutopilotBrain::activateSafeRoute(
+    const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints) {
+  std::lock_guard<std::mutex> lock(mtx_);
+  arbiter_.acquire(DriveSource::SAFE);
+  mode_ = DriveSource::SAFE;
+  recovering_ = false;
+  const std::optional<GlobalPoseReportType> pose = nav_->pose();
+  if (!pose.has_value()) {
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Safe route requested without a navigation fix; "
+      "holding zero speed instead")
+    safeHold_ = true;
+    return false;
+  }
+  safePlanner_.setZones(zoneMap_);
+  safePlanner_.plan(waypoints, pose.value(), derivePlannerParams());
+  if (safePlanner_.failed()) {
+    // Safe mode often engages while the vehicle is IN violation, where no zone-compliant path
+    // out of the current position exists. Reaching the safe route trumps zone margins: retry
+    // zone-blind rather than parking the vehicle in the violating region.
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Safe route is zone-blocked from the current position; "
+      "replanning zone-blind (the SRP takes precedence over zone margins)")
+    safePlanner_.setZones(nullptr);
+    safePlanner_.plan(waypoints, pose.value(), derivePlannerParams());
+  }
+  if (safePlanner_.failed()) {
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Safe route could not be planned; holding zero speed instead")
+    safeHold_ = true;
+    emitHold(pose);
+    return false;
+  }
+  safeHold_ = false;
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: SAFE mode running a "
+    << waypoints.size() << "-waypoint safe route")
+  return true;
+}
+
+void AutopilotBrain::activateSafeHold() {
+  std::lock_guard<std::mutex> lock(mtx_);
+  arbiter_.acquire(DriveSource::SAFE);
+  mode_ = DriveSource::SAFE;
+  recovering_ = false;
+  safeHold_ = true;
+  emitHold(nav_->pose());
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: SAFE mode holding zero speed")
+}
+
+WaypointProgress AutopilotBrain::safeProgress() const {
+  std::lock_guard<std::mutex> lock(mtx_);
+  return safePlanner_.progress();
+}
+
+bool AutopilotBrain::safeRouteComplete() const {
+  std::lock_guard<std::mutex> lock(mtx_);
+  return !safeHold_ && safePlanner_.routeComplete();
+}
+
+bool AutopilotBrain::safeRouteFailed() const {
+  std::lock_guard<std::mutex> lock(mtx_);
+  return !safeHold_ && safePlanner_.failed();
+}
+
+void AutopilotBrain::clearSafeMode() {
+  std::lock_guard<std::mutex> lock(mtx_);
+  if (mode_ != DriveSource::SAFE) {
+    return;
+  }
+  mode_ = DriveSource::NONE;
+  safeHold_ = false;
+  arbiter_.release(DriveSource::SAFE);
+  emitHold(nav_->pose());
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: SAFE mode released; accepting commands")
+}
+
+bool AutopilotBrain::beginRecovery() {
+  std::lock_guard<std::mutex> lock(mtx_);
+  if (!recovery_ || zoneMap_ == nullptr) {
+    return false;
+  }
+  const std::optional<GlobalPoseReportType> pose = nav_->pose();
+  recovering_ = true;  // ticks route through recovery even without a target (zero-hold)
+  if (!pose.has_value()) {
+    return false;
+  }
+  const GeoPoint at{pose->position().geodeticLatitude(), pose->position().geodeticLongitude()};
+  const double depth = pose->depth().has_value() ? pose->depth().value() : 0.0;
+  const bool found = recovery_->begin(at, depth, *zoneMap_);
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: zone recovery engaged"
+    << (found ? "" : " (no target found; holding zero speed while grace runs)"))
+  return found;
+}
+
+bool AutopilotBrain::recoveryComplete() {
+  std::lock_guard<std::mutex> lock(mtx_);
+  if (!recovery_ || zoneMap_ == nullptr) {
+    return false;
+  }
+  const std::optional<GlobalPoseReportType> pose = nav_->pose();
+  if (!pose.has_value()) {
+    return false;
+  }
+  const GeoPoint at{pose->position().geodeticLatitude(), pose->position().geodeticLongitude()};
+  const double depth = pose->depth().has_value() ? pose->depth().value() : 0.0;
+  return recovery_->complete(at, depth, *zoneMap_);
+}
+
+void AutopilotBrain::endRecovery() {
+  std::lock_guard<std::mutex> lock(mtx_);
+  if (!recovering_) {
+    return;
+  }
+  recovering_ = false;
+  if (recovery_) {
+    recovery_->end();
+  }
+  const std::optional<GlobalPoseReportType> pose = nav_->pose();
+  if (mode_ == DriveSource::WAYPOINT && pose.has_value()) {
+    planner_.replanCurrentLegFrom(pose.value());
+  }
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: recovery complete; resuming the command")
+}
+
+void AutopilotBrain::abortRecovery() {
+  std::lock_guard<std::mutex> lock(mtx_);
+  recovering_ = false;
+  if (recovery_) {
+    recovery_->end();
+  }
+}
+
+bool AutopilotBrain::recovering() const {
+  std::lock_guard<std::mutex> lock(mtx_);
+  return recovering_;
 }
 
 void AutopilotBrain::emitControl(const ControlVector& cv) {
@@ -180,6 +327,12 @@ void AutopilotBrain::onNavUpdate() {
   if (!pose.has_value()) {
     return;
   }
+  // Recovery overrides whatever guidance is (or is not) active: an installed command stays
+  // EXECUTING with its progress frozen, and an idle vehicle is still driven back to compliance.
+  if (recovering_ && mode_ != DriveSource::SAFE) {
+    updateRecoveryControl(pose.value());
+    return;
+  }
   switch (mode_) {
     case DriveSource::VECTOR:
       updateVectorControl(pose.value());
@@ -187,9 +340,33 @@ void AutopilotBrain::onNavUpdate() {
     case DriveSource::WAYPOINT:
       updateWaypointControl(pose.value());
       break;
+    case DriveSource::SAFE:
+      updateSafeControl(pose.value());
+      break;
     default:
       break;
   }
+}
+
+void AutopilotBrain::updateRecoveryControl(const GlobalPoseReportType& pose) {
+  if (recovery_ && zoneMap_ != nullptr) {
+    const GeoPoint at{pose.position().geodeticLatitude(), pose.position().geodeticLongitude()};
+    const double depth = pose.depth().has_value() ? pose.depth().value() : 0.0;
+    const std::optional<ControlVector> cv = recovery_->tick(at, depth, *zoneMap_);
+    if (cv.has_value()) {
+      emitControl(cv.value());
+      return;
+    }
+  }
+  emitHold(pose);
+}
+
+void AutopilotBrain::updateSafeControl(const GlobalPoseReportType& pose) {
+  if (!safeHold_ && safePlanner_.hasRoute() && !safePlanner_.failed()) {
+    emitControl(safePlanner_.update(pose, nav_->groundSpeedMps()));
+    return;
+  }
+  emitHold(pose);
 }
 
 void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {

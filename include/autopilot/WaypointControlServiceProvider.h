@@ -22,7 +22,9 @@
 #include <vector>
 
 #include "CommandProviderBase.h"
+#include "ConstraintTypes.h"
 #include "IAutopilot.h"
+#include "ZoneMap.h"
 #include "LargeListReader.h"
 #include "WaypointControlServiceProviderIo.h"
 
@@ -43,9 +45,12 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
                                  std::shared_ptr<WaypointControlServiceProviderIo> io,
                                  IAutopilot* autopilot,
                                  double maxForwardSpeedMps,
-                                 int maxListWaitCycles);
+                                 int maxListWaitCycles,
+                                 const ISafetyGate* safetyGate = nullptr,
+                                 const ZoneMap* zoneMap = nullptr);
 
  protected:
+  bool isCommandValid(const GlobalWaypointCommandType& cmd) override;
   bool onCycle() override;
   arlcore::umaa::services::CommandStateResult onCommanded(const std::weak_ptr<CmdSession> session) override;
   arlcore::umaa::services::CommandStateResult onExecuting(const std::weak_ptr<CmdSession> session) override;
@@ -71,6 +76,12 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
   bool validateWaypoints(
       const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints) const;
 
+  //! \brief Whether every waypoint keeps the zone safety margin (command-time validation
+  //! against the active water zones). Fills `message` with the offending waypoint.
+  bool waypointsZoneCompliant(
+      const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints,
+      std::string* message) const;
+
   arlcore::NumericGuid sourceId_;
   IAutopilot* autopilot_;
   std::shared_ptr<WaypointControlServiceProviderIo> wpIo_;
@@ -78,6 +89,8 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
       GlobalWaypointCommandTypeWaypointsListElement> listReader_;
   double maxForwardSpeedMps_;
   int maxListWaitCycles_;
+  const ISafetyGate* safetyGate_;
+  const ZoneMap* zoneMap_;
 
   // Per-command planning state.
   arlcore::NumericGuid activeSession_;
