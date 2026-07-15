@@ -248,3 +248,48 @@ body {
 #status-log li .st.FAILED { color: var(--critical); }
 #status-log li .msg { color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #status-log .empty { color: var(--ink-muted); }
+
+/* constraint zones (chart) */
+.zone { stroke-width: 2; cursor: pointer; }
+.zone-kia { fill: var(--good); stroke: var(--good); fill-opacity: 0.10; }
+.zone-koa { fill: var(--critical); stroke: var(--critical); fill-opacity: 0.10; }
+.zone-inactive { fill-opacity: 0.04; stroke-dasharray: 6 5; opacity: 0.55; }
+.zone-selected { stroke-width: 3.5; }
+.zone-violated { animation: zone-flash 1s ease-in-out infinite; }
+@keyframes zone-flash { 50% { fill-opacity: 0.28; } }
+.zone-draft { fill: none; stroke-width: 2; stroke-dasharray: 4 4; }
+.zone-vertex { fill: var(--surface-2); stroke: var(--ink-2); stroke-width: 1.5; }
+
+/* constraints panel */
+#con-banner { font-size: 12px; color: var(--warning); border: 1px solid var(--warning);
+  border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; }
+#con-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+#con-list li { display: flex; gap: 8px; align-items: center; font-size: 12.5px;
+  padding: 5px 7px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+#con-list li:hover { background: var(--surface-2); }
+#con-list li.selected { border-color: var(--ink-muted); }
+#con-list li.violated { border-color: var(--critical); }
+#con-list li .con-desc { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-2); }
+#con-list li .con-desc b { color: var(--ink); font-weight: 600; }
+#con-list li .pending { color: var(--warning); font-style: normal; }
+#con-list li .viol { color: var(--critical); font-style: normal; font-weight: 700; }
+#con-list .empty { color: var(--ink-muted); font-size: 12px; cursor: default; }
+#con-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+#con-editor { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;
+  display: flex; flex-direction: column; gap: 8px; }
+#con-editor h3 { font-size: 12px; color: var(--ink-2); }
+#con-editor label { display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12px; }
+#con-editor input, #con-editor select {
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 5px;
+  padding: 4px 6px; font-size: 12.5px; }
+#con-editor input[type="number"] { width: 76px; }
+#con-editor input[type="text"] { flex: 1; min-width: 0; }
+#con-editor .con-editor-btns { display: flex; gap: 8px; }
+#con-editor .con-editor-btns button {
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 10px; font-size: 12px; cursor: pointer; }
+#con-editor .con-editor-btns .danger { background: none; color: var(--critical);
+  border-color: var(--critical); }

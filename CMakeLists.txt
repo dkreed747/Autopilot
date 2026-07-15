@@ -97,6 +97,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config/autopilot.yaml
 # command session client), used by the mission runner and the mission console.
 # ---------------------------------------------------------------------------
 add_library(mission-tools STATIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/ConstraintsClient.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/tools/WaypointMissionClient.cpp)
 target_include_directories(mission-tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 target_link_libraries(mission-tools PUBLIC autopilot-lib)
