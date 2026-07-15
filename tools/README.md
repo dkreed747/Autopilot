@@ -2,8 +2,9 @@
 
 Both tools are the UMAA *consumer* side of the autopilot's Global Waypoint control service,
 built on the shared `WaypointMissionClient` (command + large-list route out; ack, command
-status, and execution status back) and `MissionRoute` (waypoint construction) sources in
-this directory.
+status, and execution status back) and the autopilot library's `MissionRoute` (waypoint
+construction). The console additionally consumes the autopilot's MM constraint services
+through `ConstraintsClient` in this directory.
 
 ## `mission_console`
 
@@ -37,6 +38,30 @@ browser app (no external web dependencies — works on an air-gapped network):
 - Clicking a waypoint mid-mission shows its parameters, the session's command status/ack,
   and — for the current waypoint — the live achieved flags from the execution status
   report.
+
+### Constraints panel
+
+When the autopilot's `identity.constraints_source_id` is configured, the console is also a
+full consumer of its MM constraint services (`ConstraintsClient`): specialization payloads
+plus ConditionalControl Add/Delete and ActiveConstraints commands out; the ConditionalReport
+(the authoritative constraint list), the standing ActiveConstraints acknowledgement (the
+authoritative *applied* set — this is how a restarted console recovers the active set), and
+the per-conditional state reports back. REST: `POST /api/constraints` (create; a body with
+`id` is an upsert/edit), `DELETE /api/constraints/<uuid>`, `POST /api/constraints/active`.
+
+- **Zones**: the *+ Keep-in* / *+ Keep-out* buttons enter zone-draw mode — click the chart
+  to add vertices; double-click, press Enter, or click the first vertex to close (Esc
+  cancels; self-intersecting rings are rejected). Keep-in areas render green, keep-out red,
+  inactive ones faded/dashed, violated ones flashing. Click a zone (chart or list) to edit
+  its name and ceiling/floor depths.
+- **Speed / depth limits**: *+ Speed* / *+ Depth* create at-most/at-least value constraints
+  edited in the same panel.
+- Constraints are **global** (they outlive any one vector/waypoint session) and **toggled**
+  via the per-row checkboxes: toggles apply immediately (300 ms debounce), show *pending…*
+  until the autopilot's acknowledgement echoes the commanded set, and the row flags
+  **VIOLATED** from the autopilot's ConditionalStateReport (mirrored by the execute dock's
+  `CONSTRAINT VIOLATED` chip). An *active set unknown* banner shows until the first
+  acknowledgement arrives.
 
 Screenshots (recorded against the sim vehicle): `../docs/console/`.
 
