@@ -29,11 +29,12 @@ using arlcore::umaa::services::IncomingCommandBehavior;
 
 VectorControlServiceProvider::VectorControlServiceProvider(
     const arlcore::NumericGuid& source, std::shared_ptr<VectorControlServiceProviderIo> io,
-    IAutopilot* autopilot, double maxForwardSpeedMps) :
+    IAutopilot* autopilot, double maxForwardSpeedMps, const ISafetyGate* safetyGate) :
     CommandProviderBase(source, io),
     sourceId_(source),
     autopilot_(autopilot),
-    maxForwardSpeedMps_(maxForwardSpeedMps) {
+    maxForwardSpeedMps_(maxForwardSpeedMps),
+    safetyGate_(safetyGate) {
   // A new vector command replaces an in-flight vector command (same driving resource).
   setBehavior(IncomingCommandBehavior::CANCEL_EXISTING);
 }
@@ -44,6 +45,11 @@ void VectorControlServiceProvider::relinquish() {
 }
 
 bool VectorControlServiceProvider::isCommandValid(const GlobalVectorCommandType& cmd) {
+  if (safetyGate_ != nullptr && !safetyGate_->commandsAllowed()) {
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Vector command rejected: the safety supervisor holds "
+      "the vehicle (recovery/safe mode)")
+    return false;
+  }
   const std::optional<DirectionValue> dir = tolerance::extractDirection(cmd.direction());
   if (!dir.has_value()) {
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command direction variant is unsupported")

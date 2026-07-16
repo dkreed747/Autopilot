@@ -49,14 +49,17 @@ UMAA::Common::Measurement::DateTime timestampPlus(double secondsAhead) {
 
 WaypointControlServiceProvider::WaypointControlServiceProvider(
     const arlcore::NumericGuid& source, std::shared_ptr<WaypointControlServiceProviderIo> io,
-    IAutopilot* autopilot, double maxForwardSpeedMps, int maxListWaitCycles) :
+    IAutopilot* autopilot, double maxForwardSpeedMps, int maxListWaitCycles,
+    const ISafetyGate* safetyGate, const ZoneMap* zoneMap) :
     CommandProviderBase(source, io),
     sourceId_(source),
     autopilot_(autopilot),
     wpIo_(io),
     listReader_(io->listElementReader),
     maxForwardSpeedMps_(maxForwardSpeedMps),
-    maxListWaitCycles_(maxListWaitCycles) {
+    maxListWaitCycles_(maxListWaitCycles),
+    safetyGate_(safetyGate),
+    zoneMap_(zoneMap) {
   // A new waypoint route replaces an in-flight route (same driving resource).
   setBehavior(IncomingCommandBehavior::CANCEL_EXISTING);
 }
@@ -121,6 +124,53 @@ bool WaypointControlServiceProvider::validateWaypoints(
   return true;
 }
 
+bool WaypointControlServiceProvider::isCommandValid(const GlobalWaypointCommandType& cmd) {
+  if (safetyGate_ != nullptr && !safetyGate_->commandsAllowed()) {
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Waypoint command rejected: the safety supervisor holds "
+      "the vehicle (recovery/safe mode)")
+    return false;
+  }
+  return true;
+}
+
+bool WaypointControlServiceProvider::waypointsZoneCompliant(
+    const std::vector<GlobalWaypointType>& waypoints, std::string* message) const {
+  if (zoneMap_ == nullptr || !zoneMap_->hasZones()) {
+    return true;
+  }
+  const double marginM = zoneMap_->config().safetyMarginM;
+  for (std::size_t i = 0; i < waypoints.size(); ++i) {
+    const GlobalWaypointType& wp = waypoints[i];
+    const GeoPoint at{wp.position().value().geodeticLatitude(),
+                      wp.position().value().geodeticLongitude()};
+    // Gate at the waypoint's commanded vertical position. A depth elevation gives an exact
+    // depth; an above-sea-floor elevation gives an exact ASF but an unknown depth (no
+    // bathymetry), so the depth interval widens to everything — conservative. No elevation
+    // means the surface.
+    ElevationEnvelope envelope = ElevationEnvelope::atPoint(0.0);
+    if (wp.elevation().has_value()) {
+      const std::optional<ElevationValue> el = tolerance::extractElevation(wp.elevation().value());
+      if (el.has_value() && el->frame == ElevationFrame::DEPTH) {
+        envelope = ElevationEnvelope::atPoint(el->valueM);
+      } else if (el.has_value() && el->frame == ElevationFrame::ALTITUDE_ASF) {
+        envelope.minDepthM = -1.0e9;
+        envelope.maxDepthM = 1.0e9;
+        envelope.minAsfM = el->valueM;
+        envelope.maxAsfM = el->valueM;
+      }
+    }
+    if (zoneMap_->clearanceM(at, envelope) < marginM) {
+      if (message != nullptr) {
+        *message = "Waypoint " + std::to_string(i + 1) + " violates an active water zone";
+      }
+      UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Waypoint " << (i + 1) << " of " << waypoints.size()
+        << " violates an active water zone (or its safety margin)")
+      return false;
+    }
+  }
+  return true;
+}
+
 bool WaypointControlServiceProvider::onCycle() {
   // Drain large-list element samples each cycle so the route can be assembled even when the
   // element samples arrive before (or after) the command metadata.
@@ -171,6 +221,10 @@ CommandStateResult WaypointControlServiceProvider::onCommanded(const std::weak_p
         // until the large list arrives here in COMMANDED; SERVICE_FAILED is the legal reason.
         return failInCommanded(session, CommandStatusReasonEnumType::SERVICE_FAILED,
                                "Waypoint route failed validation");
+      }
+      std::string zoneMessage;
+      if (!waypointsZoneCompliant(waypoints, &zoneMessage)) {
+        return failInCommanded(session, CommandStatusReasonEnumType::SERVICE_FAILED, zoneMessage);
       }
       if (!autopilot_->setWaypointSetpoint(waypoints)) {
         return failInCommanded(session, CommandStatusReasonEnumType::SERVICE_FAILED,

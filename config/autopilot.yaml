@@ -20,12 +20,14 @@ identity:
   specs_source_id:        "33333333-3333-3333-3333-333333333333"
   capabilities_source_id: "44444444-4444-4444-4444-444444444444"
   nav_source_id:          "55555555-5555-5555-5555-555555555555"
+  constraints_source_id:  "66666666-6666-6666-6666-666666666666"
 
 # Driving-resource arbitration. Higher priority wins the single driving resource.
-# Default: vector HIGH, waypoint LOW.
+# Default: safe mode HIGHEST, vector HIGH, waypoint LOW.
 arbitration:
   vector_priority: 100
   waypoint_priority: 10
+  safe_priority: 1000
 
 loop:
   control_period_ms: 50          # main loop period
@@ -51,6 +53,65 @@ planner:
   max_misses_per_waypoint: 3
   elevation_counts_as_miss: true
   max_replans: 10
+  rrt:                           # fallback planner when the direct Dubins leg clips a zone
+    seed: 12345                  # deterministic sampling, salted per waypoint index
+    max_iterations: 2000
+    time_budget_ms: 150
+    goal_bias: 0.10
+    near_k: 8
+    edge_check_step_m: 4.0       # coarse in-tree edge sampling
+    final_check_step_m: 1.0      # fine recheck of the accepted path
+
+# Static clamp settings for the autopilot's own limits. Merged with dynamic active
+# constraints and platform capabilities; the most restrictive value wins. All optional.
+constraints:
+  max_speed_mps: 5.0
+  min_speed_mps:
+  max_depth_m: 30.0
+  min_depth_m:
+
+# Water-zone geometry margins.
+zones:
+  safety_margin_m: 5.0           # planning/steering standoff from zone boundaries
+  compliance_hysteresis_m: 2.0   # clearance needed to count as recovered (anti-flap)
+  elevation_margin_m: 2.0        # vertical pad when gating zones by their depth band
+  ellipse_segments: 32           # vertices of the conservative ellipse polygon
+
+# Tangent-bug style avoidance for vector mode.
+vector_avoidance:
+  lookahead_rho_factor: 1.5      # lookahead >= factor * turn radius
+  lookahead_speed_s: 2.0         # plus this many seconds at current speed
+  exit_clear_factor: 1.3         # leave boundary-follow when clear to factor * lookahead
+  exit_clear_ticks: 10           # ... for this many consecutive ticks
+  min_follow_s: 2.0              # minimum boundary-follow dwell (hysteresis)
+
+# Zone-violation recovery maneuver.
+recovery:
+  speed_mps: 0.0                 # recovery transit speed; 0 = platform cruising speed
+  complete_hold_s: 1.0           # how long COMPLIANT must hold before recovery completes
+
+# Violation-response policy and safe mode.
+safety:
+  grace_period_s: 10.0           # 0 = instant safe mode on a confirmed violation
+  grace_overrides:               # optional per-class overrides of grace_period_s
+    zone_s:
+    speed_s:
+    elevation_s:
+  violation_confirm_ticks: 2     # consecutive violating ticks before a violation is confirmed
+  clear_hold_s: 2.0              # compliant duration before a violation clears
+  exit_on_all_clear: true        # leave safe mode when violations clear
+  state_report_period_ms: 1000   # ConditionalStateReport publish period
+  safe_mode:
+    strategy: srp                # srp | zero_speed_hold (srp falls back to zero_speed_hold
+                                 # when no csv_path is configured)
+    srp:
+      csv_path: ""               # e.g. "srp.csv"; empty = no SRP loaded
+      origin_lat_deg:            # REQUIRED with csv_path: explicit anchor of the CSV frame
+      origin_lon_deg:
+      accept_commands_after_srp: true
+      hold_radius_m: 10.0        # hold circle around the last SRP waypoint
+      reposition_speed_mps: 1.5  # speed for drift-out repositioning
+      safe_elevation_m:          # depth to hold during the SRP (empty = per-waypoint)
 
 vehicle_control:
   type: sim                      # strategy selector

@@ -36,7 +36,7 @@ namespace arlcore::autopilot {
 //! provider then fails its command with RESOURCE_REJECTED.
 class DrivingResourceArbiter {
  public:
-  DrivingResourceArbiter(int vectorPriority, int waypointPriority);
+  DrivingResourceArbiter(int vectorPriority, int waypointPriority, int safePriority = 1000);
 
   //! \brief Non-mutating check of whether `who` could acquire the resource right now.
   bool canDrive(DriveSource who) const;
@@ -63,6 +63,7 @@ class DrivingResourceArbiter {
   mutable std::mutex mtx_;
   int vectorPriority_;
   int waypointPriority_;
+  int safePriority_;
   DriveSource holder_ = DriveSource::NONE;
   std::set<DriveSource> revoked_;
 };

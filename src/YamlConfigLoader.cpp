@@ -90,10 +90,12 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
   readScalar(identity, "specs_source_id", &out->identity.specsSourceId);
   readScalar(identity, "capabilities_source_id", &out->identity.capabilitiesSourceId);
   readScalar(identity, "nav_source_id", &out->identity.navSourceId);
+  readScalar(identity, "constraints_source_id", &out->identity.constraintsSourceId);
 
   const YAML::Node arb = root["arbitration"];
   readScalar(arb, "vector_priority", &out->arbitration.vectorPriority);
   readScalar(arb, "waypoint_priority", &out->arbitration.waypointPriority);
+  readScalar(arb, "safe_priority", &out->arbitration.safePriority);
 
   const YAML::Node loop = root["loop"];
   readScalar(loop, "control_period_ms", &out->loop.controlPeriodMs);
@@ -121,6 +123,66 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
   readScalar(planner, "max_misses_per_waypoint", &out->planner.maxMissesPerWaypoint);
   readScalar(planner, "elevation_counts_as_miss", &out->planner.elevationCountsAsMiss);
   readScalar(planner, "max_replans", &out->planner.maxReplans);
+  if (planner) {
+    const YAML::Node rrt = planner["rrt"];
+    readScalar(rrt, "seed", &out->planner.rrt.seed);
+    readScalar(rrt, "max_iterations", &out->planner.rrt.maxIterations);
+    readScalar(rrt, "time_budget_ms", &out->planner.rrt.timeBudgetMs);
+    readScalar(rrt, "goal_bias", &out->planner.rrt.goalBias);
+    readScalar(rrt, "near_k", &out->planner.rrt.nearK);
+    readScalar(rrt, "edge_check_step_m", &out->planner.rrt.edgeCheckStepM);
+    readScalar(rrt, "final_check_step_m", &out->planner.rrt.finalCheckStepM);
+  }
+
+  const YAML::Node constraints = root["constraints"];
+  readOptional(constraints, "max_speed_mps", &out->constraints.maxSpeedMps);
+  readOptional(constraints, "min_speed_mps", &out->constraints.minSpeedMps);
+  readOptional(constraints, "max_depth_m", &out->constraints.maxDepthM);
+  readOptional(constraints, "min_depth_m", &out->constraints.minDepthM);
+
+  const YAML::Node zones = root["zones"];
+  readScalar(zones, "safety_margin_m", &out->zones.safetyMarginM);
+  readScalar(zones, "compliance_hysteresis_m", &out->zones.complianceHysteresisM);
+  readScalar(zones, "elevation_margin_m", &out->zones.elevationMarginM);
+  readScalar(zones, "ellipse_segments", &out->zones.ellipseSegments);
+
+  const YAML::Node avoidance = root["vector_avoidance"];
+  readScalar(avoidance, "lookahead_rho_factor", &out->vectorAvoidance.lookaheadRhoFactor);
+  readScalar(avoidance, "lookahead_speed_s", &out->vectorAvoidance.lookaheadSpeedS);
+  readScalar(avoidance, "exit_clear_factor", &out->vectorAvoidance.exitClearFactor);
+  readScalar(avoidance, "exit_clear_ticks", &out->vectorAvoidance.exitClearTicks);
+  readScalar(avoidance, "min_follow_s", &out->vectorAvoidance.minFollowS);
+
+  const YAML::Node recovery = root["recovery"];
+  readScalar(recovery, "speed_mps", &out->recovery.speedMps);
+  readScalar(recovery, "complete_hold_s", &out->recovery.completeHoldS);
+
+  const YAML::Node safety = root["safety"];
+  readScalar(safety, "grace_period_s", &out->safety.gracePeriodS);
+  if (safety) {
+    const YAML::Node overrides = safety["grace_overrides"];
+    readOptional(overrides, "zone_s", &out->safety.graceZoneS);
+    readOptional(overrides, "speed_s", &out->safety.graceSpeedS);
+    readOptional(overrides, "elevation_s", &out->safety.graceElevationS);
+  }
+  readScalar(safety, "violation_confirm_ticks", &out->safety.violationConfirmTicks);
+  readScalar(safety, "clear_hold_s", &out->safety.clearHoldS);
+  readScalar(safety, "exit_on_all_clear", &out->safety.exitOnAllClear);
+  readScalar(safety, "state_report_period_ms", &out->safety.stateReportPeriodMs);
+  if (safety) {
+    const YAML::Node safeMode = safety["safe_mode"];
+    readScalar(safeMode, "strategy", &out->safety.safeMode.strategy);
+    if (safeMode) {
+      const YAML::Node srp = safeMode["srp"];
+      readScalar(srp, "csv_path", &out->safety.safeMode.srp.csvPath);
+      readOptional(srp, "origin_lat_deg", &out->safety.safeMode.srp.originLatDeg);
+      readOptional(srp, "origin_lon_deg", &out->safety.safeMode.srp.originLonDeg);
+      readScalar(srp, "accept_commands_after_srp", &out->safety.safeMode.srp.acceptCommandsAfterSrp);
+      readScalar(srp, "hold_radius_m", &out->safety.safeMode.srp.holdRadiusM);
+      readScalar(srp, "reposition_speed_mps", &out->safety.safeMode.srp.repositionSpeedMps);
+      readOptional(srp, "safe_elevation_m", &out->safety.safeMode.srp.safeElevationM);
+    }
+  }
 
   const YAML::Node vc = root["vehicle_control"];
   readScalar(vc, "type", &out->vehicleControlType);

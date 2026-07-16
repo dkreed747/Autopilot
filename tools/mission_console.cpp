@@ -51,6 +51,7 @@
 #include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 
 #include "AutopilotConfig.h"
+#include "ConstraintsClient.h"
 #include "CycloneQosProviderWrapper.h"
 #include "CycloneReader.h"
 #include "CycloneUtilities.h"
@@ -70,7 +71,10 @@
 namespace {
 
 using arlcore::autopilot::AutopilotConfig;
-using arlcore::autopilot::tools::MissionWaypoint;
+using arlcore::autopilot::MissionWaypoint;
+using arlcore::autopilot::tools::ConstraintEvent;
+using arlcore::autopilot::tools::ConstraintRecord;
+using arlcore::autopilot::tools::ConstraintsClient;
 using arlcore::autopilot::tools::WaypointMissionClient;
 using arlcore::io::CycloneReader;
 using arlcore::io::ReadStatus;
@@ -131,6 +135,10 @@ class ConsoleState {
   void setActive(bool active) {
     std::lock_guard<std::mutex> lock(mutex_);
     missionActive_ = active;
+  }
+  void setConstraints(json constraints) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    constraints_ = std::move(constraints);
   }
 
   std::optional<GlobalPoseReportType> latestPose() const {
@@ -196,6 +204,7 @@ class ConsoleState {
       j["exec_status"] = ex;
     }
     j["mission"] = m;
+    j["constraints"] = constraints_.is_null() ? json{{"enabled", false}} : constraints_;
     return j;
   }
 
@@ -217,6 +226,7 @@ class ConsoleState {
   std::string sessionId_;
   json missionWaypoints_;
   json previewPath_;
+  json constraints_;
   bool missionActive_ = false;
   bool ackReceived_ = false;
 };
@@ -268,7 +278,7 @@ json previewPath(const std::vector<MissionWaypoint>& route, const GlobalPoseRepo
                  const AutopilotConfig& config) {
   std::vector<GlobalWaypointType> waypoints;
   for (const auto& wp : route) {
-    waypoints.push_back(arlcore::autopilot::tools::makeWaypoint(wp));
+    waypoints.push_back(arlcore::autopilot::makeWaypoint(wp));
   }
   arlcore::autopilot::DubinsPathPlanner planner;
   planner.plan(waypoints, start, arlcore::autopilot::derivePlannerParams(config));
@@ -277,6 +287,98 @@ json previewPath(const std::vector<MissionWaypoint>& route, const GlobalPoseRepo
     path.push_back({lat, lon});
   }
   return path;
+}
+
+//! \brief The GUI-facing constraints block: the autopilot's constraint list, the applied
+//! active set (from the standing ack), and the latest command activity.
+json constraintsJson(const ConstraintsClient& client) {
+  json j;
+  j["enabled"] = true;
+  j["active_known"] = client.activeKnown();
+  j["active_ids"] = json::array();
+  for (const auto& id : client.activeIds()) {
+    j["active_ids"].push_back(id);
+  }
+  j["items"] = json::array();
+  for (const ConstraintRecord& record : client.constraints()) {
+    json item;
+    item["id"] = record.id;
+    item["name"] = record.name;
+    item["type"] = record.type;
+    item["active"] = record.active;
+    if (record.state.has_value()) item["state"] = record.state.value();
+    if (!record.polygon.empty()) {
+      item["polygon"] = json::array();
+      for (const auto& [lat, lon] : record.polygon) {
+        item["polygon"].push_back({lat, lon});
+      }
+    }
+    if (record.ceilingM.has_value()) {
+      item["ceiling_m"] = record.ceilingM.value();
+      item["ceiling_frame"] = record.ceilingFrame;
+    }
+    if (record.floorM.has_value()) {
+      item["floor_m"] = record.floorM.value();
+      item["floor_frame"] = record.floorFrame;
+    }
+    if (record.value.has_value()) item["value"] = record.value.value();
+    if (!record.op.empty()) item["op"] = record.op;
+    j["items"].push_back(item);
+  }
+  if (client.lastEvent().has_value()) {
+    const ConstraintEvent& e = client.lastEvent().value();
+    j["last_event"] = {{"service", e.service}, {"status", e.status}, {"reason", e.reason},
+                       {"message", e.message}};
+  }
+  return j;
+}
+
+//! \brief Validate the GUI's constraint JSON; throws std::runtime_error on bad input.
+void validateConstraintBody(const json& body) {
+  const std::string type = body.at("type").get<std::string>();
+  if (type == "keep_in" || type == "keep_out") {
+    const auto& polygon = body.at("polygon");
+    if (!polygon.is_array() || polygon.size() < 3 || polygon.size() > 128) {
+      throw std::runtime_error("zone polygon needs 3..128 vertices");
+    }
+    for (const auto& v : polygon) {
+      if (!v.is_array() || v.size() != 2 || !std::isfinite(v[0].get<double>()) ||
+          !std::isfinite(v[1].get<double>())) {
+        throw std::runtime_error("zone polygon vertices must be [lat, lon] pairs");
+      }
+    }
+    const double ceiling = body.value("ceiling_m", 0.0);
+    const double floor = body.value("floor_m", 100.0);
+    const std::string ceilingFrame = body.value("ceiling_frame", "depth");
+    const std::string floorFrame = body.value("floor_frame", "depth");
+    for (const std::string& frame : {ceilingFrame, floorFrame}) {
+      if (frame != "depth" && frame != "asf") {
+        throw std::runtime_error("zone elevation frames must be 'depth' or 'asf'");
+      }
+    }
+    // Ordering (ceiling shallower than floor) is only checkable within one frame: shallower
+    // means a smaller depth but a larger altitude above the sea floor. Mixed frames (e.g.
+    // ceiling at depth 0, floor above the sea floor) are always accepted.
+    if (ceilingFrame == floorFrame) {
+      const bool ordered = ceilingFrame == "depth" ? ceiling < floor : ceiling > floor;
+      if (!ordered) {
+        throw std::runtime_error(ceilingFrame == "depth"
+            ? "zone ceiling_m (shallower) must be less than floor_m (deeper)"
+            : "zone ceiling_m (shallower) must be a larger above-floor altitude than floor_m");
+      }
+    }
+  } else if (type == "speed" || type == "depth") {
+    const double value = body.at("value").get<double>();
+    if (!std::isfinite(value) || value < 0.0) {
+      throw std::runtime_error(type + " value must be a non-negative number");
+    }
+    const std::string op = body.value("op", "lte");
+    if (op != "lte" && op != "gte") {
+      throw std::runtime_error("op must be 'lte' or 'gte'");
+    }
+  } else {
+    throw std::runtime_error("unknown constraint type '" + type + "'");
+  }
 }
 
 GlobalPoseReportType fallbackStartPose(const AutopilotConfig& config) {
@@ -319,6 +421,15 @@ int main(int argc, char** argv) {
       participant, wqos, rqos,
       arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.waypointSourceId));
 
+  // Constraint services client (only when the autopilot's constraint source is configured).
+  std::optional<ConstraintsClient> constraintsClient;
+  if (!config.identity.constraintsSourceId.empty()) {
+    const auto largeSetRqos = qosProvider.datareader_qos(config.dds.largeCollectionsQosProfile);
+    constraintsClient.emplace(
+        participant, wqos, rqos, largeSetRqos,
+        arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.constraintsSourceId));
+  }
+
   ConsoleState state;
   std::mutex clientMutex;  // guards `client` between the poller and the POST handlers
   std::atomic<bool> running{true};
@@ -349,6 +460,10 @@ int main(int argc, char** argv) {
         }
         state.setAck(client.pollAck());
         state.setActive(client.active());
+        if (constraintsClient.has_value()) {
+          constraintsClient->poll();
+          state.setConstraints(constraintsJson(constraintsClient.value()));
+        }
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -395,7 +510,7 @@ int main(int argc, char** argv) {
       }
       std::vector<GlobalWaypointType> waypoints;
       for (const auto& wp : route) {
-        waypoints.push_back(arlcore::autopilot::tools::makeWaypoint(wp));
+        waypoints.push_back(arlcore::autopilot::makeWaypoint(wp));
       }
       const GlobalPoseReportType start =
           state.latestPose().value_or(fallbackStartPose(config));
@@ -429,6 +544,82 @@ int main(int argc, char** argv) {
           state.latestPose().value_or(fallbackStartPose(config));
       res.set_content(json{{"path", previewPath(route, start, config)}}.dump(),
                       "application/json");
+    } catch (const std::exception& e) {
+      res.status = 400;
+      res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+    }
+  });
+
+  server.Post("/api/constraints", [&](const httplib::Request& req, httplib::Response& res) {
+    if (!constraintsClient.has_value()) {
+      res.status = 503;
+      res.set_content(R"({"error":"constraints are not configured"})", "application/json");
+      return;
+    }
+    try {
+      const json body = json::parse(req.body);
+      validateConstraintBody(body);
+      const std::string type = body.at("type").get<std::string>();
+      const std::string id = body.value("id", "");
+      const std::string name = body.value("name", type);
+      std::lock_guard<std::mutex> lock(clientMutex);
+      std::string newId;
+      if (type == "keep_in" || type == "keep_out") {
+        std::vector<std::array<double, 2>> polygon;
+        for (const auto& v : body.at("polygon")) {
+          polygon.push_back({v[0].get<double>(), v[1].get<double>()});
+        }
+        newId = constraintsClient->upsertZone(id, name, type == "keep_in", polygon,
+                                              body.value("ceiling_m", 0.0),
+                                              body.value("ceiling_frame", "depth"),
+                                              body.value("floor_m", 100.0),
+                                              body.value("floor_frame", "depth"));
+      } else if (type == "speed") {
+        newId = constraintsClient->upsertSpeed(id, name, body.value("op", "lte"),
+                                               body.at("value").get<double>());
+      } else {
+        newId = constraintsClient->upsertDepth(id, name, body.value("op", "lte"),
+                                               body.at("value").get<double>());
+      }
+      res.set_content(json{{"id", newId}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+      res.status = 400;
+      res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+    }
+  });
+
+  server.Delete(R"(/api/constraints/([0-9a-fA-F-]+))",
+                [&](const httplib::Request& req, httplib::Response& res) {
+    if (!constraintsClient.has_value()) {
+      res.status = 503;
+      res.set_content(R"({"error":"constraints are not configured"})", "application/json");
+      return;
+    }
+    try {
+      std::lock_guard<std::mutex> lock(clientMutex);
+      const bool ok = constraintsClient->removeConstraint(req.matches[1]);
+      res.set_content(json{{"deleted", ok}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+      res.status = 400;
+      res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+    }
+  });
+
+  server.Post("/api/constraints/active", [&](const httplib::Request& req, httplib::Response& res) {
+    if (!constraintsClient.has_value()) {
+      res.status = 503;
+      res.set_content(R"({"error":"constraints are not configured"})", "application/json");
+      return;
+    }
+    try {
+      const json body = json::parse(req.body);
+      std::vector<std::string> ids;
+      for (const auto& id : body.at("ids")) {
+        ids.push_back(id.get<std::string>());
+      }
+      std::lock_guard<std::mutex> lock(clientMutex);
+      const bool ok = constraintsClient->setActive(ids);
+      res.set_content(json{{"commanded", ok}}.dump(), "application/json");
     } catch (const std::exception& e) {
       res.status = 400;
       res.set_content(json{{"error", e.what()}}.dump(), "application/json");

@@ -1,0 +1,282 @@
+//---------------------------------------------------------------------------
+// Copyright 2026 Pennsylvania State University
+//
+// Applied Research Laboratory
+// Pennsylvania State University
+// P.O. Box 30
+// State College, PA 16804-0030
+//
+// DISTRIBUTION STATEMENT A. Approved for public release.
+// Distribution is unlimited.
+// This software was developed by the Department of the Navy,
+// NAVSEA Unmanned and Small Combatants. It is provided under the terms of
+// use found in the LICENSE file at the source code root directory.
+//
+//---------------------------------------------------------------------------
+
+#include "ZoneGeometry.h"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+#include <utility>
+
+namespace arlcore::autopilot {
+
+namespace {
+
+constexpr double EPS = 1e-9;
+
+double dot(const Vec2& a, const Vec2& b) { return a.x * b.x + a.y * b.y; }
+double norm(const Vec2& a) { return std::sqrt(dot(a, a)); }
+Vec2 sub(const Vec2& a, const Vec2& b) { return {a.x - b.x, a.y - b.y}; }
+Vec2 add(const Vec2& a, const Vec2& b) { return {a.x + b.x, a.y + b.y}; }
+Vec2 scale(const Vec2& a, double s) { return {a.x * s, a.y * s}; }
+
+//! \brief Nearest point to `p` on segment a->b.
+Vec2 closestOnSegment(const Vec2& p, const Vec2& a, const Vec2& b) {
+  const Vec2 ab = sub(b, a);
+  const double len2 = dot(ab, ab);
+  if (len2 < EPS) {
+    return a;
+  }
+  const double t = std::clamp(dot(sub(p, a), ab) / len2, 0.0, 1.0);
+  return add(a, scale(ab, t));
+}
+
+//! \brief Twice the signed area of the polygon (positive when counter-clockwise).
+double signedArea2(const std::vector<Vec2>& v) {
+  double area2 = 0.0;
+  for (std::size_t i = 0, j = v.size() - 1; i < v.size(); j = i++) {
+    area2 += (v[j].x * v[i].y - v[i].x * v[j].y);
+  }
+  return area2;
+}
+
+}  // namespace
+
+LocalPolygon::LocalPolygon(std::vector<Vec2> vertices) : vertices_(std::move(vertices)) {
+  if (vertices_.size() < 3) {
+    throw std::invalid_argument("LocalPolygon needs at least 3 vertices");
+  }
+  if (signedArea2(vertices_) < 0.0) {
+    std::reverse(vertices_.begin(), vertices_.end());
+  }
+  aabbMin_ = aabbMax_ = vertices_.front();
+  for (const Vec2& v : vertices_) {
+    aabbMin_.x = std::min(aabbMin_.x, v.x);
+    aabbMin_.y = std::min(aabbMin_.y, v.y);
+    aabbMax_.x = std::max(aabbMax_.x, v.x);
+    aabbMax_.y = std::max(aabbMax_.y, v.y);
+  }
+}
+
+bool LocalPolygon::contains(const Vec2& p) const {
+  if (p.x < aabbMin_.x || p.x > aabbMax_.x || p.y < aabbMin_.y || p.y > aabbMax_.y) {
+    return false;
+  }
+  // Crossing-number test with an explicit boundary check so "on the edge" counts as inside.
+  bool inside = false;
+  for (std::size_t i = 0, j = vertices_.size() - 1; i < vertices_.size(); j = i++) {
+    const Vec2& a = vertices_[j];
+    const Vec2& b = vertices_[i];
+    const Vec2 c = closestOnSegment(p, a, b);
+    if (norm(sub(p, c)) < EPS) {
+      return true;
+    }
+    const bool crosses = (b.y > p.y) != (a.y > p.y);
+    if (crosses) {
+      const double xCross = b.x + (p.y - b.y) * (a.x - b.x) / (a.y - b.y);
+      if (p.x < xCross) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
+}
+
+Vec2 LocalPolygon::closestBoundaryPoint(const Vec2& p) const {
+  Vec2 best = vertices_.front();
+  double bestDist = std::numeric_limits<double>::max();
+  for (std::size_t i = 0, j = vertices_.size() - 1; i < vertices_.size(); j = i++) {
+    const Vec2 c = closestOnSegment(p, vertices_[j], vertices_[i]);
+    const double d = norm(sub(p, c));
+    if (d < bestDist) {
+      bestDist = d;
+      best = c;
+    }
+  }
+  return best;
+}
+
+double LocalPolygon::signedDistance(const Vec2& p) const {
+  const double d = norm(sub(p, closestBoundaryPoint(p)));
+  return contains(p) ? d : -d;
+}
+
+void ZoneSet::addZone(ZoneKind kind, LocalPolygon polygon) {
+  zones_.push_back(Zone{kind, std::move(polygon)});
+}
+
+double ZoneSet::zoneClearance(const Zone& z, const Vec2& p) {
+  const double sd = z.polygon.signedDistance(p);
+  // KEEP_OUT is compliant outside the polygon, KEEP_IN inside it.
+  return z.kind == ZoneKind::KEEP_OUT ? -sd : sd;
+}
+
+double ZoneSet::clearanceM(const Vec2& p) const {
+  double clearance = std::numeric_limits<double>::max();
+  for (const Zone& z : zones_) {
+    clearance = std::min(clearance, zoneClearance(z, p));
+  }
+  return clearance;
+}
+
+ClearanceInfo ZoneSet::clearanceInfo(const Vec2& p) const {
+  ClearanceInfo info;
+  info.clearanceM = std::numeric_limits<double>::max();
+  const Zone* binding = nullptr;
+  for (const Zone& z : zones_) {
+    const double c = zoneClearance(z, p);
+    if (c < info.clearanceM) {
+      info.clearanceM = c;
+      binding = &z;
+    }
+  }
+  if (binding == nullptr) {
+    return info;
+  }
+  const Vec2 boundary = binding->polygon.closestBoundaryPoint(p);
+  Vec2 dir = sub(p, boundary);
+  const double len = norm(dir);
+  if (len < EPS) {
+    // On the boundary: fall back to probing which side improves the clearance.
+    const double probe = 0.5;
+    Vec2 bestDir{1.0, 0.0};
+    double bestClearance = -std::numeric_limits<double>::max();
+    for (int k = 0; k < 8; ++k) {
+      const double a = 2.0 * M_PI * k / 8.0;
+      const Vec2 d{std::cos(a), std::sin(a)};
+      const double c = clearanceM(add(p, scale(d, probe)));
+      if (c > bestClearance) {
+        bestClearance = c;
+        bestDir = d;
+      }
+    }
+    info.improveDir = bestDir;
+    return info;
+  }
+  dir = scale(dir, 1.0 / len);
+  // `dir` points from the boundary toward p. On the compliant side that direction keeps
+  // increasing clearance; on the violating side improving means heading back through the
+  // boundary, i.e. -dir.
+  info.improveDir = info.clearanceM >= 0.0 ? dir : scale(dir, -1.0);
+  return info;
+}
+
+bool ZoneSet::segmentClear(const Vec2& a, const Vec2& b, double marginM, double stepM) const {
+  if (zones_.empty()) {
+    return true;
+  }
+  const double length = norm(sub(b, a));
+  const int steps = std::max(1, static_cast<int>(std::ceil(length / std::max(stepM, 0.01))));
+  for (int i = 0; i <= steps; ++i) {
+    const double t = static_cast<double>(i) / steps;
+    const Vec2 p = add(a, scale(sub(b, a), t));
+    if (clearanceM(p) < marginM) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ZoneSet::pathClear(const DubinsPath& path, double marginM, double stepM) const {
+  if (zones_.empty()) {
+    return true;
+  }
+  const double length = path.lengthM();
+  const int steps = std::max(1, static_cast<int>(std::ceil(length / std::max(stepM, 0.01))));
+  for (int i = 0; i <= steps; ++i) {
+    const double s = length * i / steps;
+    const Dubins2DPose pose = path.sample(s);
+    if (clearanceM(Vec2{pose.x, pose.y}) < marginM) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::optional<double> ZoneSet::raycastFirstHit(const Vec2& origin, const Vec2& dir, double marginM,
+                                               double maxRangeM) const {
+  if (zones_.empty()) {
+    return std::nullopt;
+  }
+  // Sphere tracing: clearanceM is 1-Lipschitz, so from a point with clearance c the nearest
+  // sub-margin point is at least (c - marginM) away — the march can safely jump that far.
+  constexpr double MIN_STEP = 0.05;
+  double s = 0.0;
+  while (s <= maxRangeM) {
+    const Vec2 p = add(origin, scale(dir, s));
+    const double c = clearanceM(p) - marginM;
+    if (c <= EPS) {
+      return s;
+    }
+    s += std::max(c, MIN_STEP);
+  }
+  return std::nullopt;
+}
+
+std::optional<Vec2> ZoneSet::nearestCompliantPoint(const Vec2& p, double marginM) const {
+  if (zones_.empty()) {
+    return p;
+  }
+  // Iterative projection along the binding zone's clearance gradient. Converges immediately for
+  // a single binding constraint; a few iterations handle points binding several zones.
+  constexpr int MAX_PROJECTIONS = 12;
+  constexpr double OVERSHOOT = 1e-3;
+  Vec2 q = p;
+  for (int i = 0; i < MAX_PROJECTIONS; ++i) {
+    const ClearanceInfo info = clearanceInfo(q);
+    if (info.clearanceM >= marginM) {
+      return q;
+    }
+    q = add(q, scale(info.improveDir, marginM - info.clearanceM + OVERSHOOT));
+  }
+  // Fallback: expanding ring search around p (handles disjoint or wedge-shaped compliant space).
+  const double startClearance = clearanceM(p);
+  const double deficit = std::max(marginM - startClearance, 1.0);
+  for (double radius = deficit; radius <= 64.0 * deficit; radius *= 1.5) {
+    constexpr int DIRECTIONS = 32;
+    for (int k = 0; k < DIRECTIONS; ++k) {
+      const double a = 2.0 * M_PI * k / DIRECTIONS;
+      const Vec2 candidate = add(p, Vec2{radius * std::cos(a), radius * std::sin(a)});
+      if (clearanceM(candidate) >= marginM) {
+        return candidate;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::pair<Vec2, Vec2>> ZoneSet::keepInBounds() const {
+  bool found = false;
+  Vec2 lo{-std::numeric_limits<double>::max(), -std::numeric_limits<double>::max()};
+  Vec2 hi{std::numeric_limits<double>::max(), std::numeric_limits<double>::max()};
+  for (const Zone& z : zones_) {
+    if (z.kind != ZoneKind::KEEP_IN) {
+      continue;
+    }
+    found = true;
+    lo.x = std::max(lo.x, z.polygon.aabbMin().x);
+    lo.y = std::max(lo.y, z.polygon.aabbMin().y);
+    hi.x = std::min(hi.x, z.polygon.aabbMax().x);
+    hi.y = std::min(hi.y, z.polygon.aabbMax().y);
+  }
+  if (!found) {
+    return std::nullopt;
+  }
+  return std::make_pair(lo, hi);
+}
+
+}  // namespace arlcore::autopilot

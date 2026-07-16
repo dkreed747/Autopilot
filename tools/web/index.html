@@ -24,6 +24,8 @@
         <button id="btn-clear" class="tool-btn" hidden>Clear</button>
         <button id="btn-done-edit" class="tool-btn" hidden>Done</button>
         <span id="edit-hint" hidden>Click the chart to drop waypoints &mdash; click a marker to edit it</span>
+        <button id="btn-cancel-zone" class="tool-btn" hidden>Cancel zone</button>
+        <span id="zone-hint" hidden>Click the chart to add vertices &mdash; double-click, press Enter, or click the first vertex to close (Esc cancels)</span>
         <label id="follow-wrap"><input type="checkbox" id="follow-vehicle" checked> Follow vehicle</label>
       </div>
       <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -36,6 +38,7 @@
         <div id="cmd-chips">
           <span id="cmd-status-chip" class="chip chip-idle">NO MISSION</span>
           <span id="ack-chip" class="chip chip-idle" hidden>AWAITING ACK</span>
+          <span id="violation-chip" class="chip chip-critical" hidden>CONSTRAINT VIOLATED</span>
         </div>
         <button id="btn-execute" disabled>EXECUTE</button>
       </div>
@@ -83,6 +86,46 @@
               <option value="asf">above floor</option>
             </select></label>
           <button id="ed-delete" class="danger">Delete waypoint</button>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-constraints">
+        <h2>Constraints</h2>
+        <div id="con-banner" hidden>No applied set acknowledged yet &mdash; constraints are not enforced until toggled active</div>
+        <ul id="con-list"></ul>
+        <div id="con-actions">
+          <button id="btn-add-kia" class="tool-btn">+ Keep-in</button>
+          <button id="btn-add-koa" class="tool-btn">+ Keep-out</button>
+          <button id="btn-add-speed" class="tool-btn">+ Speed</button>
+          <button id="btn-add-depth" class="tool-btn">+ Depth</button>
+        </div>
+        <div id="con-editor" hidden>
+          <h3 id="con-editor-title">Constraint</h3>
+          <label>Name <input type="text" id="con-name"></label>
+          <div id="con-zone-fields" hidden>
+            <label>Ceiling (m) <input type="number" id="con-ceiling" step="1" min="0">
+              <select id="con-ceiling-frame">
+                <option value="depth">depth</option>
+                <option value="asf">above floor</option>
+              </select></label>
+            <label>Floor (m) <input type="number" id="con-floor" step="1" min="0">
+              <select id="con-floor-frame">
+                <option value="depth">depth</option>
+                <option value="asf">above floor</option>
+              </select></label>
+          </div>
+          <div id="con-value-fields" hidden>
+            <label>Limit <select id="con-op">
+              <option value="lte">at most</option>
+              <option value="gte">at least</option>
+            </select>
+            <input type="number" id="con-value" step="0.1" min="0">
+            <span id="con-unit"></span></label>
+          </div>
+          <div class="con-editor-btns">
+            <button id="con-apply">Apply</button>
+            <button id="con-delete" class="danger">Delete</button>
+          </div>
         </div>
       </section>
 

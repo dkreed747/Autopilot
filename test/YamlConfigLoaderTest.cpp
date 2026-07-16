@@ -89,8 +89,97 @@ TEST_F(YamlConfigLoaderTest, UnsetFieldsKeepDefaults) {
   // Untouched fields retain their struct defaults.
   EXPECT_EQ(config.arbitration.vectorPriority, 100);
   EXPECT_EQ(config.arbitration.waypointPriority, 10);
+  EXPECT_EQ(config.arbitration.safePriority, 1000);
   EXPECT_EQ(config.planner.maxReplans, 10);
   EXPECT_FALSE(config.platformCapabilities.surface.maxForwardSpeedMps.has_value());
+  EXPECT_FALSE(config.constraints.maxSpeedMps.has_value());
+  EXPECT_DOUBLE_EQ(config.zones.safetyMarginM, 5.0);
+  EXPECT_DOUBLE_EQ(config.safety.gracePeriodS, 10.0);
+  EXPECT_EQ(config.safety.safeMode.strategy, "srp");
+  EXPECT_TRUE(config.safety.safeMode.srp.csvPath.empty());
+}
+
+TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
+  writeConfig(
+      "identity:\n"
+      "  constraints_source_id: \"cccc\"\n"
+      "arbitration:\n"
+      "  safe_priority: 900\n"
+      "planner:\n"
+      "  rrt:\n"
+      "    seed: 42\n"
+      "    max_iterations: 500\n"
+      "    time_budget_ms: 75\n"
+      "    goal_bias: 0.2\n"
+      "constraints:\n"
+      "  max_speed_mps: 4.5\n"
+      "  min_speed_mps:\n"       // explicit null stays unset
+      "  max_depth_m: 25.0\n"
+      "zones:\n"
+      "  safety_margin_m: 8.0\n"
+      "  compliance_hysteresis_m: 3.0\n"
+      "  ellipse_segments: 16\n"
+      "vector_avoidance:\n"
+      "  lookahead_rho_factor: 2.0\n"
+      "  exit_clear_ticks: 20\n"
+      "recovery:\n"
+      "  speed_mps: 1.2\n"
+      "safety:\n"
+      "  grace_period_s: 0.0\n"
+      "  grace_overrides:\n"
+      "    zone_s: 5.0\n"
+      "  violation_confirm_ticks: 3\n"
+      "  clear_hold_s: 4.0\n"
+      "  exit_on_all_clear: false\n"
+      "  state_report_period_ms: 500\n"
+      "  safe_mode:\n"
+      "    strategy: zero_speed_hold\n"
+      "    srp:\n"
+      "      csv_path: \"srp.csv\"\n"
+      "      origin_lat_deg: 39.5\n"
+      "      origin_lon_deg: -76.25\n"
+      "      accept_commands_after_srp: false\n"
+      "      hold_radius_m: 15.0\n"
+      "      reposition_speed_mps: 2.0\n"
+      "      safe_elevation_m: 3.0\n");
+
+  AutopilotConfig config;
+  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+
+  EXPECT_EQ(config.identity.constraintsSourceId, "cccc");
+  EXPECT_EQ(config.arbitration.safePriority, 900);
+  EXPECT_EQ(config.planner.rrt.seed, 42u);
+  EXPECT_EQ(config.planner.rrt.maxIterations, 500);
+  EXPECT_EQ(config.planner.rrt.timeBudgetMs, 75);
+  EXPECT_DOUBLE_EQ(config.planner.rrt.goalBias, 0.2);
+  ASSERT_TRUE(config.constraints.maxSpeedMps.has_value());
+  EXPECT_DOUBLE_EQ(config.constraints.maxSpeedMps.value(), 4.5);
+  EXPECT_FALSE(config.constraints.minSpeedMps.has_value());
+  ASSERT_TRUE(config.constraints.maxDepthM.has_value());
+  EXPECT_DOUBLE_EQ(config.constraints.maxDepthM.value(), 25.0);
+  EXPECT_DOUBLE_EQ(config.zones.safetyMarginM, 8.0);
+  EXPECT_DOUBLE_EQ(config.zones.complianceHysteresisM, 3.0);
+  EXPECT_EQ(config.zones.ellipseSegments, 16);
+  EXPECT_DOUBLE_EQ(config.vectorAvoidance.lookaheadRhoFactor, 2.0);
+  EXPECT_EQ(config.vectorAvoidance.exitClearTicks, 20);
+  EXPECT_DOUBLE_EQ(config.recovery.speedMps, 1.2);
+  EXPECT_DOUBLE_EQ(config.safety.gracePeriodS, 0.0);
+  ASSERT_TRUE(config.safety.graceZoneS.has_value());
+  EXPECT_DOUBLE_EQ(config.safety.graceZoneS.value(), 5.0);
+  EXPECT_FALSE(config.safety.graceSpeedS.has_value());
+  EXPECT_EQ(config.safety.violationConfirmTicks, 3);
+  EXPECT_DOUBLE_EQ(config.safety.clearHoldS, 4.0);
+  EXPECT_FALSE(config.safety.exitOnAllClear);
+  EXPECT_EQ(config.safety.stateReportPeriodMs, 500);
+  EXPECT_EQ(config.safety.safeMode.strategy, "zero_speed_hold");
+  EXPECT_EQ(config.safety.safeMode.srp.csvPath, "srp.csv");
+  ASSERT_TRUE(config.safety.safeMode.srp.originLatDeg.has_value());
+  EXPECT_DOUBLE_EQ(config.safety.safeMode.srp.originLatDeg.value(), 39.5);
+  EXPECT_FALSE(config.safety.safeMode.srp.acceptCommandsAfterSrp);
+  EXPECT_DOUBLE_EQ(config.safety.safeMode.srp.holdRadiusM, 15.0);
+  EXPECT_DOUBLE_EQ(config.safety.safeMode.srp.repositionSpeedMps, 2.0);
+  ASSERT_TRUE(config.safety.safeMode.srp.safeElevationM.has_value());
+  EXPECT_DOUBLE_EQ(config.safety.safeMode.srp.safeElevationM.value(), 3.0);
 }
 
 }  // namespace arlcore::autopilot

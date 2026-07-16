@@ -72,6 +72,43 @@ Navigation drives the control tick: the pose observer fires inside the nav consu
 `cycle()` and triggers the brain's recompute, so control always uses the latest fix. The
 design is single-threaded (one control loop); the mutexes are defensive.
 
+### Safety layer (UMAA conditionals & active constraints)
+
+When `identity.constraints_source_id` is configured, the autopilot provides the UMAA MM
+conditional/constraint services for a supported subset — **water zones** (keep-in/keep-out
+polygons; ellipses ingested as conservative polygons), **speed**, and **depth** — and
+enforces them in both driving modes:
+
+- **Services** (`AutopilotApp::initializeConstraintServices`): a `ConditionalReportProvider`
+  owns the working conditional set; ConditionalControl Add/Delete providers accept
+  console-minted conditionals (an Add re-publishes the payload under the autopilot's own
+  writer so it survives the commander, preserving the commander's `conditionalID` as an
+  upsert key); a *standing-session* ActiveConstraints provider keeps the applied set alive
+  across commander restarts (its single live ack is the applied set). The autopilot consumes
+  its **own** report over DDS loopback, so the published report is the single source of
+  truth every peer sees.
+- **`ConstraintSupervisor`** converts the active conditionals into a revisioned
+  `ConstraintSnapshot`, feeds the shared **`ZoneMap`** (geodetic zone store, elevation-band
+  gated, signed-clearance queries with implicit margins — no polygon offsetting), publishes
+  ~1 Hz `ConditionalStateReport`s, and runs the **violation FSM**: confirmed zone violations
+  engage `RecoveryGuidance` (drive straight back to the nearest compliant point) while the
+  configurable grace period runs; a violation persisting past its grace (0 = instantly)
+  latches **safe mode**, which preempts everything via the arbiter (`DriveSource::SAFE`) and
+  runs the yaml-selected **`SafeModeStrategy`** — the Safe Return Path mission (a startup
+  CSV anchored at an explicit origin; afterwards release or hold the final waypoint,
+  repositioning on drift-out) or a zero-speed hold. Commands are rejected while the
+  supervisor holds the vehicle.
+- **Guidance**: speed/depth constraints act as clamps at the brain's single control-output
+  funnel (most restrictive of dynamic constraints, `constraints:` settings, and platform
+  capabilities). In vector mode `VectorZoneGuidance` (a tangent-bug with perfect map
+  knowledge) deflects and wall-follows around zones; in waypoint mode `DubinsPathPlanner`
+  legs are checked against the zones, falling back to **`DubinsRrtStar`** (RRT* whose every
+  edge is an exact Dubins path) for detours, and replan when the constraint set changes
+  mid-route. Waypoint routes are validated point-by-point against the zones at command time.
+
+Constraints are created/toggled from the mission console's constraints panel
+(`tools/README.md`).
+
 ## Configuration
 
 All parameters — including the platform specs/capabilities (which nothing else currently

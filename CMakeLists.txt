@@ -97,7 +97,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config/autopilot.yaml
 # command session client), used by the mission runner and the mission console.
 # ---------------------------------------------------------------------------
 add_library(mission-tools STATIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools/MissionRoute.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/ConstraintsClient.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/tools/WaypointMissionClient.cpp)
 target_include_directories(mission-tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 target_link_libraries(mission-tools PUBLIC autopilot-lib)
@@ -114,10 +114,14 @@ target_include_directories(mission_console SYSTEM PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/third-party)
 target_link_libraries(mission_console PRIVATE mission-tools Threads::Threads)
 
-# The console GUI is served from a web root next to the binary.
-add_custom_command(TARGET mission_console POST_BUILD
+# The console GUI is served from a web root next to the binary. An always-run target (not a
+# POST_BUILD step): web-only edits must land in the build dir even when the console binary is
+# already up to date.
+add_custom_target(console-web ALL
   COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/tools/web ${CMAKE_BINARY_DIR}/web)
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/web ${CMAKE_BINARY_DIR}/web
+  COMMENT "Mirroring tools/web into the build directory")
+add_dependencies(mission_console console-web)
 
 # ---------------------------------------------------------------------------
 # Tests (in-memory LocalReaderSender loopback IO from umaa-cpp::test-utils)

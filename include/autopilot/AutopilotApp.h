@@ -25,17 +25,28 @@
 #include <UMAA/EO/UVPlatformSpecs/UVPlatformSpecsReportType.hpp>
 #include <UMAA/EO/UVPlatformSpecs/UVPlatformCapabilitiesReportType.hpp>
 
+#include "ActiveConstraintsControlProvider.h"
 #include "AutopilotBrain.h"
 #include "AutopilotConfig.h"
+#include "ConditionalAddProvider.h"
+#include "ConditionalDeleteProvider.h"
+#include "ConditionalFactory.h"
+#include "ConditionalFactoryIo.h"
+#include "ConditionalReportConsumer.h"
+#include "ConditionalReportProvider.h"
+#include "ConditionalReportProviderIo.h"
+#include "ConstraintSupervisor.h"
 #include "GlobalPoseReportConsumer.h"
 #include "NavObservers.h"
 #include "NavState.h"
 #include "ReportProvider.h"
+#include "SafeReturnPath.h"
 #include "SimVehicleControl.h"
 #include "SpeedReportConsumer.h"
 #include "VectorControlServiceProvider.h"
 #include "VelocityReportConsumer.h"
 #include "WaypointControlServiceProvider.h"
+#include "ZoneMap.h"
 
 namespace arlcore::autopilot {
 
@@ -88,7 +99,24 @@ class AutopilotApp {
   std::unique_ptr<arlcore::umaa::services::ReportProvider<
       UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType>> capabilitiesReportProvider_;
 
+  // MM constraint services (constructed only when identity.constraints_source_id is set).
+  // The autopilot both provides AND consumes its own ConditionalReport over DDS loopback:
+  // the published report is the single source of truth every peer (console included) sees.
+  std::shared_ptr<arlcore::umaa::conditional::ConditionalReportProvider> conditionalReportProvider_;
+  std::shared_ptr<arlcore::umaa::ConditionalFactoryIo> conditionalFactoryIo_;
+  std::shared_ptr<arlcore::umaa::conditional::ConditionalFactory> conditionalFactory_;
+  std::shared_ptr<arlcore::umaa::conditional::ConditionalReportConsumer> conditionalReportConsumer_;
+  std::shared_ptr<arlcore::umaa::conditional::ActiveConstraintsControlProvider> activeConstraintsProvider_;
+  std::unique_ptr<arlcore::umaa::conditional::ConditionalAddProvider> conditionalAddProvider_;
+  std::unique_ptr<arlcore::umaa::conditional::ConditionalDeleteProvider> conditionalDeleteProvider_;
+  std::unique_ptr<ZoneMap> zoneMap_;
+  std::shared_ptr<ConstraintSupervisor> supervisor_;
+  std::optional<SafeReturnPath> safeReturnPath_;
+
   std::atomic<bool> running_{false};
+
+  //! \brief Construct the MM conditional/constraint services and wire the supervisor.
+  bool initializeConstraintServices();
 };
 
 }  // namespace arlcore::autopilot

@@ -27,6 +27,11 @@ const state = {
   selected: -1,           // selected waypoint index (draft or mission)
   view: { cE: 0, cN: 0, pxPerM: 1.4, userPanned: false },
   lastFinal: null,        // last terminal command status
+  constraints: { enabled: false, items: [], active_ids: [], active_known: false },
+  conSelected: null,      // selected constraint id (opens the editor)
+  conDraft: null,         // local edit buffer for the selected constraint (see bindConstraintEditor)
+  zoneDraft: null,        // { kind: 'keep_in'|'keep_out', points: [[e,n],...] } in zone-draw mode
+  pendingActive: null,    // optimistic active-id set awaiting the autopilot's ack echo
 };
 
 const $ = (id) => document.getElementById(id);
@@ -182,6 +187,51 @@ function drawWaypoint(root, wp, i, cls, extraCls) {
   return g;
 }
 
+/* ------------------------------------------------- constraint zones */
+
+function zonePointsAttr(latlonPoly) {
+  return latlonPoly
+      .map(([la, lo]) => toScreen(...toLocal(la, lo)).map((v) => v.toFixed(1)).join(','))
+      .join(' ');
+}
+
+function drawZones(root) {
+  const items = state.constraints.items || [];
+  for (const c of items) {
+    if (!c.polygon || c.polygon.length < 3) continue;
+    const cls = ['zone', c.type === 'keep_in' ? 'zone-kia' : 'zone-koa'];
+    if (!isActive(c.id)) cls.push('zone-inactive');
+    if (c.state === false && isActive(c.id)) cls.push('zone-violated');
+    if (state.conSelected === c.id) cls.push('zone-selected');
+    el('polygon', {
+      points: zonePointsAttr(c.polygon),
+      class: cls.join(' '),
+      'fill-rule': 'evenodd',
+      'data-cid': c.id,
+    }, root);
+  }
+  // In-progress zone draft (local-frame vertices).
+  if (state.mode === 'zone-draw' && state.zoneDraft) {
+    const pts = state.zoneDraft.points;
+    const cls = 'zone-draft ' + (state.zoneDraft.kind === 'keep_in' ? 'zone-kia' : 'zone-koa');
+    if (pts.length >= 2) {
+      el('polyline', {
+        points: pts.map(([e, n]) => toScreen(e, n).map((v) => v.toFixed(1)).join(',')).join(' '),
+        class: cls,
+      }, root);
+    }
+    pts.forEach(([e, n], i) => {
+      const [x, y] = toScreen(e, n);
+      el('circle', { cx: x, cy: y, r: i === 0 ? 6 : 4, class: 'zone-vertex', 'data-vidx': i }, root);
+    });
+  }
+}
+
+function isActive(id) {
+  const ids = state.pendingActive !== null ? state.pendingActive : (state.constraints.active_ids || []);
+  return ids.includes(id);
+}
+
 /* ------------------------------------------------- main render */
 
 function render() {
@@ -197,6 +247,8 @@ function render() {
   }
 
   drawGrid(root);
+
+  drawZones(root);
 
   // Planned route for the active/last mission, then the draft preview when editing.
   polyline(state.mission.planned_path.map(([la, lo]) => toLocal(la, lo)), 'planned-path', root);
@@ -274,6 +326,7 @@ function renderSidebar() {
   setText('ro-wp-rem', ex ? String(ex.waypoints_remaining) : '—');
 
   renderWaypointList();
+  renderConstraintsPanel();
   renderStatusLog();
   renderExecuteDock();
 }
@@ -380,6 +433,9 @@ function renderExecuteDock() {
   const btn = $('btn-execute');
   const chip = $('cmd-status-chip');
   const ack = $('ack-chip');
+  const violated = (state.constraints.items || [])
+      .some((c) => c.state === false && isActive(c.id));
+  $('violation-chip').hidden = !violated;
   const hist = state.mission.status_history || [];
   const last = hist.length ? hist[hist.length - 1] : null;
 
@@ -607,6 +663,266 @@ function bindEditor() {
   });
 }
 
+/* ------------------------------------------------- constraints panel */
+
+function describeConstraint(c) {
+  if (c.type === 'keep_in' || c.type === 'keep_out') {
+    const kind = c.type === 'keep_in' ? 'keep-in' : 'keep-out';
+    const bound = (v, f) => f === 'asf' ? `${v} m ASF` : `${v} m`;
+    const band = c.ceiling_m !== undefined && c.floor_m !== undefined
+        ? ` · ${bound(c.ceiling_m, c.ceiling_frame)} → ${bound(c.floor_m, c.floor_frame)}` : '';
+    return `${kind} · ${(c.polygon || []).length} pts${band}`;
+  }
+  const op = c.op === 'gte' ? '≥' : '≤';
+  if (c.type === 'speed') return `speed ${op} ${(c.value ?? 0).toFixed(1)} m/s`;
+  if (c.type === 'depth') return `depth ${op} ${(c.value ?? 0).toFixed(1)} m`;
+  return c.type;
+}
+
+let lastConSignature = '';
+
+function renderConstraintsPanel() {
+  const con = state.constraints;
+  const items = con.items || [];
+  // The applied-set acknowledgement only exists after the FIRST activation command, so the
+  // unknown state must never block toggling (chicken-and-egg); it only warns.
+  $('con-banner').hidden = !con.enabled || con.active_known || !items.length;
+  const list = $('con-list');
+  const signature = JSON.stringify([items, con.active_ids, state.pendingActive, state.conSelected,
+                                    con.enabled]);
+  if (signature !== lastConSignature) {
+    lastConSignature = signature;
+    list.replaceChildren();
+    if (!con.enabled) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'Constraints are not configured.';
+      list.appendChild(li);
+    } else if (!items.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'No constraints defined.';
+      list.appendChild(li);
+    }
+    for (const c of items) {
+      const li = document.createElement('li');
+      li.dataset.cid = c.id;
+      li.className = (state.conSelected === c.id ? 'selected ' : '') +
+                     (c.state === false && isActive(c.id) ? 'violated' : '');
+      const pending = state.pendingActive !== null &&
+          state.pendingActive.includes(c.id) !== (con.active_ids || []).includes(c.id);
+      li.innerHTML =
+          `<input type="checkbox" class="con-active" ${isActive(c.id) ? 'checked' : ''}>` +
+          `<span class="con-desc"><b>${c.name || c.type}</b> — ${describeConstraint(c)}` +
+          `${pending ? ' <em class="pending">pending…</em>' : ''}` +
+          `${c.state === false && isActive(c.id) ? ' <em class="viol">VIOLATED</em>' : ''}</span>`;
+      list.appendChild(li);
+    }
+  }
+  renderConstraintEditor();
+}
+
+function renderConstraintEditor() {
+  const ed = $('con-editor');
+  const c = (state.constraints.items || []).find((x) => x.id === state.conSelected);
+  if (!c) {
+    ed.hidden = true;
+    state.conDraft = null;
+    return;
+  }
+  // The editor renders from a LOCAL draft, never from the live item: the SSE feed re-renders
+  // at 5 Hz, and rendering server values directly would stomp anything the user typed the
+  // moment the input blurs. Change events commit into the draft (bindConstraintEditor);
+  // Apply sends the draft. The draft is (re)seeded from the item when the selection changes.
+  if (!state.conDraft || state.conDraft.id !== c.id) {
+    state.conDraft = {
+      id: c.id,
+      name: c.name || '',
+      ceiling_m: c.ceiling_m ?? 0,
+      ceiling_frame: c.ceiling_frame || 'depth',
+      floor_m: c.floor_m ?? 100,
+      floor_frame: c.floor_frame || 'depth',
+      value: c.value ?? 0,
+      op: c.op || 'lte',
+    };
+  }
+  const d = state.conDraft;
+  ed.hidden = false;
+  const isZone = c.type === 'keep_in' || c.type === 'keep_out';
+  $('con-editor-title').textContent = `${c.name || c.type} (${c.type.replace('_', '-')})`;
+  $('con-zone-fields').hidden = !isZone;
+  $('con-value-fields').hidden = isZone;
+  // Still never touch the input the user is typing in right now (its value is ahead of the
+  // draft until its change event fires on blur/Enter).
+  const setVal = (inp, v) => { if (document.activeElement !== inp) inp.value = v; };
+  setVal($('con-name'), d.name);
+  if (isZone) {
+    setVal($('con-ceiling'), d.ceiling_m);
+    setVal($('con-floor'), d.floor_m);
+    setVal($('con-ceiling-frame'), d.ceiling_frame);
+    setVal($('con-floor-frame'), d.floor_frame);
+  } else {
+    setVal($('con-value'), d.value);
+    setVal($('con-op'), d.op);
+    $('con-unit').textContent = c.type === 'speed' ? 'm/s' : 'm';
+  }
+}
+
+//! Commit editor field changes into the local draft (bound once at boot).
+function bindConstraintEditor() {
+  const commit = (id, fn) => $(id).addEventListener('change', (ev) => {
+    if (state.conDraft) fn(ev.target);
+  });
+  commit('con-name', (t) => { state.conDraft.name = t.value; });
+  commit('con-ceiling', (t) => { state.conDraft.ceiling_m = parseFloat(t.value) || 0; });
+  commit('con-ceiling-frame', (t) => { state.conDraft.ceiling_frame = t.value; });
+  commit('con-floor', (t) => { state.conDraft.floor_m = parseFloat(t.value) || 0; });
+  commit('con-floor-frame', (t) => { state.conDraft.floor_frame = t.value; });
+  commit('con-value', (t) => { state.conDraft.value = parseFloat(t.value) || 0; });
+  commit('con-op', (t) => { state.conDraft.op = t.value; });
+}
+
+function selectConstraint(id) {
+  state.conSelected = state.conSelected === id ? null : id;
+  state.conDraft = null;  // reseed the editor from the (possibly different) item
+  lastConSignature = '';
+  render();
+}
+
+async function applyConstraintEdit() {
+  const c = (state.constraints.items || []).find((x) => x.id === state.conSelected);
+  const d = state.conDraft;
+  if (!c || !d) return;
+  const body = { id: c.id, type: c.type, name: d.name || c.type };
+  if (c.type === 'keep_in' || c.type === 'keep_out') {
+    body.polygon = c.polygon;
+    body.ceiling_m = d.ceiling_m;
+    body.ceiling_frame = d.ceiling_frame;
+    body.floor_m = d.floor_m;
+    body.floor_frame = d.floor_frame;
+  } else {
+    body.value = d.value;
+    body.op = d.op;
+  }
+  try {
+    await api('/api/constraints', body);
+  } catch (e) {
+    alert('Failed to apply constraint: ' + e.message);
+  }
+}
+
+async function deleteConstraint() {
+  const id = state.conSelected;
+  if (!id) return;
+  try {
+    await fetch('/api/constraints/' + id, { method: 'DELETE' });
+    state.conSelected = null;
+  } catch (e) {
+    alert('Failed to delete constraint: ' + e.message);
+  }
+}
+
+/* --- instant apply-on-toggle: optimistic set, debounced command, ack echo clears pending --- */
+
+let activeTimer = null;
+
+function toggleActive(id, on) {
+  const base = state.pendingActive !== null ? state.pendingActive
+                                            : [...(state.constraints.active_ids || [])];
+  const next = base.filter((x) => x !== id);
+  if (on) next.push(id);
+  state.pendingActive = next;
+  lastConSignature = '';
+  clearTimeout(activeTimer);
+  activeTimer = setTimeout(async () => {
+    try {
+      await api('/api/constraints/active', { ids: state.pendingActive });
+    } catch (e) {
+      alert('Failed to command the active set: ' + e.message);
+      state.pendingActive = null;
+      lastConSignature = '';
+      render();
+    }
+  }, 300);
+}
+
+/* ------------------------------------------------- zone drawing */
+
+function segsIntersect(a, b, c, d) {
+  const cross = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const s1 = cross(a, b, c) * cross(a, b, d);
+  const s2 = cross(c, d, a) * cross(c, d, b);
+  return s1 < 0 && s2 < 0;
+}
+
+function zoneSelfIntersects(points) {
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;  // closing edge shares the first vertex
+      if (segsIntersect(points[i], points[(i + 1) % n], points[j], points[(j + 1) % n])) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function enterZoneDraw(kind) {
+  if (state.mode === 'edit') exitEditMode();
+  state.mode = 'zone-draw';
+  state.zoneDraft = { kind, points: [] };
+  $('btn-new-mission').hidden = true;
+  $('btn-cancel-zone').hidden = false;
+  $('zone-hint').hidden = false;
+  render();
+}
+
+function exitZoneDraw() {
+  state.mode = 'monitor';
+  state.zoneDraft = null;
+  $('btn-new-mission').hidden = false;
+  $('btn-cancel-zone').hidden = true;
+  $('zone-hint').hidden = true;
+  render();
+}
+
+async function finishZoneDraw() {
+  const draft = state.zoneDraft;
+  if (!draft || draft.points.length < 3) return;
+  if (zoneSelfIntersects(draft.points)) {
+    alert('Zone polygon must not self-intersect.');
+    return;
+  }
+  const polygon = draft.points.map(([e, n]) => toGeo(e, n));
+  const name = (draft.kind === 'keep_in' ? 'keep-in ' : 'keep-out ') +
+               ((state.constraints.items || []).length + 1);
+  try {
+    await api('/api/constraints', {
+      type: draft.kind, name, polygon,
+      ceiling_m: 0.0, ceiling_frame: 'depth', floor_m: 100.0, floor_frame: 'depth',
+    });
+    exitZoneDraw();
+  } catch (e) {
+    alert('Failed to create zone: ' + e.message);
+  }
+}
+
+function addZoneVertex(east, north) {
+  const pts = state.zoneDraft.points;
+  // Clicking the first vertex closes the polygon.
+  if (pts.length >= 3) {
+    const [x0, y0] = toScreen(...pts[0]);
+    const [x1, y1] = toScreen(east, north);
+    if (Math.hypot(x1 - x0, y1 - y0) < 12) {
+      finishZoneDraw();
+      return;
+    }
+  }
+  pts.push([east, north]);
+  render();
+}
+
 /* ------------------------------------------------- chart interactions */
 
 function bindChart() {
@@ -655,6 +971,16 @@ function bindChart() {
       selectWaypoint(parseInt(target.dataset.idx, 10));
       return;
     }
+    if (state.mode === 'zone-draw' && ev.target.closest('#chart')) {
+      const [e, n] = toWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+      addZoneVertex(e, n);
+      return;
+    }
+    const zone = ev.target.closest ? ev.target.closest('.zone') : null;
+    if (zone && zone.dataset.cid && state.mode === 'monitor') {
+      selectConstraint(zone.dataset.cid);
+      return;
+    }
     if (state.mode === 'edit' && ev.target.closest('#chart')) {
       const [e, n] = toWorld(ev.clientX - rect.left, ev.clientY - rect.top);
       addDraftWaypoint(e, n);
@@ -663,6 +989,17 @@ function bindChart() {
       $('wp-popup').hidden = true;
       render();
     }
+  });
+  chart.addEventListener('dblclick', (ev) => {
+    if (state.mode === 'zone-draw') {
+      ev.preventDefault();
+      finishZoneDraw();
+    }
+  });
+  window.addEventListener('keydown', (ev) => {
+    if (state.mode !== 'zone-draw') return;
+    if (ev.key === 'Enter') finishZoneDraw();
+    if (ev.key === 'Escape') exitZoneDraw();
   });
   chart.addEventListener('wheel', (ev) => {
     ev.preventDefault();
@@ -685,6 +1022,15 @@ function applySnapshot(snap) {
   const t = snap.telemetry && snap.telemetry.lat_deg !== undefined ? snap.telemetry : null;
   state.mission = snap.mission || state.mission;
   state.execStatus = snap.exec_status || null;
+  if (snap.constraints) {
+    state.constraints = snap.constraints;
+    // The autopilot's ack echoing the commanded set clears the optimistic pending state.
+    if (state.pendingActive !== null) {
+      const echoed = [...(state.constraints.active_ids || [])].sort().join(',');
+      const wanted = [...state.pendingActive].sort().join(',');
+      if (echoed === wanted) state.pendingActive = null;
+    }
+  }
 
   const hist = state.mission.status_history || [];
   for (const s of hist) {
@@ -732,6 +1078,29 @@ $('wp-list').addEventListener('click', (ev) => {
   if (li) selectWaypoint(parseInt(li.dataset.idx, 10));
 });
 $('btn-new-mission').addEventListener('click', enterEditMode);
+$('btn-cancel-zone').addEventListener('click', exitZoneDraw);
+$('btn-add-kia').addEventListener('click', () => enterZoneDraw('keep_in'));
+$('btn-add-koa').addEventListener('click', () => enterZoneDraw('keep_out'));
+$('btn-add-speed').addEventListener('click', async () => {
+  try { await api('/api/constraints', { type: 'speed', name: 'max speed', op: 'lte', value: 3.0 }); }
+  catch (e) { alert('Failed to create speed constraint: ' + e.message); }
+});
+$('btn-add-depth').addEventListener('click', async () => {
+  try { await api('/api/constraints', { type: 'depth', name: 'max depth', op: 'lte', value: 20.0 }); }
+  catch (e) { alert('Failed to create depth constraint: ' + e.message); }
+});
+$('con-list').addEventListener('click', (ev) => {
+  const li = ev.target.closest('li[data-cid]');
+  if (!li) return;
+  if (ev.target.classList.contains('con-active')) {
+    toggleActive(li.dataset.cid, ev.target.checked);
+    return;
+  }
+  selectConstraint(li.dataset.cid);
+});
+$('con-apply').addEventListener('click', applyConstraintEdit);
+$('con-delete').addEventListener('click', deleteConstraint);
+bindConstraintEditor();
 $('btn-clear').addEventListener('click', () => {
   state.draft = [];
   state.draftPath = [];

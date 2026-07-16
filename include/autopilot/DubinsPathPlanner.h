@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -29,7 +30,10 @@
 
 #include "ControlVector.h"
 #include "DubinsPath.h"
+#include "DubinsRrtStar.h"
 #include "ProgressTypes.h"
+#include "ZoneGeometry.h"
+#include "ZoneMap.h"
 
 namespace arlcore::autopilot {
 
@@ -47,6 +51,8 @@ struct PlannerParams {
   int maxReplans = 10;              // guard against endless replanning (spirals excluded)
   double sampleStepM = 2.0;         // path polyline sampling resolution
   double maxDepthRateMps = 0.0;     // platform depth-change limit (0 = unknown/surface-only)
+  double zoneMarginM = 5.0;         // required clearance from active zone boundaries
+  DubinsRrtParams rrt;              // fallback planner tuning (rho/margin filled per leg)
 };
 
 //! \brief A horizontal path planner that drives a vehicle through a series of 3D waypoints
@@ -77,6 +83,21 @@ struct PlannerParams {
 //! the plan, not a failure. When the route completes the planner commands zero speed.
 class DubinsPathPlanner {
  public:
+  //! \brief Install the shared zone map. Legs planned afterwards avoid the active zones with
+  //! the configured margin: the direct Dubins solution is used when it is compliant, otherwise
+  //! the Dubins-RRT* fallback finds a detour. Nullable (no zone awareness).
+  void setZones(const ZoneMap* zoneMap) { zoneMap_ = zoneMap; }
+
+  //! \brief Re-project the active zones (the constraint set changed mid-route): the remaining
+  //! portion of the current leg is rechecked and replanned budget-free when it is now blocked;
+  //! a route whose current target waypoint became non-compliant fails.
+  void onConstraintsChanged(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
+
+  //! \brief Replan the current leg from the live pose without consuming miss/replan budget
+  //! (recovery handoff / constraint change). Returns false when the leg cannot be planned
+  //! (the route is then failed).
+  bool replanCurrentLegFrom(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
+
   //! \brief Plan a route up front from the current pose through the given waypoints.
   void plan(const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints,
             const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& start,
@@ -101,18 +122,24 @@ class DubinsPathPlanner {
   std::vector<std::pair<double, double>> previewRoute(double stepM = 2.0) const;
 
  private:
-  //! \brief One planned leg: a Dubins path to a virtual goal short of the waypoint plus a
-  //! straight final-approach runway through the waypoint. Arriving along a straight (instead
-  //! of on the tail of an arc) lets the tracker settle position and attitude before the gate.
+  //! \brief One planned leg: a chain of Dubins paths (a single direct solution, or the
+  //! Dubins-RRT* detour around zones) to a virtual goal short of the waypoint plus a straight
+  //! final-approach runway through the waypoint. Arriving along a straight (instead of on the
+  //! tail of an arc) lets the tracker settle position and attitude before the gate.
   struct Leg {
-    Leg(const DubinsPath& p, double runway, double endAz)
-        : path(p), dubinsLengthM(p.lengthM()), runwayM(runway),
-          lengthM(p.lengthM() + runway), endAzimuthRad(endAz) {}
-    DubinsPath path;       // in the local tangent plane (math convention)
+    Leg(std::vector<DubinsPath> chain, double runway, double endAz);
+    std::vector<DubinsPath> paths;   // in the local tangent plane (math convention)
+    std::vector<double> pathStartM;  // arc length at the start of each chained path
     double dubinsLengthM;  // curved portion (ends at the virtual goal)
     double runwayM;        // straight final approach ending at the waypoint
     double lengthM;        // dubinsLengthM + runwayM
     double endAzimuthRad;  // arrival azimuth at the waypoint (true-north, [-pi, pi])
+
+    //! \brief The pose at arc length s along the chained curved portion (clamped).
+    Dubins2DPose sampleChain(double sM) const;
+
+    //! \brief The chained word names, e.g. "LSL+RSR" (diagnostics/logs).
+    std::string word() const;
   };
 
   //! \brief Convert a geodetic position to the local tangent plane (x east, y north).
@@ -122,8 +149,25 @@ class DubinsPathPlanner {
   //! heading so guidance keeps flowing through the waypoint.
   static Dubins2DPose sampleExtended(const Leg& leg, double sM);
 
-  //! \brief Build the Dubins leg from a local start pose to waypoint `wpIndex`.
-  Leg buildLeg(const Dubins2DPose& startPose, std::size_t wpIndex) const;
+  //! \brief Build the leg from a local start pose to waypoint `wpIndex` through the pipeline:
+  //! arrival-azimuth compliance (scanning alternates when the waypoint has no attitude
+  //! requirement), direct Dubins solve + clearance check, Dubins-RRT* fallback. Returns
+  //! nullopt when no compliant leg exists (the caller fails the route).
+  std::optional<Leg> buildLeg(const Dubins2DPose& startPose, std::size_t wpIndex) const;
+
+  //! \brief The arrival azimuth whose final-approach runway (virtual goal -> waypoint) keeps
+  //! the zone margin: the natural/commanded azimuth when compliant, otherwise the nearest
+  //! alternative in 22.5-degree steps (only when the waypoint has no attitude requirement).
+  std::optional<double> compliantArrivalAzimuth(std::size_t wpIndex, double naturalAz,
+                                                double runwayM) const;
+
+  //! \brief Whether the remaining portion of a leg (from arc length `fromS`) keeps the margin.
+  bool legClear(const Leg& leg, double fromS) const;
+
+  //! \brief Re-project the active zones into the plan frame, gated by the route's depth
+  //! envelope (current depth plus every DEPTH-frame waypoint elevation, padded; any
+  //! unconvertible elevation frame conservatively activates every zone).
+  void refreshZoneSet(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
 
   //! \brief The commanded arrival azimuth for waypoint `wpIndex` (attitude requirement if
   //! present, otherwise a natural fly-through heading toward the next waypoint).
@@ -168,6 +212,9 @@ class DubinsPathPlanner {
   std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType> waypoints_;
   std::vector<int> missCounts_;
   PlannerParams params_;
+
+  const ZoneMap* zoneMap_ = nullptr;  // shared zone store (nullable)
+  ZoneSet zoneSet_;                   // active zones projected into localFrame_
 
   GeographicLib::LocalCartesian localFrame_;  // origin at the plan start pose
   Dubins2DPose planStartPose_;                // local start pose recorded by plan()
