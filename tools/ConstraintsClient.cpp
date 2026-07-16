@@ -250,6 +250,9 @@ void ConstraintsClient::poll() {
       }
     } else if (result.status == arlcore::umaa::LargeSetStatus::EMPTY_SET) {
       conditionals_.clear();  // every constraint deleted (EMPTY_SET carries no set pointer)
+    } else if (result.status == arlcore::umaa::LargeSetStatus::STALE_METADATA) {
+      // Stale metadata never becomes valid; stop re-deriving until a fresh report arrives.
+      lastMetadata_.reset();
     }
   }
 

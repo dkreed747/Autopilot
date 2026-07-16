@@ -134,14 +134,29 @@ image-smoke:
       cat <&3
       exec 3<&-
     }
-    http_post /api/constraints '{"type":"speed","name":"smoke","op":"lte","value":2.5}' \
-      | grep -q '"id"' || { echo "constraint POST rejected"; exit 1; }
+    resp=$(http_post /api/constraints '{"type":"speed","name":"smoke","op":"lte","value":2.5}')
+    echo "${resp}" | grep -q '"id"' || { echo "constraint POST rejected"; exit 1; }
+    smoke_id=$(printf '%s' "${resp}" | sed -n 's/.*"id":"\([0-9a-fA-F-]*\)".*/\1/p')
+    [ -n "${smoke_id}" ] || { echo "constraint POST returned no id"; exit 1; }
     roundtrip=""
     for i in $(seq 1 20); do
       if http_get /api/state | grep -q '"name":"smoke"'; then roundtrip=1; break; fi
       sleep 1
     done
     [ -n "${roundtrip}" ] || { echo "constraint never round-tripped through the autopilot"; exit 1; }
+    # Regression: an edit stamps the report set metadata with wall-clock time; a brand-new
+    # add afterwards must still round-trip (an unstamped insert used to publish epoch-0
+    # metadata the console rejected as stale forever - the TODO.md warn-spin).
+    http_post /api/constraints "{\"id\":\"${smoke_id}\",\"type\":\"speed\",\"name\":\"smoke\",\"op\":\"lte\",\"value\":3.0}" \
+      | grep -q '"id"' || { echo "constraint edit rejected"; exit 1; }
+    http_post /api/constraints '{"type":"speed","name":"smoke2","op":"lte","value":1.5}' \
+      | grep -q '"id"' || { echo "post-edit constraint POST rejected"; exit 1; }
+    addback=""
+    for i in $(seq 1 20); do
+      if http_get /api/state | grep -q '"name":"smoke2"'; then addback=1; break; fi
+      sleep 1
+    done
+    [ -n "${addback}" ] || { echo "add-after-edit never round-tripped (stale-metadata regression)"; exit 1; }
     kill -TERM "${RUNNER}"
     wait "${RUNNER}" || true
     echo "image smoke OK: web UI served, constraint round-tripped, clean shutdown"
