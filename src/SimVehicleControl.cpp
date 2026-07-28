@@ -28,30 +28,16 @@
 
 namespace arlcore::autopilot {
 
-using UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType;
-using UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType;
-using UMAA::EO::UVPlatformSpecs::SurfaceCapabilityLimitsType;
-using UMAA::EO::UVPlatformSpecs::UnderwaterCapabilityLimitsType;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 using UMAA::SA::SpeedStatus::SpeedReportType;
 using UMAA::SA::VelocityStatus::VelocityReportType;
 
-namespace {
-//! \brief Copy an optional config value into a generated @optional field.
-void setIf(std::optional<double>& field, const std::optional<double>& value) {  // NOLINT(runtime/references)
-  if (value.has_value()) {
-    field = value.value();
-  }
-}
-}  // namespace
-
 SimVehicleControl::SimVehicleControl(
-    const PlatformSpecsConfig& specs, const PlatformCapabilitiesConfig& caps,
+    const PlatformCapabilitiesConfig& caps,
     const SimVehicleConfig& simConfig, const arlcore::NumericGuid& navSourceId,
     std::shared_ptr<arlcore::io::SenderBase<GlobalPoseReportType>> poseSender,
     std::shared_ptr<arlcore::io::SenderBase<SpeedReportType>> speedSender,
     std::shared_ptr<arlcore::io::SenderBase<VelocityReportType>> velocitySender) :
-    specs_(specs),
     caps_(caps),
     simConfig_(simConfig),
     poseProvider_(navSourceId, std::move(poseSender)),
@@ -100,9 +86,8 @@ bool SimVehicleControl::initialize() {
   }
   running_ = true;
   simThread_ = std::thread(&SimVehicleControl::runLoop, this);
-  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "SimVehicleControl initialized for platform '" << specs_.name
-    << "' at " << simConfig_.cycleRateHz << " Hz (start "
-    << simConfig_.initialLatitudeDeg << ", " << simConfig_.initialLongitudeDeg << ")")
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "SimVehicleControl initialized at " << simConfig_.cycleRateHz
+    << " Hz (start " << simConfig_.initialLatitudeDeg << ", " << simConfig_.initialLongitudeDeg << ")")
   return true;
 }
 
@@ -251,51 +236,6 @@ SimVehicleControl::SimState SimVehicleControl::state() const {
   s.depthM = depthM_;
   s.yawRateRps = yawRateRps_;
   return s;
-}
-
-UVPlatformSpecsReportType SimVehicleControl::getPlatformSpecs() const {
-  UVPlatformSpecsReportType report;
-  report.name() = specs_.name;
-  report.lengthAtWaterline() = specs_.lengthAtWaterlineM;
-  report.beamAtWaterline() = specs_.beamAtWaterlineM;
-  report.draft() = specs_.draftM;
-  report.forwardDistance() = specs_.forwardDistanceM;
-  report.aftDistance() = specs_.aftDistanceM;
-  report.portDistance() = specs_.portDistanceM;
-  report.starboardDistance() = specs_.starboardDistanceM;
-  report.topDistance() = specs_.topDistanceM;
-  report.bottomDistance() = specs_.bottomDistanceM;
-  report.displacement() = specs_.displacementMetricTon;
-  report.weightLight() = specs_.weightLightMetricTon;
-  report.weightLoaded() = specs_.weightLoadedMetricTon;
-  // centerOfBuoyancy, centerOfGravity, and referenceFrameOrigin keep generated defaults.
-  return report;
-}
-
-UVPlatformCapabilitiesReportType SimVehicleControl::getPlatformCapabilities() const {
-  UVPlatformCapabilitiesReportType report;
-  report.minWaterDepth() = caps_.minWaterDepthM;
-
-  SurfaceCapabilityLimitsType surface;
-  setIf(surface.maxForwardSpeed(), caps_.surface.maxForwardSpeedMps);
-  setIf(surface.maxReverseSpeed(), caps_.surface.maxReverseSpeedMps);
-  setIf(surface.cruisingSpeed(), caps_.surface.cruisingSpeedMps);
-  setIf(surface.maxTurnRate(), caps_.surface.maxTurnRateRps);
-  setIf(surface.minSpeedInMedium(), caps_.surface.minSpeedInMediumMps);
-  report.surfaceCapabilities() = surface;
-
-  if (caps_.underwaterEnabled) {
-    UnderwaterCapabilityLimitsType underwater;
-    setIf(underwater.maxForwardSpeed(), caps_.underwater.maxForwardSpeedMps);
-    setIf(underwater.maxReverseSpeed(), caps_.underwater.maxReverseSpeedMps);
-    setIf(underwater.cruisingSpeed(), caps_.underwater.cruisingSpeedMps);
-    setIf(underwater.maxTurnRate(), caps_.underwater.maxTurnRateRps);
-    setIf(underwater.minSpeedInMedium(), caps_.underwater.minSpeedInMediumMps);
-    setIf(underwater.maxDepthChangeRate(), caps_.underwater.maxDepthChangeRateMps);
-    report.underwaterCapabilities() = underwater;
-  }
-
-  return report;
 }
 
 }  // namespace arlcore::autopilot

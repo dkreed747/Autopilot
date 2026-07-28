@@ -24,6 +24,7 @@
 #include "CommandProviderBase.h"
 #include "ConstraintTypes.h"
 #include "IAutopilot.h"
+#include "ICommandModeGate.hpp"
 #include "ZoneMap.h"
 #include "LargeListReader.h"
 #include "WaypointControlServiceProviderIo.h"
@@ -47,11 +48,13 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
                                  double maxForwardSpeedMps,
                                  int maxListWaitCycles,
                                  const ISafetyGate* safetyGate = nullptr,
-                                 const ZoneMap* zoneMap = nullptr);
+                                 const ZoneMap* zoneMap = nullptr,
+                                 ICommandModeGate* modeGate = nullptr);
 
  protected:
   bool isCommandValid(const GlobalWaypointCommandType& cmd) override;
   bool onCycle() override;
+  arlcore::umaa::services::CommandStateResult onIssued(const std::weak_ptr<CmdSession> session) override;
   arlcore::umaa::services::CommandStateResult onCommanded(const std::weak_ptr<CmdSession> session) override;
   arlcore::umaa::services::CommandStateResult onExecuting(const std::weak_ptr<CmdSession> session) override;
   bool onUpdated(const std::weak_ptr<CmdSession> session, const GlobalWaypointCommandType& previousCmd,
@@ -67,6 +70,7 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
  private:
   void resetPlanningState();
   void relinquish(const std::weak_ptr<CmdSession> session);
+  CommandClass classOf(const GlobalWaypointCommandType& cmd) const;
 
   //! \brief Fail the session directly from the COMMANDED state (reasons like
   //! RESOURCE_REJECTED are only legal there), releasing everything this command holds.
@@ -91,6 +95,7 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
   int maxListWaitCycles_;
   const ISafetyGate* safetyGate_;
   const ZoneMap* zoneMap_;
+  ICommandModeGate* modeGate_;
 
   // Per-command planning state.
   arlcore::NumericGuid activeSession_;
@@ -98,6 +103,12 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
   bool acquired_ = false;
   bool planned_ = false;
   int listWaitCycles_ = 0;
+
+  // Hold bookkeeping (one session at a time under CANCEL_EXISTING): the epoch recorded when
+  // the hold began; an authoritative mode change bumps the gate's epoch and flushes the hold.
+  bool held_ = false;
+  uint64_t heldEpoch_ = 0;
+  arlcore::NumericGuid heldSessionId_;
 };
 
 }  // namespace arlcore::autopilot

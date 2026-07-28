@@ -20,7 +20,13 @@ browser app (no external web dependencies — works on an air-gapped network):
 - Subscribes to the three SA navigation reports plus the waypoint command ack / status /
   execution-status topics, and streams a JSON state snapshot to the browser over
   server-sent events (~5 Hz). REST endpoints: `GET /api/state`, `GET /api/stream`,
-  `POST /api/mission`, `POST /api/mission/cancel`, `POST /api/preview`.
+  `POST /api/mission`, `POST /api/mission/cancel`, `POST /api/preview`, `POST /api/mode`,
+  `POST /api/vector`, `POST /api/vector/cancel`, `POST /api/rc`.
+- The console commands under its **own UMAA identity** (`console:` block in the YAML):
+  outgoing commands carry `source.id = console.source_id` and
+  `source.parentID = console.platform_id`. Keep the platform id different from
+  `identity.platform_id` to act as a REMOTE operator (the shipped default) or set it equal
+  to act as the onboard autonomy.
 - The chart plots the vehicle (heading, trail) on a local-tangent-plane graticule with
   pan/zoom, the active mission's waypoints (capture gates, arrival-attitude arrows,
   completed waypoints faded, the current one pulsing), the ideal planned Dubins route, and
@@ -64,6 +70,37 @@ the per-conditional state reports back. REST: `POST /api/constraints` (create; a
   **VIOLATED** from the autopilot's ConditionalStateReport (mirrored by the execute dock's
   `CONSTRAINT VIOLATED` chip). An *active set unknown* banner shows until the first
   acknowledgement arrives.
+
+### Operational mode panel
+
+When the autopilot's `identity.operational_mode_control_source_id` is configured, the top
+panel shows the vehicle's reported mode (MANUAL / STANDBY / REMOTE / AUTONOMOUS — STALE
+when the 1 Hz report stops) and commands STANDBY / REMOTE / AUTONOMOUS via
+`POST /api/mode`. MANUAL is platform-owned and never commandable. With implicit
+transitions enabled the mode also follows commands automatically (sending a mission or
+vector from the console flips the vehicle into REMOTE; the onboard autonomy's commands
+flip it into AUTONOMOUS), and an implicitly-entered mode falls back to STANDBY once its
+commands finish.
+
+### Vector panel & bus activity
+
+Compose a vector setpoint (heading °T, speed, optional depth/above-floor elevation,
+optional timeout that auto-completes the command via its UMAA end time) and
+Execute/Cancel it. The *Bus activity* list and the chart also show **every** waypoint
+mission and vector command observed on the DDS bus — whoever commanded it — classified
+and colored per source: own (green), onboard autonomy (teal), remote operator (magenta).
+
+### Remote control (WASD)
+
+*RC mode* drives the vehicle with the keyboard through rolling vector-command updates
+(~5 Hz): `W` = along the current vehicle heading, `W+A`/`W+D` = ∓/± 45°, `A`/`D` = ∓/± 90°,
+`S` = stop, `R`/`F` = speed up/down (clamped to platform limits), `Shift`/`Ctrl` = move
+up/down (frame-aware), `Z` = toggle depth ↔ above-sea-floor, `Esc` exits. Safety is
+layered: every update carries a 2 s end time (a dead console cannot leave the vehicle
+driving), the backend stops the vehicle after 1 s without browser heartbeats, and
+releasing all direction keys commands zero speed. The *Heading up* checkbox rotates the
+chart so the vehicle's heading points up — much easier to steer from the vehicle's
+perspective.
 
 Screenshots (recorded against the sim vehicle): `../docs/console/`.
 

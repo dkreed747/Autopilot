@@ -132,6 +132,7 @@ class AutopilotBrain : public IAutopilot {
   ClampLimits staticClampLimits_;
   bool lastSpeedClamped_ = false;
   bool lastElevationClamped_ = false;
+  bool manualSuppressed_ = false;
   const ZoneMap* zoneMap_ = nullptr;
   std::unique_ptr<VectorZoneGuidance> vectorGuidance_;
   uint64_t plannedConstraintRevision_ = 0;  // constraint revision the current route was planned under

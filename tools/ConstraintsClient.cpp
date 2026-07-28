@@ -73,7 +73,8 @@ ConstraintsClient::ConstraintsClient(const dds::domain::DomainParticipant& parti
                                      const dds::pub::qos::DataWriterQos& wqos,
                                      const dds::sub::qos::DataReaderQos& rqos,
                                      const dds::sub::qos::DataReaderQos& largeSetRqos,
-                                     const arlcore::NumericGuid& destinationId)
+                                     const arlcore::NumericGuid& destinationId,
+                    const ClientIdentity& identity)
     : zoneWriter_(std::make_shared<CycloneSender<WaterZoneConditionalType>>(
           participant, UMAA::MM::Conditional::WaterZoneConditionalTypeTopic, wqos)),
       speedWriter_(std::make_shared<CycloneSender<SpeedConditionalType>>(
@@ -108,7 +109,7 @@ ConstraintsClient::ConstraintsClient(const dds::domain::DomainParticipant& parti
           participant, UMAA::MM::ActiveConstraintsControl::ActiveConstraintsCommandStatusTypeTopic, rqos)),
       stateReader_(std::make_shared<CycloneReader<ConditionalStateReportType>>(
           participant, UMAA::MM::ConditionalStateReport::ConditionalStateReportTypeTopic, rqos)),
-      sourceId_(arlcore::UuidFactory::getInstance().generateGuid()),
+      identity_(identity),
       destinationId_(destinationId) {}
 
 void ConstraintsClient::sendAdd(const arlcore::NumericGuid& conditionalId, const std::string& name,
@@ -124,7 +125,8 @@ void ConstraintsClient::sendAdd(const arlcore::NumericGuid& conditionalId, const
   ConditionalAddCommandType cmd;
   cmd.conditional(generic);
   cmd.timeStamp(stamp);
-  cmd.source().id(sourceId_.getGuid());
+  cmd.source().id(identity_.sourceId.getGuid());
+  cmd.source().parentID(identity_.platformId.getGuid());
   cmd.sessionID(arlcore::UuidFactory::getInstance().generateGuid().getGuid());
   cmd.destination().id(destinationId_.getGuid());
   addSender_->send(cmd);
@@ -214,7 +216,8 @@ bool ConstraintsClient::removeConstraint(const std::string& id) {
   ConditionalDeleteCommandType cmd;
   cmd.conditionalID(arlcore::UuidFactory::getInstance().parseGuidFromString(id).getGuid());
   cmd.timeStamp(arlcore::umaa::getTimestamp());
-  cmd.source().id(sourceId_.getGuid());
+  cmd.source().id(identity_.sourceId.getGuid());
+  cmd.source().parentID(identity_.platformId.getGuid());
   cmd.sessionID(arlcore::UuidFactory::getInstance().generateGuid().getGuid());
   cmd.destination().id(destinationId_.getGuid());
   return deleteSender_->send(cmd) == SendStatus::SUCCESS;
@@ -227,7 +230,8 @@ bool ConstraintsClient::setActive(const std::vector<std::string>& ids) {
         arlcore::UuidFactory::getInstance().parseGuidFromString(id).getGuid());
   }
   cmd.timeStamp(arlcore::umaa::getTimestamp());
-  cmd.source().id(sourceId_.getGuid());
+  cmd.source().id(identity_.sourceId.getGuid());
+  cmd.source().parentID(identity_.platformId.getGuid());
   cmd.sessionID(arlcore::UuidFactory::getInstance().generateGuid().getGuid());
   cmd.destination().id(destinationId_.getGuid());
   return activeSender_->send(cmd) == SendStatus::SUCCESS;

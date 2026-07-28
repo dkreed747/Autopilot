@@ -32,6 +32,7 @@
 //! console is a full UMAA Global Waypoint control consumer: command + large-list route out,
 //! ack + status + execution status back.
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -51,6 +52,7 @@
 #include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 
 #include "AutopilotConfig.h"
+#include "ClientIdentity.hpp"
 #include "ConstraintsClient.h"
 #include "CycloneQosProviderWrapper.h"
 #include "CycloneReader.h"
@@ -58,8 +60,14 @@
 #include "DubinsPathPlanner.h"
 #include "MissionRoute.h"
 #include "NumericGuid.h"
+#include "OperationalModeClient.hpp"
 #include "PlannerParamsFactory.h"
+#include "ToleranceUtils.h"
+#include "UmaaUtils.h"
 #include "UuidFactory.h"
+#include "VectorActivityMonitor.hpp"
+#include "VectorCommandClient.hpp"
+#include "WaypointActivityMonitor.hpp"
 #include "WaypointMissionClient.h"
 #include "YamlConfigLoader.h"
 
@@ -72,9 +80,17 @@ namespace {
 
 using arlcore::autopilot::AutopilotConfig;
 using arlcore::autopilot::MissionWaypoint;
+using arlcore::autopilot::tools::ClientIdentity;
 using arlcore::autopilot::tools::ConstraintEvent;
 using arlcore::autopilot::tools::ConstraintRecord;
 using arlcore::autopilot::tools::ConstraintsClient;
+using arlcore::autopilot::tools::ObservedMission;
+using arlcore::autopilot::tools::ObservedVector;
+using arlcore::autopilot::tools::OperationalModeClient;
+using arlcore::autopilot::tools::VectorActivityMonitor;
+using arlcore::autopilot::tools::VectorCommandClient;
+using arlcore::autopilot::tools::VectorSetpoint;
+using arlcore::autopilot::tools::WaypointActivityMonitor;
 using arlcore::autopilot::tools::WaypointMissionClient;
 using arlcore::io::CycloneReader;
 using arlcore::io::ReadStatus;
@@ -139,6 +155,34 @@ class ConsoleState {
   void setConstraints(json constraints) {
     std::lock_guard<std::mutex> lock(mutex_);
     constraints_ = std::move(constraints);
+  }
+  void setPlatform(json platform) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    platform_ = std::move(platform);
+  }
+  void setOperationalMode(json opMode) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    operationalMode_ = std::move(opMode);
+  }
+  void setVector(json vector) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    vector_ = std::move(vector);
+  }
+  void setTraffic(json traffic) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    traffic_ = std::move(traffic);
+  }
+  void pushVectorStatus(const std::string& status, const std::string& reason,
+                        const std::string& message) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    vectorStatusHistory_.push_back({status, reason, message});
+    while (vectorStatusHistory_.size() > 25) {
+      vectorStatusHistory_.pop_front();
+    }
+  }
+  void clearVectorStatusHistory() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    vectorStatusHistory_.clear();
   }
 
   std::optional<GlobalPoseReportType> latestPose() const {
@@ -205,6 +249,24 @@ class ConsoleState {
     }
     j["mission"] = m;
     j["constraints"] = constraints_.is_null() ? json{{"enabled", false}} : constraints_;
+    if (!platform_.is_null()) {
+      j["platform"] = platform_;
+    }
+    if (!operationalMode_.is_null()) {
+      j["operational_mode"] = operationalMode_;
+    }
+    if (!vector_.is_null()) {
+      json v = vector_;
+      v["status_history"] = json::array();
+      for (const auto& s : vectorStatusHistory_) {
+        v["status_history"].push_back({{"status", s.status}, {"reason", s.reason},
+                                       {"message", s.message}});
+      }
+      j["vector"] = v;
+    }
+    if (!traffic_.is_null()) {
+      j["traffic"] = traffic_;
+    }
     return j;
   }
 
@@ -223,10 +285,15 @@ class ConsoleState {
   std::chrono::steady_clock::time_point lastPoseAt_;
   std::chrono::steady_clock::time_point lastExecAt_;
   std::deque<StatusEntry> statusHistory_;
+  std::deque<StatusEntry> vectorStatusHistory_;
   std::string sessionId_;
   json missionWaypoints_;
   json previewPath_;
   json constraints_;
+  json platform_;
+  json operationalMode_;
+  json vector_;
+  json traffic_;
   bool missionActive_ = false;
   bool ackReceived_ = false;
 };
@@ -389,6 +456,225 @@ GlobalPoseReportType fallbackStartPose(const AutopilotConfig& config) {
   return pose;
 }
 
+constexpr double kRadToDeg = 180.0 / M_PI;
+constexpr double kDegToRad = M_PI / 180.0;
+constexpr double kRcDeadmanS = 2.0;         // rolling DDS endTime while RC is engaged
+constexpr double kRcServerWatchdogS = 1.0;  // browser-silence threshold before auto-stop
+
+//! \brief Classify a bus command's origin: the console itself, this platform's onboard
+//! autonomy, or any other (remote) commander. A nil autopilot platform id can never match.
+std::string classifySource(const arlcore::NumericGuid& sourceId,
+                           const arlcore::NumericGuid& sourceParentId,
+                           const ClientIdentity& console,
+                           const arlcore::NumericGuid& autopilotPlatformId) {
+  if (sourceId == console.sourceId) {
+    return "own";
+  }
+  if (autopilotPlatformId != arlcore::NumericGuid() && sourceParentId == autopilotPlatformId) {
+    return "local";
+  }
+  return "remote";
+}
+
+//! \brief The GUI-facing operational-mode block.
+json operationalModeJson(const OperationalModeClient& client) {
+  json j;
+  if (client.reportedMode().has_value()) {
+    j["mode"] = client.reportedMode().value();
+    j["report_age_s"] = client.reportAgeS().value_or(0.0);
+  }
+  if (client.pendingMode().has_value()) {
+    j["pending_mode"] = client.pendingMode().value();
+  }
+  j["ack_received"] = client.ackReceived();
+  if (client.lastStatus().has_value()) {
+    const auto& s = client.lastStatus().value();
+    j["last_status"] = {{"status", s.status}, {"reason", s.reason}, {"message", s.message}};
+  }
+  return j;
+}
+
+//! \brief The GUI-facing block for the console's own vector session (history appended by
+//! ConsoleState::snapshot).
+json vectorJson(VectorCommandClient& client, bool rcEngaged) {
+  json v;
+  v["active"] = client.active();
+  v["rc_active"] = rcEngaged;
+  v["ack_received"] = client.ackReceived();
+  if (client.sessionId().has_value()) {
+    v["session"] = guidToString(client.sessionId().value());
+    if (client.lastSetpoint().has_value()) {
+      const VectorSetpoint& sp = client.lastSetpoint().value();
+      json s;
+      s["heading_deg"] = sp.headingRad * kRadToDeg;
+      s["speed_mps"] = sp.speedMps;
+      if (sp.elevValueM.has_value()) {
+        s["elev_value_m"] = sp.elevValueM.value();
+        s["elev_frame"] = sp.elevFrame;
+      }
+      if (sp.timeoutS.has_value()) {
+        s["timeout_s"] = sp.timeoutS.value();
+      }
+      v["setpoint"] = s;
+    }
+  }
+  const auto exec = client.pollExec();
+  if (exec.has_value()) {
+    json ex;
+    ex["direction_achieved"] = exec->directionAchieved();
+    ex["speed_achieved"] = exec->speedAchieved();
+    ex["elevation_achieved"] = exec->elevationAchieved();
+    ex["age_s"] = client.execAgeS().value_or(0.0);
+    v["exec"] = ex;
+  }
+  return v;
+}
+
+//! \brief Seconds until a UMAA end time passes (negative = already past).
+double secondsUntil(const UMAA::Common::Measurement::DateTime& endTime) {
+  const UMAA::Common::Measurement::DateTime now = arlcore::umaa::getTimestamp();
+  return static_cast<double>(endTime.seconds() - now.seconds()) +
+         (static_cast<double>(endTime.nanoseconds()) - static_cast<double>(now.nanoseconds())) * 1e-9;
+}
+
+//! \brief Every waypoint mission and vector command observed on the bus, classified per
+//! commander so the GUI can color them.
+json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorActivityMonitor& vecMonitor,
+                 const ClientIdentity& console, const arlcore::NumericGuid& autopilotPlatformId) {
+  const auto now = std::chrono::steady_clock::now();
+  json traffic;
+  traffic["missions"] = json::array();
+  for (const auto& [session, mission] : wpMonitor.missions()) {
+    json m;
+    m["session"] = guidToString(session);
+    m["source_id"] = guidToString(mission.sourceId);
+    m["classification"] = classifySource(mission.sourceId, mission.sourceParentId, console,
+                                         autopilotPlatformId);
+    if (!mission.lastStatus.empty()) {
+      m["status"] = mission.lastStatus;
+    }
+    m["active"] = !mission.terminal;
+    m["list_complete"] = mission.listComplete;
+    m["waypoints"] = json::array();
+    for (const auto& wp : mission.waypoints) {
+      json w;
+      w["lat_deg"] = wp.position().value().geodeticLatitude();
+      w["lon_deg"] = wp.position().value().geodeticLongitude();
+      const auto speed = arlcore::autopilot::tolerance::extractSpeed(wp.speed());
+      if (speed.has_value()) {
+        w["speed_mps"] = speed->speedMps;
+      }
+      if (wp.elevation().has_value()) {
+        const auto elev = arlcore::autopilot::tolerance::extractElevation(wp.elevation().value());
+        if (elev.has_value()) {
+          w["elev_value_m"] = elev->valueM;
+          w["elev_frame"] =
+              elev->frame == arlcore::autopilot::ElevationFrame::DEPTH ? "depth" : "asf";
+        }
+      }
+      m["waypoints"].push_back(w);
+    }
+    if (mission.execStatus.has_value()) {
+      m["waypoints_remaining"] = mission.execStatus->waypointsRemaining();
+    }
+    m["age_s"] = std::chrono::duration<double>(now - mission.lastSeen).count();
+    traffic["missions"].push_back(m);
+  }
+  traffic["vectors"] = json::array();
+  for (const auto& [session, vec] : vecMonitor.vectors()) {
+    json v;
+    v["session"] = guidToString(session);
+    v["source_id"] = guidToString(vec.sourceId);
+    v["classification"] = classifySource(vec.sourceId, vec.sourceParentId, console,
+                                         autopilotPlatformId);
+    if (vec.headingRad.has_value()) {
+      v["heading_deg"] = vec.headingRad.value() * kRadToDeg;
+    }
+    if (vec.speedMps.has_value()) {
+      v["speed_mps"] = vec.speedMps.value();
+    }
+    if (vec.elevValueM.has_value()) {
+      v["elev_value_m"] = vec.elevValueM.value();
+      v["elev_frame"] = vec.elevFrame;
+    }
+    if (vec.endTime.has_value()) {
+      v["ends_in_s"] = secondsUntil(vec.endTime.value());
+    }
+    if (!vec.lastStatus.empty()) {
+      v["status"] = vec.lastStatus;
+    }
+    v["active"] = !vec.terminal;
+    if (vec.execStatus.has_value()) {
+      v["direction_achieved"] = vec.execStatus->directionAchieved();
+      v["speed_achieved"] = vec.execStatus->speedAchieved();
+      v["elevation_achieved"] = vec.execStatus->elevationAchieved();
+    }
+    v["age_s"] = std::chrono::duration<double>(now - vec.lastSeen).count();
+    traffic["vectors"].push_back(v);
+  }
+  return traffic;
+}
+
+//! \brief The static platform-limits block (from config, computed once).
+json platformJson(const AutopilotConfig& config) {
+  json p;
+  p["max_speed_mps"] = config.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
+  if (config.platformCapabilities.underwaterEnabled &&
+      config.platformCapabilities.underwater.maxForwardSpeedMps.has_value()) {
+    p["max_speed_underwater_mps"] = config.platformCapabilities.underwater.maxForwardSpeedMps.value();
+  }
+  p["floor_depth_m"] = config.simVehicle.floorDepthM;
+  return p;
+}
+
+//! \brief The speed ceiling for console-issued vector commands: the surface limit, tightened
+//! by the underwater limit when a submerged elevation is commanded.
+double vectorSpeedLimit(const AutopilotConfig& config, bool submerged) {
+  double limit = config.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
+  if (submerged && config.platformCapabilities.underwaterEnabled &&
+      config.platformCapabilities.underwater.maxForwardSpeedMps.has_value()) {
+    limit = std::min(limit, config.platformCapabilities.underwater.maxForwardSpeedMps.value());
+  }
+  return limit;
+}
+
+//! \brief Parse + validate the GUI's vector JSON; throws std::runtime_error on bad input.
+VectorSetpoint parseVectorBody(const json& body, const AutopilotConfig& config) {
+  VectorSetpoint sp;
+  const double headingDeg = body.at("heading_deg").get<double>();
+  const double speedMps = body.at("speed_mps").get<double>();
+  if (!std::isfinite(headingDeg) || !std::isfinite(speedMps)) {
+    throw std::runtime_error("heading_deg and speed_mps must be finite numbers");
+  }
+  sp.headingRad = headingDeg * kDegToRad;
+  if (body.contains("elev_value_m") && !body["elev_value_m"].is_null()) {
+    const double elev = body["elev_value_m"].get<double>();
+    if (!std::isfinite(elev) || elev < 0.0) {
+      throw std::runtime_error("elev_value_m must be a non-negative number");
+    }
+    sp.elevValueM = elev;
+    sp.elevFrame = body.value("elev_frame", "depth");
+    if (sp.elevFrame != "depth" && sp.elevFrame != "asf") {
+      throw std::runtime_error("elev_frame must be 'depth' or 'asf'");
+    }
+  }
+  if (body.contains("timeout_s") && !body["timeout_s"].is_null()) {
+    const double timeout = body["timeout_s"].get<double>();
+    if (!std::isfinite(timeout) || timeout <= 0.0) {
+      throw std::runtime_error("timeout_s must be a positive number");
+    }
+    sp.timeoutS = timeout;
+  }
+  const double limit = vectorSpeedLimit(config, sp.elevValueM.has_value());
+  if (speedMps < 0.0) {
+    throw std::runtime_error("speed_mps must be non-negative");
+  }
+  // Never trust the browser: clamp to the platform limit rather than round-tripping a
+  // VALIDATION_FAILED from the autopilot.
+  sp.speedMps = (limit > 0.0) ? std::min(speedMps, limit) : speedMps;
+  return sp;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -413,13 +699,19 @@ int main(int argc, char** argv) {
       participant, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, rqos);
   auto velocityReader = std::make_shared<CycloneReader<VelocityReportType>>(
       participant, UMAA::SA::VelocityStatus::VelocityReportTypeTopic, rqos);
-  auto execReader = std::make_shared<CycloneReader<GlobalWaypointExecutionStatusReportType>>(
-      participant,
-      UMAA::MO::GlobalWaypointControl::GlobalWaypointExecutionStatusReportTypeTopic, rqos);
+  // The console's own UMAA identity (console: block): a distinct platform_id classifies its
+  // commands as a REMOTE operator; equal to identity.platform_id it acts as a local autonomy.
+  const ClientIdentity consoleIdentity =
+      arlcore::autopilot::tools::makeClientIdentity(config.console);
+  const arlcore::NumericGuid autopilotPlatformId =
+      config.identity.platformId.empty()
+          ? arlcore::NumericGuid()
+          : arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.platformId);
 
   WaypointMissionClient client(
       participant, wqos, rqos,
-      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.waypointSourceId));
+      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.waypointSourceId),
+      consoleIdentity);
 
   // Constraint services client (only when the autopilot's constraint source is configured).
   std::optional<ConstraintsClient> constraintsClient;
@@ -427,12 +719,38 @@ int main(int argc, char** argv) {
     const auto largeSetRqos = qosProvider.datareader_qos(config.dds.largeCollectionsQosProfile);
     constraintsClient.emplace(
         participant, wqos, rqos, largeSetRqos,
-        arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.constraintsSourceId));
+        arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.constraintsSourceId),
+        consoleIdentity);
   }
 
+  // Operational mode client (only when the autopilot's mode services are configured).
+  std::optional<OperationalModeClient> modeClient;
+  if (!config.identity.operationalModeControlSourceId.empty()) {
+    modeClient.emplace(participant, wqos, rqos,
+                       arlcore::UuidFactory::getInstance().parseGuidFromString(
+                           config.identity.operationalModeControlSourceId),
+                       consoleIdentity);
+  }
+
+  VectorCommandClient vectorClient(
+      participant, wqos, rqos,
+      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.vectorSourceId),
+      consoleIdentity);
+
+  // Bus-wide observers: every waypoint mission and vector command, whoever commanded it.
+  WaypointActivityMonitor wpMonitor(participant, rqos,
+                                    qosProvider.datareader_qos(config.dds.largeCollectionsQosProfile));
+  VectorActivityMonitor vecMonitor(participant, rqos);
+
   ConsoleState state;
-  std::mutex clientMutex;  // guards `client` between the poller and the POST handlers
+  state.setPlatform(platformJson(config));
+  std::mutex clientMutex;  // guards the DDS clients between the poller and the POST handlers
   std::atomic<bool> running{true};
+
+  // Remote-control bookkeeping (guarded by clientMutex): while engaged the browser heartbeats
+  // /api/rc; the poller's watchdog stops the vehicle if the heartbeats die.
+  bool rcEngaged = false;
+  std::chrono::steady_clock::time_point rcLastBeat{};
 
   // DDS poller: drain the report topics into the state at 20 Hz.
   std::thread poller([&]() {
@@ -449,10 +767,6 @@ int main(int argc, char** argv) {
       if (velocityReader->readLatest(&vel) == ReadStatus::SUCCESS) {
         state.updateVelocity(vel);
       }
-      GlobalWaypointExecutionStatusReportType exec;
-      if (execReader->readLatest(&exec) == ReadStatus::SUCCESS) {
-        state.updateExecStatus(exec);
-      }
       {
         std::lock_guard<std::mutex> lock(clientMutex);
         for (const auto& update : client.pollStatus()) {
@@ -464,12 +778,51 @@ int main(int argc, char** argv) {
           constraintsClient->poll();
           state.setConstraints(constraintsJson(constraintsClient.value()));
         }
+        wpMonitor.poll();
+        vecMonitor.poll();
+        // The console's own mission execution status comes session-routed from the monitor
+        // (the old unfiltered reader happily displayed other commanders' progress).
+        if (client.sessionId().has_value()) {
+          const auto exec = wpMonitor.execFor(client.sessionId().value());
+          if (exec.has_value()) {
+            state.updateExecStatus(exec.value());
+          }
+        }
+        if (modeClient.has_value()) {
+          modeClient->poll();
+          state.setOperationalMode(operationalModeJson(modeClient.value()));
+        }
+        for (const auto& update : vectorClient.pollStatus()) {
+          state.pushVectorStatus(update.status, update.reason, update.logMessage);
+        }
+        vectorClient.pollAck();
+        // Server-side RC deadman: the browser's heartbeats stopped, so stop the vehicle. The
+        // DDS endTime (2 s) still covers a dead console process.
+        if (rcEngaged && std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                                       rcLastBeat).count() > kRcServerWatchdogS) {
+          if (vectorClient.active() && vectorClient.lastSetpoint().has_value()) {
+            VectorSetpoint stop = vectorClient.lastSetpoint().value();
+            stop.speedMps = 0.0;
+            stop.timeoutS = kRcDeadmanS;
+            vectorClient.update(stop);
+            vectorClient.cancel();
+          }
+          rcEngaged = false;
+        }
+        state.setVector(vectorJson(vectorClient, rcEngaged));
+        state.setTraffic(trafficJson(wpMonitor, vecMonitor, consoleIdentity, autopilotPlatformId));
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
   });
 
   httplib::Server server;
+  // Each SSE client pins a worker thread for its whole connection. A large pool plus a hard
+  // cap on concurrent streams keeps workers free for the control endpoints — /api/rc
+  // heartbeats starving here would trip the deadman and stop the vehicle mid-drive.
+  server.new_task_queue = [] { return new httplib::ThreadPool(16); };
+  constexpr int kMaxSseClients = 8;
+  auto sseClients = std::make_shared<std::atomic<int>>(0);
   if (!server.set_mount_point("/", webRoot)) {
     std::cerr << "Web root '" << webRoot << "' not found (serving API only)" << std::endl;
   }
@@ -478,7 +831,13 @@ int main(int argc, char** argv) {
     res.set_content(state.snapshot().dump(), "application/json");
   });
 
-  server.Get("/api/stream", [&](const httplib::Request&, httplib::Response& res) {
+  server.Get("/api/stream", [&, sseClients](const httplib::Request&, httplib::Response& res) {
+    if (sseClients->fetch_add(1) >= kMaxSseClients) {
+      sseClients->fetch_sub(1);
+      res.status = 503;
+      res.set_content(R"({"error":"too many stream clients"})", "application/json");
+      return;
+    }
     res.set_chunked_content_provider("text/event-stream",
         [&state, &running](size_t /*offset*/, httplib::DataSink& sink) {
           if (!running) {
@@ -490,7 +849,8 @@ int main(int argc, char** argv) {
           }
           std::this_thread::sleep_for(std::chrono::milliseconds(200));
           return true;
-        });
+        },
+        [sseClients](bool /*success*/) { sseClients->fetch_sub(1); });
   });
 
   server.Post("/api/mission", [&](const httplib::Request& req, httplib::Response& res) {
@@ -544,6 +904,109 @@ int main(int argc, char** argv) {
           state.latestPose().value_or(fallbackStartPose(config));
       res.set_content(json{{"path", previewPath(route, start, config)}}.dump(),
                       "application/json");
+    } catch (const std::exception& e) {
+      res.status = 400;
+      res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+    }
+  });
+
+  server.Post("/api/mode", [&](const httplib::Request& req, httplib::Response& res) {
+    if (!modeClient.has_value()) {
+      res.status = 503;
+      res.set_content(R"({"error":"operational mode control is not configured"})", "application/json");
+      return;
+    }
+    try {
+      const json body = json::parse(req.body);
+      const std::string mode = body.at("mode").get<std::string>();
+      std::lock_guard<std::mutex> lock(clientMutex);
+      const auto session = modeClient->command(mode);
+      if (!session.has_value()) {
+        res.status = 400;
+        res.set_content(R"({"error":"mode must be STANDBY, REMOTE, or AUTONOMOUS"})",
+                        "application/json");
+        return;
+      }
+      res.set_content(json{{"session", guidToString(session.value())}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+      res.status = 400;
+      res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+    }
+  });
+
+  server.Post("/api/vector", [&](const httplib::Request& req, httplib::Response& res) {
+    try {
+      const json body = json::parse(req.body);
+      const VectorSetpoint sp = parseVectorBody(body, config);
+      std::lock_guard<std::mutex> lock(clientMutex);
+      if (rcEngaged) {
+        res.status = 409;
+        res.set_content(R"({"error":"remote control is engaged"})", "application/json");
+        return;
+      }
+      // A new session each time: the autopilot's provider replaces any in-flight vector
+      // command. Mode gating may still reject/hold it — that arrives via the status chip,
+      // not as an HTTP error.
+      const arlcore::NumericGuid session = vectorClient.start(sp);
+      state.clearVectorStatusHistory();
+      res.set_content(json{{"session", guidToString(session)}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+      res.status = 400;
+      res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+    }
+  });
+
+  server.Post("/api/vector/cancel", [&](const httplib::Request&, httplib::Response& res) {
+    std::lock_guard<std::mutex> lock(clientMutex);
+    if (!vectorClient.active()) {
+      res.status = 409;
+      res.set_content(R"({"error":"no active vector command"})", "application/json");
+      return;
+    }
+    const bool ok = vectorClient.cancel();
+    res.set_content(json{{"canceled", ok}}.dump(), "application/json");
+  });
+
+  // Remote control: a stateful sticky session with a server-owned deadman, deliberately
+  // separate from the one-shot /api/vector. Layers: rolling DDS endTime (console death),
+  // poller watchdog (browser death), client key-release zero-speed.
+  server.Post("/api/rc", [&](const httplib::Request& req, httplib::Response& res) {
+    try {
+      const json body = json::parse(req.body);
+      const bool activate = body.at("active").get<bool>();
+      std::lock_guard<std::mutex> lock(clientMutex);
+      if (!activate) {
+        if (rcEngaged && vectorClient.active() && vectorClient.lastSetpoint().has_value()) {
+          VectorSetpoint stop = vectorClient.lastSetpoint().value();
+          stop.speedMps = 0.0;
+          stop.timeoutS = kRcDeadmanS;
+          vectorClient.update(stop);
+          vectorClient.cancel();
+        }
+        rcEngaged = false;
+        res.set_content(R"({"stopped":true})", "application/json");
+        return;
+      }
+      VectorSetpoint sp = parseVectorBody(body, config);
+      sp.timeoutS = kRcDeadmanS;  // the server owns the RC deadman, never the browser
+      if (!rcEngaged) {
+        if (vectorClient.active()) {
+          vectorClient.cancel();  // the panel's session must not fight the RC session
+        }
+        vectorClient.start(sp);
+        state.clearVectorStatusHistory();
+        rcEngaged = true;
+      } else if (!vectorClient.update(sp)) {
+        // The session died underneath us (endTime expiry, mode rejection): start a fresh one.
+        vectorClient.start(sp);
+      }
+      rcLastBeat = std::chrono::steady_clock::now();
+      json out;
+      if (vectorClient.sessionId().has_value()) {
+        out["session"] = guidToString(vectorClient.sessionId().value());
+      }
+      out["deadman_s"] = kRcDeadmanS;
+      res.set_content(out.dump(), "application/json");
     } catch (const std::exception& e) {
       res.status = 400;
       res.set_content(json{{"error", e.what()}}.dump(), "application/json");

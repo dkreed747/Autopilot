@@ -109,6 +109,39 @@ enforces them in both driving modes:
 Constraints are created/toggled from the mission console's constraints panel
 (`tools/README.md`).
 
+### Operational mode (UMAA MM OperationalModeControl / OperationalModeStatus)
+
+`OperationalModeManager` runs the MANUAL / STANDBY / REMOTE / AUTONOMOUS command-authority
+state machine; `OperationalModeControlProvider` applies STANDBY/REMOTE/AUTONOMOUS mode
+commands and `OperationalModeStatus` reports the current mode (on change plus a 1 Hz
+liveness republish). Key semantics:
+
+- **MANUAL is platform-owned.** The vehicle strategy's `IVehicleControl::isManualEngaged()`
+  is polled every tick: engagement preempts everything from any state (active commands fail
+  INTERRUPTED, the brain suppresses *all* actuation — safe mode included) and only the
+  platform decides when it is released (→ STANDBY). The sim never engages it and boots into
+  STANDBY; a hardware strategy may boot engaged. Mode commands are rejected while MANUAL.
+- **Command classification.** Incoming vector/waypoint commands are LOCAL (onboard
+  autonomy) when their `source.parentID` equals `identity.platform_id`, otherwise REMOTE
+  (off-board operator; nil parentID counts as remote). REMOTE executes only remote commands,
+  AUTONOMOUS only local ones, STANDBY none.
+- **Implicit transitions** (`operational_mode.allow_implicit_mode_transitions`): an incoming
+  command may move STANDBY into its class's mode, and a remote command preempts AUTONOMOUS
+  into REMOTE (operator precedence — never the reverse). A mode entered implicitly reverts
+  to STANDBY after `idle_revert_s` with no active command of its class, so control hands
+  back seamlessly; an explicitly-commanded mode sticks until the next explicit command.
+- **Out-of-mode commands** (`operational_mode.commands_out_of_mode_are_failed`): true is
+  UMAA-strict (fail VALIDATION_FAILED from ISSUED); false parks them at ISSUED until the
+  mode becomes compatible. Commands past ISSUED always fail INTERRUPTED when their class
+  becomes disallowed, and an explicit mode command or manual engagement also flushes held
+  commands whose class the new mode does not admit.
+- **Arbitration** is per class (`arbitration.local` / `arbitration.remote` /
+  `safe_priority`): safety outranks any remote command, any remote command outranks any
+  local one.
+- The mode report reflects **command authority, not actuation**: safe-mode maneuvers may
+  drive the vehicle while the report says STANDBY (watch the ConditionalStateReport topics
+  for actuation truth).
+
 ## Configuration
 
 All parameters — including the platform specs/capabilities (which nothing else currently

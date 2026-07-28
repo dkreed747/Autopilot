@@ -50,7 +50,7 @@ UMAA::Common::Measurement::DateTime timestampPlus(double secondsAhead) {
 WaypointControlServiceProvider::WaypointControlServiceProvider(
     const arlcore::NumericGuid& source, std::shared_ptr<WaypointControlServiceProviderIo> io,
     IAutopilot* autopilot, double maxForwardSpeedMps, int maxListWaitCycles,
-    const ISafetyGate* safetyGate, const ZoneMap* zoneMap) :
+    const ISafetyGate* safetyGate, const ZoneMap* zoneMap, ICommandModeGate* modeGate) :
     CommandProviderBase(source, io),
     sourceId_(source),
     autopilot_(autopilot),
@@ -59,9 +59,14 @@ WaypointControlServiceProvider::WaypointControlServiceProvider(
     maxForwardSpeedMps_(maxForwardSpeedMps),
     maxListWaitCycles_(maxListWaitCycles),
     safetyGate_(safetyGate),
-    zoneMap_(zoneMap) {
+    zoneMap_(zoneMap),
+    modeGate_(modeGate) {
   // A new waypoint route replaces an in-flight route (same driving resource).
   setBehavior(IncomingCommandBehavior::CANCEL_EXISTING);
+}
+
+CommandClass WaypointControlServiceProvider::classOf(const GlobalWaypointCommandType& cmd) const {
+  return modeGate_ != nullptr ? modeGate_->classify(cmd.source()) : CommandClass::LOCAL;
 }
 
 void WaypointControlServiceProvider::resetPlanningState() {
@@ -78,6 +83,7 @@ void WaypointControlServiceProvider::relinquish(const std::weak_ptr<CmdSession> 
   }
   resetPlanningState();
   sessionActive_ = false;
+  held_ = false;
 }
 
 CommandStateResult WaypointControlServiceProvider::failInCommanded(
@@ -130,7 +136,61 @@ bool WaypointControlServiceProvider::isCommandValid(const GlobalWaypointCommandT
       "the vehicle (recovery/safe mode)")
     return false;
   }
+  if (modeGate_ != nullptr) {
+    // Held sessions bypass the validation-stage mode check: an authoritative flush must fail
+    // them with INTERRUPTED (in onIssued), never VALIDATION_FAILED.
+    const bool heldSession = held_ && heldSessionId_ == arlcore::NumericGuid(cmd.sessionID());
+    if (!heldSession && modeGate_->rejectedAtValidation(classOf(cmd))) {
+      UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                    "Waypoint command rejected: not permitted in the current operational mode")
+      return false;
+    }
+  }
   return true;
+}
+
+CommandStateResult WaypointControlServiceProvider::onIssued(const std::weak_ptr<CmdSession> session) {
+  auto s = session.lock();
+  if (!s) {
+    return CommandStateResult::ERROR;
+  }
+  if (modeGate_ == nullptr) {
+    return CommandStateResult::ADVANCE;
+  }
+  const GlobalWaypointCommandType cmd = s->getCommand();
+  const CommandClass cls = classOf(cmd);
+  if (held_ && heldSessionId_ == arlcore::NumericGuid(cmd.sessionID()) &&
+      heldEpoch_ != modeGate_->authoritativeEpoch() && !modeGate_->classAllowed(cls)) {
+    // An explicit mode command or manual engagement occurred while held: flush the hold.
+    // INTERRUPTED is legal from ISSUED; the base reaps the session once it sees the state.
+    if (!s->fail(CommandStatusReasonEnumType::INTERRUPTED)) {
+      return CommandStateResult::ERROR;
+    }
+    relinquish(session);
+    s->sendStatus("Interrupted: an authoritative mode change disallowed the held command");
+    return CommandStateResult::OK;
+  }
+  if (modeGate_->requestAdmission(cls) == AdmissionDecision::HOLD) {
+    if (!held_ || heldSessionId_ != arlcore::NumericGuid(cmd.sessionID())) {
+      // The session may have been COMMANDED/EXECUTING before an update re-issued it:
+      // release the driving resource and clear the installed route so nothing keeps
+      // driving out-of-mode while it waits. The large list is deliberately kept (its
+      // elements were already consumed from the shared reader and could never be
+      // re-derived after a removal) so a later release can replan from it.
+      autopilot_->clearSetpoint(DriveSource::WAYPOINT);
+      autopilot_->arbiter().release(DriveSource::WAYPOINT);
+      resetPlanningState();
+      sessionActive_ = false;
+      held_ = true;
+      heldSessionId_ = arlcore::NumericGuid(cmd.sessionID());
+      heldEpoch_ = modeGate_->authoritativeEpoch();
+      UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                    "Waypoint command held at ISSUED until the operational mode permits it")
+    }
+    return CommandStateResult::OK;
+  }
+  held_ = false;
+  return CommandStateResult::ADVANCE;
 }
 
 bool WaypointControlServiceProvider::waypointsZoneCompliant(
@@ -191,6 +251,13 @@ CommandStateResult WaypointControlServiceProvider::onCommanded(const std::weak_p
     sessionActive_ = true;
   }
 
+  // The operational mode moved on while the route was being set up (waypoint commands can
+  // dwell here for many cycles assembling their large list).
+  if (modeGate_ != nullptr && !modeGate_->classAllowed(classOf(s->getCommand()))) {
+    return failInCommanded(session, CommandStatusReasonEnumType::INTERRUPTED,
+                           "Operational mode changed; the command class is no longer permitted");
+  }
+
   // Lost the resource to a higher-priority (vector) command while we were setting up.
   if (acquired_ && autopilot_->arbiter().wasRevoked(DriveSource::WAYPOINT)) {
     return failInCommanded(session, CommandStatusReasonEnumType::INTERRUPTED,
@@ -199,7 +266,7 @@ CommandStateResult WaypointControlServiceProvider::onCommanded(const std::weak_p
 
   // Acquire the (low-priority) driving resource. Denied if a vector command holds it.
   if (!acquired_) {
-    if (autopilot_->arbiter().acquire(DriveSource::WAYPOINT)) {
+    if (autopilot_->arbiter().acquire(DriveSource::WAYPOINT, classOf(s->getCommand()))) {
       acquired_ = true;
     } else {
       return failInCommanded(session, CommandStatusReasonEnumType::RESOURCE_REJECTED,
@@ -255,8 +322,14 @@ CommandStateResult WaypointControlServiceProvider::onExecuting(const std::weak_p
 bool WaypointControlServiceProvider::onUpdated(const std::weak_ptr<CmdSession> session,
     const GlobalWaypointCommandType& previousCmd, const GlobalWaypointCommandType& updatedCmd) {
   // Treat an update as a new route: drop the previous large list and replan from the
-  // (possibly updated) list next cycle. The driving resource is kept.
-  listReader_.removeListByMetadata(previousCmd.waypointsListMetadata());
+  // (possibly updated) list next cycle. The driving resource is kept. When the update
+  // reuses the SAME list id its elements were already consumed from the shared reader,
+  // so removing the list would destroy the updated route too — only drop a switched-away
+  // list.
+  if (arlcore::NumericGuid(previousCmd.waypointsListMetadata().listID()) !=
+      arlcore::NumericGuid(updatedCmd.waypointsListMetadata().listID())) {
+    listReader_.removeListByMetadata(previousCmd.waypointsListMetadata());
+  }
   planned_ = false;
   listWaitCycles_ = 0;
   return true;
@@ -268,6 +341,12 @@ bool WaypointControlServiceProvider::isCommandCompleted(const std::weak_ptr<CmdS
 
 CommandStatusReasonEnumType WaypointControlServiceProvider::isCommandFailed(
     const std::weak_ptr<CmdSession> session) {
+  if (modeGate_ != nullptr) {
+    auto s = session.lock();
+    if (s && !modeGate_->classAllowed(classOf(s->getCommand()))) {
+      return CommandStatusReasonEnumType::INTERRUPTED;
+    }
+  }
   if (autopilot_->arbiter().wasRevoked(DriveSource::WAYPOINT)) {
     return CommandStatusReasonEnumType::INTERRUPTED;
   }

@@ -20,46 +20,51 @@
 
 namespace arlcore::autopilot {
 
-DrivingResourceArbiter::DrivingResourceArbiter(int vectorPriority, int waypointPriority, int safePriority) :
-    vectorPriority_(vectorPriority), waypointPriority_(waypointPriority), safePriority_(safePriority) {}
+DrivingResourceArbiter::DrivingResourceArbiter(const ArbitrationConfig& config) : config_(config) {}
 
-int DrivingResourceArbiter::priorityOf(DriveSource who) const {
+int DrivingResourceArbiter::priorityOf(DriveSource who, CommandClass cls) const {
+  const ClassArbitrationPriorities& classPriorities =
+      (cls == CommandClass::REMOTE) ? config_.remote : config_.local;
   switch (who) {
     case DriveSource::VECTOR:
-      return vectorPriority_;
+      return classPriorities.vectorPriority;
     case DriveSource::WAYPOINT:
-      return waypointPriority_;
+      return classPriorities.waypointPriority;
     case DriveSource::SAFE:
-      return safePriority_;
+      return config_.safePriority;
     default:
       return -1;
   }
 }
 
-bool DrivingResourceArbiter::canDrive(DriveSource who) const {
+bool DrivingResourceArbiter::canDrive(DriveSource who, CommandClass cls) const {
   std::lock_guard<std::mutex> lock(mtx_);
   if (holder_ == DriveSource::NONE || holder_ == who) {
     return true;
   }
-  return priorityOf(who) > priorityOf(holder_);
+  return priorityOf(who, cls) > holderPriority_;
 }
 
-bool DrivingResourceArbiter::acquire(DriveSource who) {
+bool DrivingResourceArbiter::acquire(DriveSource who, CommandClass cls) {
   std::lock_guard<std::mutex> lock(mtx_);
   if (holder_ == who) {
+    // Re-acquire by the holder (e.g. a new session of a different class): reprice the grant.
+    holderPriority_ = priorityOf(who, cls);
     revoked_.erase(who);
     return true;
   }
   if (holder_ == DriveSource::NONE) {
     holder_ = who;
+    holderPriority_ = priorityOf(who, cls);
     revoked_.erase(who);
     return true;
   }
-  if (priorityOf(who) > priorityOf(holder_)) {
+  if (priorityOf(who, cls) > holderPriority_) {
     // Preempt the lower-priority holder.
     revoked_.insert(holder_);
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Driving resource preempted by higher-priority source")
     holder_ = who;
+    holderPriority_ = priorityOf(who, cls);
     revoked_.erase(who);
     return true;
   }
@@ -71,6 +76,7 @@ void DrivingResourceArbiter::release(DriveSource who) {
   std::lock_guard<std::mutex> lock(mtx_);
   if (holder_ == who) {
     holder_ = DriveSource::NONE;
+    holderPriority_ = -1;
   }
   revoked_.erase(who);
 }

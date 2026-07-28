@@ -85,6 +85,11 @@ class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
 
   SafetyState safetyState() const;
 
+  //! \brief Re-run the safe-mode strategy's entry actions if SAFE_MODE is engaged. Called
+  //! when the platform releases MANUAL control: the plan made at safe-mode entry may be
+  //! arbitrarily stale after a human drove the vehicle elsewhere.
+  void refreshSafeModePlan();
+
   //! \brief Per-tick work: rebuild the snapshot if the active set changed, publish
   //! ConditionalStateReports at the configured period, and run the violation FSM.
   void update();

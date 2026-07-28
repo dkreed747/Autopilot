@@ -20,7 +20,9 @@
 #include <mutex>
 #include <set>
 
+#include "AutopilotConfig.h"
 #include "DriveSource.h"
+#include "OperationalModeTypes.hpp"
 
 namespace arlcore::autopilot {
 
@@ -29,21 +31,27 @@ namespace arlcore::autopilot {
 //! command types), the per-provider IncomingCommandBehavior cannot deconflict across them, so
 //! this shared arbiter is required.
 //!
-//! Higher priority wins. Acquiring with a higher priority preempts the current lower-priority
-//! holder by marking it "revoked"; the preempted provider learns of this by polling
-//! wasRevoked() in its isCommandFailed() hook and then fails the command with INTERRUPTED.
-//! A lower-priority acquire while a higher-priority holder owns the resource is denied; that
-//! provider then fails its command with RESOURCE_REJECTED.
+//! Higher priority wins. Priorities are per command class (local autonomy vs remote operator)
+//! so any remote command can preempt any local one. The holder's priority is recorded at
+//! grant time and later requests compare against it, which stays correct in the operational
+//! mode transition window where a remote command acquires before the preempted local holder
+//! has cycled (a class-swapped table would misprice the stale holder there).
+//!
+//! Acquiring with a higher priority preempts the current lower-priority holder by marking it
+//! "revoked"; the preempted provider learns of this by polling wasRevoked() in its
+//! isCommandFailed() hook and then fails the command with INTERRUPTED. A lower-priority
+//! acquire while a higher-priority holder owns the resource is denied; that provider then
+//! fails its command with RESOURCE_REJECTED.
 class DrivingResourceArbiter {
  public:
-  DrivingResourceArbiter(int vectorPriority, int waypointPriority, int safePriority = 1000);
+  explicit DrivingResourceArbiter(const ArbitrationConfig& config);
 
   //! \brief Non-mutating check of whether `who` could acquire the resource right now.
-  bool canDrive(DriveSource who) const;
+  bool canDrive(DriveSource who, CommandClass cls = CommandClass::LOCAL) const;
 
-  //! \brief Attempt to acquire the resource for `who`. Returns true if granted (preempting any
-  //! strictly-lower-priority holder), false if denied.
-  bool acquire(DriveSource who);
+  //! \brief Attempt to acquire the resource for `who` commanding as `cls`. Returns true if
+  //! granted (preempting any strictly-lower-priority holder), false if denied.
+  bool acquire(DriveSource who, CommandClass cls = CommandClass::LOCAL);
 
   //! \brief Release the resource if `who` currently holds it; also clears its revoked flag.
   void release(DriveSource who);
@@ -58,13 +66,12 @@ class DrivingResourceArbiter {
   bool wasRevoked(DriveSource who) const;
 
  private:
-  int priorityOf(DriveSource who) const;
+  int priorityOf(DriveSource who, CommandClass cls) const;
 
   mutable std::mutex mtx_;
-  int vectorPriority_;
-  int waypointPriority_;
-  int safePriority_;
+  ArbitrationConfig config_;
   DriveSource holder_ = DriveSource::NONE;
+  int holderPriority_ = -1;
   std::set<DriveSource> revoked_;
 };
 

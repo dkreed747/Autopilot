@@ -222,6 +222,21 @@ void ConstraintSupervisor::enterSafeMode(const char* why) {
   strategy_->onEnter(brain_, nav_);
 }
 
+void ConstraintSupervisor::refreshSafeModePlan() {
+  {
+    std::lock_guard<std::mutex> lock(mtx_);
+    if (state_ != SafetyState::SAFE_MODE) {
+      return;
+    }
+  }
+  if (brain_ == nullptr || strategy_ == nullptr) {
+    return;
+  }
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Replanning the safe-mode maneuver from the current position")
+  brain_->abortRecovery();
+  strategy_->onEnter(brain_, nav_);
+}
+
 void ConstraintSupervisor::updateSafety() {
   const auto now = std::chrono::steady_clock::now();
   const std::optional<int64_t> poseAge = nav_->poseAgeMs();

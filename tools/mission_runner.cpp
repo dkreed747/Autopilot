@@ -157,9 +157,12 @@ int main(int argc, char** argv) {
   auto speedReader = std::make_shared<CycloneReader<SpeedReportType>>(
       participant, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, rqos);
 
+  // The runner acts as this platform's onboard autonomy: its commands classify LOCAL and
+  // (with implicit transitions enabled) drive the autopilot into AUTONOMOUS.
   WaypointMissionClient client(
       participant, wqos, rqos,
-      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.waypointSourceId));
+      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.waypointSourceId),
+      arlcore::autopilot::tools::makeLocalAutonomyIdentity(config.identity));
 
   // Give discovery a moment so the transient-local route/command reach the autopilot together.
   std::this_thread::sleep_for(std::chrono::seconds(2));

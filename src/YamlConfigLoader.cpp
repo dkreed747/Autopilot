@@ -85,16 +85,35 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
   readScalar(dds, "large_collections_qos_profile", &out->dds.largeCollectionsQosProfile);
 
   const YAML::Node identity = root["identity"];
+  readScalar(identity, "platform_id", &out->identity.platformId);
   readScalar(identity, "vector_source_id", &out->identity.vectorSourceId);
   readScalar(identity, "waypoint_source_id", &out->identity.waypointSourceId);
   readScalar(identity, "specs_source_id", &out->identity.specsSourceId);
   readScalar(identity, "capabilities_source_id", &out->identity.capabilitiesSourceId);
   readScalar(identity, "nav_source_id", &out->identity.navSourceId);
   readScalar(identity, "constraints_source_id", &out->identity.constraintsSourceId);
+  readScalar(identity, "operational_mode_control_source_id", &out->identity.operationalModeControlSourceId);
+  readScalar(identity, "operational_mode_status_source_id", &out->identity.operationalModeStatusSourceId);
+
+  const YAML::Node opMode = root["operational_mode"];
+  readScalar(opMode, "allow_implicit_mode_transitions", &out->operationalMode.allowImplicitModeTransitions);
+  readScalar(opMode, "commands_out_of_mode_are_failed", &out->operationalMode.commandsOutOfModeAreFailed);
+  readScalar(opMode, "idle_revert_s", &out->operationalMode.idleRevertS);
 
   const YAML::Node arb = root["arbitration"];
-  readScalar(arb, "vector_priority", &out->arbitration.vectorPriority);
-  readScalar(arb, "waypoint_priority", &out->arbitration.waypointPriority);
+  if (arb && (arb["vector_priority"] || arb["waypoint_priority"])) {
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "arbitration.vector_priority/waypoint_priority are obsolete; "
+                  "use arbitration.local / arbitration.remote blocks (defaults applied)")
+  }
+  if (arb) {
+    const YAML::Node local = arb["local"];
+    readScalar(local, "vector_priority", &out->arbitration.local.vectorPriority);
+    readScalar(local, "waypoint_priority", &out->arbitration.local.waypointPriority);
+    const YAML::Node remote = arb["remote"];
+    readScalar(remote, "vector_priority", &out->arbitration.remote.vectorPriority);
+    readScalar(remote, "waypoint_priority", &out->arbitration.remote.waypointPriority);
+  }
   readScalar(arb, "safe_priority", &out->arbitration.safePriority);
 
   const YAML::Node loop = root["loop"];
@@ -221,6 +240,10 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
       readCapabilityLimits(uw, &out->platformCapabilities.underwater);
     }
   }
+
+  const YAML::Node console = root["console"];
+  readScalar(console, "platform_id", &out->console.platformId);
+  readScalar(console, "source_id", &out->console.sourceId);
   } catch (const YAML::Exception& ex) {
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Invalid value in autopilot config '" << path << "': " << ex.what())
     return false;

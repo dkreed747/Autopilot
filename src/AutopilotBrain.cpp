@@ -52,8 +52,7 @@ AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const Au
     nav_(nav),
     vehicle_(vehicle),
     config_(config),
-    arbiter_(config.arbitration.vectorPriority, config.arbitration.waypointPriority,
-             config.arbitration.safePriority) {
+    arbiter_(config.arbitration) {
   // Static side of the output clamp: the autopilot's own constraint settings merged with the
   // platform's speed capability. Dynamic active constraints merge in per emit.
   staticClampLimits_.minSpeedMps = config_.constraints.minSpeedMps;
@@ -236,6 +235,20 @@ bool AutopilotBrain::recovering() const {
 }
 
 void AutopilotBrain::emitControl(const ControlVector& cv) {
+  // MANUAL is polled from the strategy directly (not the mode FSM) so actuation safety never
+  // depends on whether the mode services are configured. While engaged nothing reaches the
+  // platform -- not even safe-mode outputs or zero-speed holds, which would fight the human.
+  if (vehicle_->isManualEngaged()) {
+    if (!manualSuppressed_) {
+      manualSuppressed_ = true;
+      UMAA_LOG_WARN(util::SYSTEM_LOGGER, "MANUAL control engaged; suppressing all autopilot actuation")
+    }
+    return;
+  }
+  if (manualSuppressed_) {
+    manualSuppressed_ = false;
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "MANUAL control released; autopilot actuation resumed")
+  }
   if (constraintSource_ == nullptr) {
     vehicle_->sendControlVector(cv);
     return;

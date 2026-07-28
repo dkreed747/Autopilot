@@ -27,11 +27,36 @@
         <button id="btn-cancel-zone" class="tool-btn" hidden>Cancel zone</button>
         <span id="zone-hint" hidden>Click the chart to add vertices &mdash; double-click, press Enter, or click the first vertex to close (Esc cancels)</span>
         <label id="follow-wrap"><input type="checkbox" id="follow-vehicle" checked> Follow vehicle</label>
+        <label id="follow-heading-wrap"><input type="checkbox" id="follow-heading"> Heading up</label>
       </div>
       <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="chart-legend">
+        <div><span class="swatch" style="background:#199e70"></span>Own mission</div>
+        <div><span class="swatch" style="background:#38b2ad"></span>Onboard autonomy</div>
+        <div><span class="swatch" style="background:#d16ba5"></span>Remote operator</div>
+        <div><span class="swatch" style="background:#9085e9"></span>Draft</div>
+      </div>
       <div id="chart-footer">
         <span id="cursor-pos">&mdash;</span>
         <span id="scale-readout"></span>
+      </div>
+      <div id="rc-overlay" hidden>
+        <div id="rc-banner">REMOTE CONTROL ACTIVE &mdash; keys drive the vehicle</div>
+        <div id="rc-body">
+          <div id="rc-keys">
+            <div class="rc-key-row"><span class="rc-key" id="rc-key-w">W</span></div>
+            <div class="rc-key-row">
+              <span class="rc-key" id="rc-key-a">A</span>
+              <span class="rc-key" id="rc-key-s">S</span>
+              <span class="rc-key" id="rc-key-d">D</span>
+            </div>
+          </div>
+          <div id="rc-readouts">
+            <div class="ro"><span class="ro-label">Speed (R/F)</span><span class="ro-value" id="rc-speed">&mdash;</span></div>
+            <div class="ro"><span class="ro-label">Elevation (Shift/Ctrl, Z frame)</span><span class="ro-value" id="rc-elev">&mdash;</span></div>
+          </div>
+          <div id="rc-help">W forward &middot; A/D &plusmn;90&deg; &middot; W+A/W+D &plusmn;45&deg; &middot; S stop &middot; Esc exits</div>
+        </div>
       </div>
       <div id="wp-popup" hidden></div>
       <div id="execute-dock">
@@ -46,6 +71,19 @@
 
     <aside id="sidebar">
       <h1>Mission Console</h1>
+
+      <section class="panel" id="panel-mode">
+        <h2>Operational mode</h2>
+        <div id="mode-row">
+          <span id="mode-chip" class="chip chip-idle">MODE N/A</span>
+          <span id="mode-pending-chip" class="chip chip-pending" hidden></span>
+        </div>
+        <div id="mode-buttons">
+          <button class="tool-btn mode-btn" data-mode="STANDBY" disabled>Standby</button>
+          <button class="tool-btn mode-btn" data-mode="REMOTE" disabled>Remote</button>
+          <button class="tool-btn mode-btn" data-mode="AUTONOMOUS" disabled>Autonomous</button>
+        </div>
+      </section>
 
       <section class="panel" id="panel-vehicle">
         <h2>Vehicle</h2>
@@ -87,6 +125,33 @@
             </select></label>
           <button id="ed-delete" class="danger">Delete waypoint</button>
         </div>
+      </section>
+
+      <section class="panel" id="panel-vector">
+        <h2>Vector control</h2>
+        <div id="vec-editor">
+          <label>Heading (&deg;T) <input type="number" id="vec-hdg" step="1"></label>
+          <label>Speed (m/s) <input type="number" id="vec-speed" step="0.1" min="0"></label>
+          <label class="opt-row"><input type="checkbox" id="vec-elev-on"> Elevation (m)
+            <input type="number" id="vec-elev" step="1" min="0" disabled>
+            <select id="vec-frame" disabled>
+              <option value="depth">depth</option>
+              <option value="asf">above floor</option>
+            </select></label>
+          <label class="opt-row"><input type="checkbox" id="vec-timeout-on"> Timeout (s)
+            <input type="number" id="vec-timeout" step="5" min="1" disabled></label>
+          <div id="vec-btns">
+            <button id="vec-execute" class="tool-btn">Execute vector</button>
+            <button id="vec-cancel" class="tool-btn danger-btn" disabled>Cancel</button>
+            <button id="btn-rc" class="tool-btn">RC mode</button>
+          </div>
+          <div id="vec-chips">
+            <span id="vec-status-chip" class="chip chip-idle">NO VECTOR</span>
+            <span id="vec-ack-chip" class="chip chip-idle" hidden>AWAITING ACK</span>
+          </div>
+        </div>
+        <h3 class="sub-h">Bus activity</h3>
+        <ul id="traffic-list"></ul>
       </section>
 
       <section class="panel" id="panel-constraints">

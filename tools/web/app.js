@@ -25,13 +25,23 @@ const state = {
   draft: [],              // MissionWaypoint drafts while editing
   draftPath: [],          // previewed Dubins route for the draft ([[lat, lon], ...])
   selected: -1,           // selected waypoint index (draft or mission)
-  view: { cE: 0, cN: 0, pxPerM: 1.4, userPanned: false },
+  view: { cE: 0, cN: 0, pxPerM: 1.4, userPanned: false, rotRad: 0 },
   lastFinal: null,        // last terminal command status
   constraints: { enabled: false, items: [], active_ids: [], active_known: false },
   conSelected: null,      // selected constraint id (opens the editor)
   conDraft: null,         // local edit buffer for the selected constraint (see bindConstraintEditor)
   zoneDraft: null,        // { kind: 'keep_in'|'keep_out', points: [[e,n],...] } in zone-draw mode
   pendingActive: null,    // optimistic active-id set awaiting the autopilot's ack echo
+  opMode: null,           // snapshot.operational_mode
+  vector: null,           // snapshot.vector (the console's own vector session)
+  traffic: { missions: [], vectors: [] },  // everything observed on the bus, classified
+  platform: null,         // snapshot.platform (speed limits, sim floor depth)
+  // Local draft for the vector editor (never re-rendered from server values).
+  vecDraft: { heading_deg: 0, speed_mps: 1.5, elevOn: false, elev_value_m: 5,
+              elev_frame: 'depth', timeoutOn: false, timeout_s: 30 },
+  // WASD remote control: held keys, adjustable speed/elevation, link health.
+  rc: { engaged: false, engagedAt: 0, keys: new Set(), speedMps: 1.0, elevOn: false,
+        elevValueM: 5, elevFrame: 'depth', lastHeadingRad: null, timer: null, linkOk: true },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -59,16 +69,25 @@ function toGeo(east, north) {
   return [o.lat0 + north / o.mPerDegLat, o.lon0 + east / o.mPerDegLon];
 }
 
+// The screen transform optionally rotates the world so the vehicle heading points up
+// (rotRad = vehicle yaw in heading-up mode, 0 = classic north-up). u is the world offset
+// along the heading (screen up), v the offset to its right (screen right); at rotRad = 0
+// this degenerates to the plain translate+scale.
 function toScreen(east, north) {
-  const { cE, cN, pxPerM } = state.view;
-  return [chart.clientWidth / 2 + (east - cE) * pxPerM,
-          chart.clientHeight / 2 - (north - cN) * pxPerM];
+  const { cE, cN, pxPerM, rotRad } = state.view;
+  const de = east - cE;
+  const dn = north - cN;
+  const u = de * Math.sin(rotRad) + dn * Math.cos(rotRad);
+  const v = de * Math.cos(rotRad) - dn * Math.sin(rotRad);
+  return [chart.clientWidth / 2 + v * pxPerM, chart.clientHeight / 2 - u * pxPerM];
 }
 
 function toWorld(px, py) {
-  const { cE, cN, pxPerM } = state.view;
-  return [cE + (px - chart.clientWidth / 2) / pxPerM,
-          cN - (py - chart.clientHeight / 2) / pxPerM];
+  const { cE, cN, pxPerM, rotRad } = state.view;
+  const v = (px - chart.clientWidth / 2) / pxPerM;
+  const u = (chart.clientHeight / 2 - py) / pxPerM;
+  return [cE + u * Math.sin(rotRad) + v * Math.cos(rotRad),
+          cN + u * Math.cos(rotRad) - v * Math.sin(rotRad)];
 }
 
 /* ------------------------------------------------- formatting */
@@ -121,20 +140,42 @@ function drawGrid(root) {
   const step = gridStep();
   const w = chart.clientWidth;
   const h = chart.clientHeight;
-  const [minE, maxN] = toWorld(0, 0);
-  const [maxE, minN] = toWorld(w, h);
+  // World-space AABB of the four screen corners (they differ once the chart is rotated);
+  // each grid line is a two-point segment so it survives rotation.
+  const corners = [toWorld(0, 0), toWorld(w, 0), toWorld(0, h), toWorld(w, h)];
+  const minE = Math.min(...corners.map((c) => c[0]));
+  const maxE = Math.max(...corners.map((c) => c[0]));
+  const minN = Math.min(...corners.map((c) => c[1]));
+  const maxN = Math.max(...corners.map((c) => c[1]));
+  const headingUp = Math.abs(state.view.rotRad) > 1e-6;
   const g = el('g', {}, root);
   for (let e = Math.ceil(minE / step) * step; e <= maxE; e += step) {
-    const [x] = toScreen(e, 0);
-    el('line', { x1: x, y1: 0, x2: x, y2: h, class: 'grid-line' }, g);
-    el('text', { x: x + 3, y: h - 6, class: 'grid-label' }, g)
-      .textContent = fmtGridLabel(e, 'E');
+    const [x1, y1] = toScreen(e, minN);
+    const [x2, y2] = toScreen(e, maxN);
+    el('line', { x1, y1, x2, y2, class: 'grid-line' }, g);
+    if (!headingUp) {
+      el('text', { x: x1 + 3, y: h - 6, class: 'grid-label' }, g)
+        .textContent = fmtGridLabel(e, 'E');
+    }
   }
   for (let n = Math.ceil(minN / step) * step; n <= maxN; n += step) {
-    const [, y] = toScreen(0, n);
-    el('line', { x1: 0, y1: y, x2: w, y2: y, class: 'grid-line' }, g);
-    el('text', { x: 4, y: y - 4, class: 'grid-label' }, g)
-      .textContent = fmtGridLabel(n, 'N');
+    const [x1, y1] = toScreen(minE, n);
+    const [x2, y2] = toScreen(maxE, n);
+    el('line', { x1, y1, x2, y2, class: 'grid-line' }, g);
+    if (!headingUp) {
+      el('text', { x: 4, y: y1 - 4, class: 'grid-label' }, g)
+        .textContent = fmtGridLabel(n, 'N');
+    }
+  }
+  if (headingUp) {
+    // Per-line labels land mid-chart at arbitrary angles in heading-up mode; a compass
+    // showing true north replaces them.
+    const rotDeg = state.view.rotRad * 180 / Math.PI;
+    const cg = el('g', { class: 'compass',
+                         transform: `translate(${w - 42} 50) rotate(${(-rotDeg).toFixed(1)})` }, root);
+    el('circle', { cx: 0, cy: 0, r: 18, class: 'compass-ring' }, cg);
+    el('path', { d: 'M 0 -14 L 5 6 L 0 2 L -5 6 Z', class: 'compass-needle' }, cg);
+    el('text', { x: 0, y: -22, class: 'compass-label' }, cg).textContent = 'N';
   }
   $('scale-readout').textContent = 'grid ' + fmt.m(step);
 }
@@ -169,7 +210,7 @@ function drawWaypoint(root, wp, i, cls, extraCls) {
   const rPx = Math.max(4, (wp.capture_radius_m || 2.5) * state.view.pxPerM);
   el('circle', { cx: x, cy: y, r: rPx, class: 'wp-capture' }, g);
   if (wp.arrival_yaw_rad !== undefined && wp.arrival_yaw_rad !== null) {
-    const az = wp.arrival_yaw_rad;
+    const az = wp.arrival_yaw_rad - state.view.rotRad;  // compensate chart rotation
     const len = rPx + 14;
     const dx = Math.sin(az);
     const dy = -Math.cos(az);
@@ -268,6 +309,17 @@ function render() {
     drawWaypoint(root, wp, i, cls, extra);
   });
 
+  // External missions (onboard autonomy / remote operators), dashed and colored per source.
+  for (const m of state.traffic.missions || []) {
+    if (m.classification === 'own' || !m.active) continue;
+    const pts = (m.waypoints || []).filter((w) => w.lat_deg !== undefined);
+    if (!pts.length) continue;
+    const cls = m.classification === 'local' ? 'wp-local' : 'wp-remote';
+    polyline(pts.map((w) => toLocal(w.lat_deg, w.lon_deg)),
+             `traffic-path traffic-${m.classification}`, root);
+    pts.forEach((w, i) => drawWaypoint(root, w, i, cls, 'wp-traffic'));
+  }
+
   // Draft waypoints on top while editing.
   if (state.mode === 'edit') {
     state.draft.forEach((wp, i) => {
@@ -289,11 +341,27 @@ function render() {
     }
   }
 
-  // Vehicle icon (triangle pointing along heading).
+  // Active vector commands as heading arrows anchored at the vehicle.
+  if (t) {
+    const [ve, vn] = toLocal(t.lat_deg, t.lon_deg);
+    const [vx, vy] = toScreen(ve, vn);
+    for (const v of state.traffic.vectors || []) {
+      if (!v.active || v.heading_deg === undefined) continue;
+      const ang = v.heading_deg * Math.PI / 180 - state.view.rotRad;
+      const len = 24 + 6 * (v.speed_mps || 0);
+      el('line', {
+        x1: vx, y1: vy,
+        x2: vx + Math.sin(ang) * len, y2: vy - Math.cos(ang) * len,
+        class: `vec-arrow vec-${v.classification || 'remote'}`,
+      }, root);
+    }
+  }
+
+  // Vehicle icon (triangle pointing along heading, compensated for chart rotation).
   if (t) {
     const [e, n] = toLocal(t.lat_deg, t.lon_deg);
     const [x, y] = toScreen(e, n);
-    const hdgDeg = (t.yaw_rad || 0) * 180 / Math.PI;
+    const hdgDeg = ((t.yaw_rad || 0) - state.view.rotRad) * 180 / Math.PI;
     el('path', {
       d: 'M 0 -11 L 7 9 L 0 5 L -7 9 Z',
       class: 'vehicle-icon',
@@ -325,10 +393,140 @@ function renderSidebar() {
       ? fmt.m(ex.cross_track_error_m) : '—');
   setText('ro-wp-rem', ex ? String(ex.waypoints_remaining) : '—');
 
+  renderModePanel();
   renderWaypointList();
+  renderVectorPanel();
   renderConstraintsPanel();
   renderStatusLog();
   renderExecuteDock();
+}
+
+/* ------------------------------------------------- operational mode panel */
+
+const MODE_CHIP_CLASS = {
+  MANUAL: 'chip-serious', STANDBY: 'chip-idle', REMOTE: 'chip-warning', AUTONOMOUS: 'chip-good',
+};
+
+let lastModeSignature = '';
+
+function renderModePanel() {
+  const op = state.opMode;
+  const signature = JSON.stringify(op);
+  if (signature === lastModeSignature) return;
+  lastModeSignature = signature;
+  const chip = $('mode-chip');
+  const pending = $('mode-pending-chip');
+  const buttons = document.querySelectorAll('.mode-btn');
+  if (!op) {
+    chip.textContent = 'MODE N/A';
+    chip.className = 'chip chip-idle';
+    pending.hidden = true;
+    buttons.forEach((b) => { b.disabled = true; b.classList.remove('mode-active'); });
+    return;
+  }
+  const mode = op.mode;
+  if (!mode) {
+    chip.textContent = 'MODE UNKNOWN';
+    chip.className = 'chip chip-pending';
+  } else if (op.report_age_s > 5) {
+    chip.textContent = mode + ' · STALE';
+    chip.className = 'chip chip-pending';
+  } else {
+    chip.textContent = mode;
+    chip.className = 'chip ' + (MODE_CHIP_CLASS[mode] || 'chip-idle');
+  }
+  pending.hidden = !op.pending_mode;
+  if (op.pending_mode) pending.textContent = '→ ' + op.pending_mode + '…';
+  buttons.forEach((b) => {
+    b.disabled = mode === 'MANUAL' || b.dataset.mode === mode;
+    b.classList.toggle('mode-active', b.dataset.mode === mode);
+  });
+}
+
+/* ------------------------------------------------- vector panel */
+
+const STATUS_CHIP_CLASS = {
+  ISSUED: 'chip-pending', COMMANDED: 'chip-pending', EXECUTING: 'chip-good',
+  COMPLETED: 'chip-good', CANCELED: 'chip-serious', FAILED: 'chip-critical',
+};
+
+function renderVectorPanel() {
+  const v = state.vector;
+  $('vec-execute').disabled = state.rc.engaged;
+  $('vec-cancel').disabled = !(v && v.active) || state.rc.engaged;
+  $('btn-rc').textContent = state.rc.engaged ? 'Exit RC' : 'RC mode';
+  $('vec-elev').disabled = !state.vecDraft.elevOn;
+  $('vec-frame').disabled = !state.vecDraft.elevOn;
+  $('vec-timeout').disabled = !state.vecDraft.timeoutOn;
+
+  const chip = $('vec-status-chip');
+  const hist = (v && v.status_history) || [];
+  const last = hist.length ? hist[hist.length - 1] : null;
+  if (last) {
+    chip.textContent = last.status + (last.reason && last.reason !== 'SUCCEEDED' &&
+        last.reason !== last.status ? ' · ' + last.reason : '');
+    chip.className = 'chip ' + (STATUS_CHIP_CLASS[last.status] || 'chip-idle');
+  } else if (v && v.active) {
+    chip.textContent = 'SENT';
+    chip.className = 'chip chip-pending';
+  } else {
+    chip.textContent = 'NO VECTOR';
+    chip.className = 'chip chip-idle';
+  }
+  const ack = $('vec-ack-chip');
+  const awaiting = v && v.session && v.active;
+  ack.hidden = !awaiting;
+  if (awaiting) {
+    ack.textContent = v.ack_received ? 'ACK ✓' : 'AWAITING ACK';
+    ack.className = 'chip ' + (v.ack_received ? 'chip-good' : 'chip-pending');
+  }
+  renderTrafficList();
+}
+
+let lastTrafficSignature = '';
+
+function renderTrafficList() {
+  const rows = [];
+  for (const m of state.traffic.missions || []) {
+    rows.push({
+      cls: m.classification,
+      desc: `WP×${(m.waypoints || []).length}` +
+            (m.waypoints_remaining !== undefined ? ` (${m.waypoints_remaining} left)` : ''),
+      status: m.status || (m.list_complete === false ? 'assembling' : ''),
+      active: m.active,
+    });
+  }
+  for (const v of state.traffic.vectors || []) {
+    const bits = [];
+    if (v.heading_deg !== undefined) bits.push(v.heading_deg.toFixed(0) + '°');
+    if (v.speed_mps !== undefined) bits.push(v.speed_mps.toFixed(1) + ' m/s');
+    if (v.elev_value_m !== undefined) {
+      bits.push(v.elev_value_m.toFixed(0) + ' m ' + (v.elev_frame === 'asf' ? 'ASF' : 'depth'));
+    }
+    if (v.ends_in_s !== undefined && v.active) bits.push('ends ' + Math.max(0, v.ends_in_s).toFixed(0) + ' s');
+    rows.push({ cls: v.classification, desc: 'VECTOR ' + bits.join(' · '), status: v.status || '',
+                active: v.active });
+  }
+  const signature = JSON.stringify(rows);
+  if (signature === lastTrafficSignature) return;
+  lastTrafficSignature = signature;
+  const list = $('traffic-list');
+  list.replaceChildren();
+  if (!rows.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'No commands observed on the bus.';
+    list.appendChild(li);
+    return;
+  }
+  for (const r of rows) {
+    const li = document.createElement('li');
+    li.className = r.active ? '' : 'inactive';
+    li.innerHTML = `<span class="badge badge-${r.cls}">${r.cls}</span>` +
+                   `<span class="traffic-desc">${r.desc}</span>` +
+                   `<span class="traffic-status">${r.status}</span>`;
+    list.appendChild(li);
+  }
 }
 
 function describeWaypoint(wp) {
@@ -563,6 +761,7 @@ function schedulePreview() {
 }
 
 function enterEditMode() {
+  if (state.rc.engaged) exitRcMode(true);  // never leave the heartbeat driving blind
   state.mode = 'edit';
   state.draft = [];
   state.draftPath = [];
@@ -834,9 +1033,12 @@ function toggleActive(id, on) {
   state.pendingActive = next;
   lastConSignature = '';
   clearTimeout(activeTimer);
+  // Capture the intended set NOW: an ack echo can null pendingActive before the debounce
+  // fires, and posting ids:null would deactivate everything.
+  const ids = next;
   activeTimer = setTimeout(async () => {
     try {
-      await api('/api/constraints/active', { ids: state.pendingActive });
+      await api('/api/constraints/active', { ids });
     } catch (e) {
       alert('Failed to command the active set: ' + e.message);
       state.pendingActive = null;
@@ -869,6 +1071,7 @@ function zoneSelfIntersects(points) {
 }
 
 function enterZoneDraw(kind) {
+  if (state.rc.engaged) exitRcMode(true);  // never leave the heartbeat driving blind
   if (state.mode === 'edit') exitEditMode();
   state.mode = 'zone-draw';
   state.zoneDraft = { kind, points: [] };
@@ -951,10 +1154,14 @@ function bindChart() {
     if (Math.abs(dx) + Math.abs(dy) > 3) {
       moved = true;
       chart.classList.add('panning');
-      state.view.cE -= dx / state.view.pxPerM;
-      state.view.cN += dy / state.view.pxPerM;
+      // World-anchor pan (rotation-correct): keep the grabbed point under the cursor.
+      const [e0, n0] = toWorld(lastX - rect.left, lastY - rect.top);
+      const [e1, n1] = toWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+      state.view.cE += e0 - e1;
+      state.view.cN += n0 - n1;
       state.view.userPanned = true;
       $('follow-vehicle').checked = false;
+      setFollowHeading(false);
       lastX = ev.clientX;
       lastY = ev.clientY;
       render();
@@ -967,7 +1174,8 @@ function bindChart() {
     if (moved || !state.origin) return;
     const rect = chart.getBoundingClientRect();
     const target = ev.target.closest ? ev.target.closest('.wp') : null;
-    if (target && target.dataset.idx !== undefined) {
+    if (target && target.dataset.idx !== undefined &&
+        !target.classList.contains('wp-traffic')) {
       selectWaypoint(parseInt(target.dataset.idx, 10));
       return;
     }
@@ -997,9 +1205,22 @@ function bindChart() {
     }
   });
   window.addEventListener('keydown', (ev) => {
-    if (state.mode !== 'zone-draw') return;
-    if (ev.key === 'Enter') finishZoneDraw();
-    if (ev.key === 'Escape') exitZoneDraw();
+    if (state.mode === 'zone-draw') {
+      if (ev.key === 'Enter') finishZoneDraw();
+      if (ev.key === 'Escape') exitZoneDraw();
+      return;
+    }
+    if (state.mode !== 'rc') return;
+    if (ev.code === 'Escape') {  // the escape hatch must work even from a form field
+      exitRcMode(true);
+      return;
+    }
+    if (typingInField()) return;
+    handleRcKeyDown(ev);
+  });
+  window.addEventListener('keyup', (ev) => {
+    if (state.mode !== 'rc') return;
+    handleRcKeyUp(ev);
   });
   chart.addEventListener('wheel', (ev) => {
     ev.preventDefault();
@@ -1016,12 +1237,230 @@ function bindChart() {
   }, { passive: false });
 }
 
+/* ------------------------------------------------- vector panel bindings */
+
+function typingInField() {
+  const a = document.activeElement;
+  return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'TEXTAREA');
+}
+
+function bindVectorPanel() {
+  const d = state.vecDraft;
+  $('vec-hdg').value = d.heading_deg;
+  $('vec-speed').value = d.speed_mps;
+  $('vec-elev').value = d.elev_value_m;
+  $('vec-frame').value = d.elev_frame;
+  $('vec-timeout').value = d.timeout_s;
+  $('vec-hdg').addEventListener('change', (ev) => { d.heading_deg = parseFloat(ev.target.value) || 0; });
+  $('vec-speed').addEventListener('change', (ev) => {
+    d.speed_mps = Math.max(0, parseFloat(ev.target.value) || 0);
+  });
+  $('vec-elev-on').addEventListener('change', (ev) => { d.elevOn = ev.target.checked; render(); });
+  $('vec-elev').addEventListener('change', (ev) => {
+    d.elev_value_m = Math.max(0, parseFloat(ev.target.value) || 0);
+  });
+  $('vec-frame').addEventListener('change', (ev) => { d.elev_frame = ev.target.value; });
+  $('vec-timeout-on').addEventListener('change', (ev) => { d.timeoutOn = ev.target.checked; render(); });
+  $('vec-timeout').addEventListener('change', (ev) => {
+    d.timeout_s = Math.max(1, parseFloat(ev.target.value) || 30);
+  });
+  $('vec-execute').addEventListener('click', async () => {
+    const body = { heading_deg: ((d.heading_deg % 360) + 360) % 360, speed_mps: d.speed_mps };
+    if (d.elevOn) { body.elev_value_m = d.elev_value_m; body.elev_frame = d.elev_frame; }
+    if (d.timeoutOn) body.timeout_s = d.timeout_s;
+    try { await api('/api/vector', body); } catch (e) { alert('Failed to send vector: ' + e.message); }
+  });
+  $('vec-cancel').addEventListener('click', async () => {
+    try { await api('/api/vector/cancel', {}); } catch (e) { alert('Failed to cancel vector: ' + e.message); }
+  });
+  $('btn-rc').addEventListener('click', () => {
+    if (state.rc.engaged) exitRcMode(true); else enterRcMode();
+  });
+  document.querySelectorAll('.mode-btn').forEach((b) => {
+    b.addEventListener('click', async () => {
+      try { await api('/api/mode', { mode: b.dataset.mode }); }
+      catch (e) { alert('Failed to command mode: ' + e.message); }
+    });
+  });
+}
+
+/* ------------------------------------------------- WASD remote control */
+
+function rcSpeedLimit() {
+  const p = state.platform || {};
+  let limit = p.max_speed_mps || 6.0;
+  if (state.rc.elevOn && p.max_speed_underwater_mps !== undefined) {
+    limit = Math.min(limit, p.max_speed_underwater_mps);
+  }
+  return limit;
+}
+
+function enterRcMode() {
+  if (state.mode === 'edit') exitEditMode();
+  if (state.mode === 'zone-draw') exitZoneDraw();
+  state.mode = 'rc';
+  state.rc.engaged = true;
+  state.rc.engagedAt = Date.now();
+  state.rc.keys.clear();
+  state.rc.lastHeadingRad = (state.telemetry && state.telemetry.yaw_rad) || 0;
+  state.rc.linkOk = true;
+  $('rc-overlay').hidden = false;
+  state.rc.timer = setInterval(rcTick, 200);  // ~5 Hz heartbeat; the server owns the deadman
+  rcTick();
+  render();
+}
+
+function exitRcMode(notifyServer) {
+  if (state.rc.timer) clearInterval(state.rc.timer);
+  state.rc.timer = null;
+  state.rc.engaged = false;
+  if (state.mode === 'rc') state.mode = 'monitor';
+  $('rc-overlay').hidden = true;
+  if (notifyServer) api('/api/rc', { active: false }).catch(() => {});
+  render();
+}
+
+// W = along the vehicle heading; W+A / W+D = ∓/± 45°; A / D alone = ∓/± 90°;
+// S = stop (zero speed — UMAA ground speed has no reverse here). Undefined = no key held.
+function rcHeadingOffsetDeg() {
+  const k = state.rc.keys;
+  if (k.has('KeyS')) return null;
+  const w = k.has('KeyW');
+  const a = k.has('KeyA');
+  const d = k.has('KeyD');
+  if (w && a && !d) return -45;
+  if (w && d && !a) return 45;
+  if (w) return 0;
+  if (a && !d) return -90;
+  if (d && !a) return 90;
+  return undefined;
+}
+
+async function rcTick() {
+  if (!state.rc.engaged) return;
+  const t = state.telemetry;
+  const vehicleHdg = t ? (t.yaw_rad || 0) : (state.rc.lastHeadingRad || 0);
+  const off = rcHeadingOffsetDeg();
+  let headingRad;
+  let speed;
+  if (off === undefined || off === null) {
+    // No direction key (or S): zero speed, holding the last commanded heading.
+    headingRad = state.rc.lastHeadingRad !== null ? state.rc.lastHeadingRad : vehicleHdg;
+    speed = 0;
+  } else {
+    headingRad = vehicleHdg + off * Math.PI / 180;
+    speed = Math.min(state.rc.speedMps, rcSpeedLimit());
+    state.rc.lastHeadingRad = headingRad;
+  }
+  const body = {
+    active: true,
+    heading_deg: ((headingRad * 180 / Math.PI) % 360 + 360) % 360,
+    speed_mps: speed,
+  };
+  if (state.rc.elevOn) {
+    body.elev_value_m = state.rc.elevValueM;
+    body.elev_frame = state.rc.elevFrame;
+  }
+  try {
+    await api('/api/rc', body);
+    state.rc.linkOk = true;
+  } catch (e) {
+    state.rc.linkOk = false;
+  }
+  renderRcOverlay();
+}
+
+//! Shift = up, Ctrl = down, frame-aware: up is a smaller depth but a larger above-floor altitude.
+function rcStepElevation(upSteps) {
+  const rc = state.rc;
+  rc.elevOn = true;
+  const delta = rc.elevFrame === 'depth' ? -upSteps : upSteps;
+  rc.elevValueM = Math.max(0, rc.elevValueM + delta);
+  const floor = state.platform && state.platform.floor_depth_m;
+  if (floor !== undefined) rc.elevValueM = Math.min(rc.elevValueM, floor);
+}
+
+function rcToggleFrame() {
+  const rc = state.rc;
+  const floor = state.platform && state.platform.floor_depth_m;
+  // Convert the setpoint so the toggle keeps roughly the same physical elevation.
+  if (rc.elevOn && floor !== undefined) {
+    rc.elevValueM = Math.max(0, floor - rc.elevValueM);
+  }
+  rc.elevFrame = rc.elevFrame === 'depth' ? 'asf' : 'depth';
+}
+
+const RC_DIRECTION_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
+const RC_HANDLED_KEYS = [...RC_DIRECTION_KEYS, 'KeyR', 'KeyF', 'KeyZ',
+                         'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight'];
+
+function handleRcKeyDown(ev) {
+  if (ev.code === 'Escape') { exitRcMode(true); return; }
+  if (!RC_HANDLED_KEYS.includes(ev.code)) return;
+  ev.preventDefault();
+  if (RC_DIRECTION_KEYS.includes(ev.code)) state.rc.keys.add(ev.code);
+  if (ev.repeat) { renderRcOverlay(); return; }  // held keys must not autorepeat the steps
+  if (ev.code === 'KeyR') state.rc.speedMps = Math.min(rcSpeedLimit(), state.rc.speedMps + 0.25);
+  if (ev.code === 'KeyF') state.rc.speedMps = Math.max(0.25, state.rc.speedMps - 0.25);
+  if (ev.code === 'ShiftLeft' || ev.code === 'ShiftRight') rcStepElevation(1);
+  if (ev.code === 'ControlLeft' || ev.code === 'ControlRight') rcStepElevation(-1);
+  if (ev.code === 'KeyZ') rcToggleFrame();
+  renderRcOverlay();
+}
+
+function handleRcKeyUp(ev) {
+  if (RC_DIRECTION_KEYS.includes(ev.code)) {
+    state.rc.keys.delete(ev.code);
+    renderRcOverlay();
+  }
+}
+
+function renderRcOverlay() {
+  if (!state.rc.engaged) return;
+  const keyIds = [['rc-key-w', 'KeyW'], ['rc-key-a', 'KeyA'], ['rc-key-s', 'KeyS'],
+                  ['rc-key-d', 'KeyD']];
+  for (const [id, code] of keyIds) {
+    $(id).classList.toggle('held', state.rc.keys.has(code));
+  }
+  $('rc-speed').textContent = state.rc.speedMps.toFixed(2) + ' m/s';
+  $('rc-elev').textContent = state.rc.elevOn
+      ? state.rc.elevValueM.toFixed(0) + ' m ' + (state.rc.elevFrame === 'asf' ? 'ASF' : 'depth')
+      : 'unset';
+  const banner = $('rc-banner');
+  if (!state.rc.linkOk) {
+    banner.textContent = 'LINK LOST — vehicle stops in ≤2 s';
+    banner.classList.add('lost');
+  } else {
+    const mode = state.opMode && state.opMode.mode;
+    banner.textContent = 'REMOTE CONTROL ACTIVE — keys drive the vehicle' +
+        (mode && mode !== 'REMOTE' ? ` (mode ${mode}: commands may be rejected)` : '');
+    banner.classList.remove('lost');
+  }
+}
+
+/* ------------------------------------------------- follow heading */
+
+function setFollowHeading(on) {
+  $('follow-heading').checked = on;
+  if (!on) state.view.rotRad = 0;
+}
+
 /* ------------------------------------------------- SSE feed */
 
 function applySnapshot(snap) {
   const t = snap.telemetry && snap.telemetry.lat_deg !== undefined ? snap.telemetry : null;
   state.mission = snap.mission || state.mission;
   state.execStatus = snap.exec_status || null;
+  state.opMode = snap.operational_mode || null;
+  state.vector = snap.vector || null;
+  state.traffic = snap.traffic || { missions: [], vectors: [] };
+  if (snap.platform) state.platform = snap.platform;
+  // The server-side deadman (or an external cancel) ended the RC session: leave RC mode
+  // locally too. The engage-grace covers the race before the poller reflects rc_active.
+  if (state.rc.engaged && state.vector && !state.vector.rc_active &&
+      Date.now() - state.rc.engagedAt > 3000) {
+    exitRcMode(false);
+  }
   if (snap.constraints) {
     state.constraints = snap.constraints;
     // The autopilot's ack echoing the commanded set clears the optimistic pending state.
@@ -1054,6 +1493,7 @@ function applySnapshot(snap) {
       state.view.cE = e;
       state.view.cN = n;
     }
+    state.view.rotRad = $('follow-heading').checked ? (t.yaw_rad || 0) : 0;
   }
   if (state.mode === 'monitor' && state.selected >= 0) {
     showWaypointPopup(state.selected);
@@ -1109,10 +1549,41 @@ $('btn-clear').addEventListener('click', () => {
 });
 $('btn-done-edit').addEventListener('click', exitEditMode);
 $('btn-execute').addEventListener('click', onExecute);
-$('follow-vehicle').addEventListener('change', () => render());
+$('follow-vehicle').addEventListener('change', (ev) => {
+  if (!ev.target.checked) setFollowHeading(false);  // heading-up requires following
+  render();
+});
+$('follow-heading').addEventListener('change', (ev) => {
+  if (ev.target.checked) {
+    $('follow-vehicle').checked = true;
+    if (state.telemetry) state.view.rotRad = state.telemetry.yaw_rad || 0;
+  } else {
+    state.view.rotRad = 0;
+  }
+  render();
+});
 window.addEventListener('resize', render);
+window.addEventListener('beforeunload', () => {
+  // Best-effort RC stop; the server watchdog and DDS endTime cover the rest.
+  if (state.rc.engaged) navigator.sendBeacon('/api/rc', JSON.stringify({ active: false }));
+});
+// Losing focus swallows keyup events: without this, a key held while alt-tabbing away
+// would keep the vehicle driving with no operator watching. The next rcTick sends speed 0.
+window.addEventListener('blur', () => {
+  if (state.rc.engaged) {
+    state.rc.keys.clear();
+    renderRcOverlay();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state.rc.engaged) {
+    state.rc.keys.clear();
+    renderRcOverlay();
+  }
+});
 
 bindEditor();
+bindVectorPanel();
 bindChart();
 connectStream();
 render();

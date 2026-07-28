@@ -49,7 +49,7 @@ namespace arlcore::autopilot {
 //! LocalReaderSender in tests) and signs reports with the configured nav source ID.
 class SimVehicleControl : public IVehicleControl {
  public:
-  SimVehicleControl(const PlatformSpecsConfig& specs, const PlatformCapabilitiesConfig& caps,
+  SimVehicleControl(const PlatformCapabilitiesConfig& caps,
                     const SimVehicleConfig& simConfig, const arlcore::NumericGuid& navSourceId,
                     std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>>
                         poseSender,
@@ -62,8 +62,9 @@ class SimVehicleControl : public IVehicleControl {
   bool initialize() override;
   void shutdown() override;
   bool sendControlVector(const ControlVector& cv) override;
-  UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType getPlatformSpecs() const override;
-  UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType getPlatformCapabilities() const override;
+
+  //! \brief The sim platform never engages manual control; it always boots into STANDBY.
+  bool isManualEngaged() const override { return false; }
 
   //! \brief The most recent control vector handed to the strategy (for tests/diagnostics).
   std::optional<ControlVector> lastControlVector() const;
@@ -94,7 +95,6 @@ class SimVehicleControl : public IVehicleControl {
   double maxDepthRateMps() const;
   void publishReports();
 
-  PlatformSpecsConfig specs_;
   PlatformCapabilitiesConfig caps_;
   SimVehicleConfig simConfig_;
 

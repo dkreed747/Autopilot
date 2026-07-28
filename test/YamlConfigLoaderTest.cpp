@@ -53,8 +53,12 @@ TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
       "  vector_source_id: \"aaaa\"\n"
       "  waypoint_source_id: \"bbbb\"\n"
       "arbitration:\n"
-      "  vector_priority: 50\n"
-      "  waypoint_priority: 5\n"
+      "  local:\n"
+      "    vector_priority: 50\n"
+      "    waypoint_priority: 5\n"
+      "  remote:\n"
+      "    vector_priority: 700\n"
+      "    waypoint_priority: 600\n"
       "planner:\n"
       "  max_misses_per_waypoint: 4\n"
       "  elevation_counts_as_miss: false\n"
@@ -69,8 +73,10 @@ TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
   EXPECT_EQ(config.dds.domainId, 7);
   EXPECT_EQ(config.identity.vectorSourceId, "aaaa");
   EXPECT_EQ(config.identity.waypointSourceId, "bbbb");
-  EXPECT_EQ(config.arbitration.vectorPriority, 50);
-  EXPECT_EQ(config.arbitration.waypointPriority, 5);
+  EXPECT_EQ(config.arbitration.local.vectorPriority, 50);
+  EXPECT_EQ(config.arbitration.local.waypointPriority, 5);
+  EXPECT_EQ(config.arbitration.remote.vectorPriority, 700);
+  EXPECT_EQ(config.arbitration.remote.waypointPriority, 600);
   EXPECT_EQ(config.planner.maxMissesPerWaypoint, 4);
   EXPECT_FALSE(config.planner.elevationCountsAsMiss);
   ASSERT_TRUE(config.platformCapabilities.surface.maxForwardSpeedMps.has_value());
@@ -87,9 +93,17 @@ TEST_F(YamlConfigLoaderTest, UnsetFieldsKeepDefaults) {
 
   EXPECT_EQ(config.dds.domainId, 3);
   // Untouched fields retain their struct defaults.
-  EXPECT_EQ(config.arbitration.vectorPriority, 100);
-  EXPECT_EQ(config.arbitration.waypointPriority, 10);
+  EXPECT_EQ(config.arbitration.local.vectorPriority, 100);
+  EXPECT_EQ(config.arbitration.local.waypointPriority, 10);
+  EXPECT_EQ(config.arbitration.remote.vectorPriority, 500);
+  EXPECT_EQ(config.arbitration.remote.waypointPriority, 400);
   EXPECT_EQ(config.arbitration.safePriority, 1000);
+  EXPECT_TRUE(config.operationalMode.allowImplicitModeTransitions);
+  EXPECT_TRUE(config.operationalMode.commandsOutOfModeAreFailed);
+  EXPECT_DOUBLE_EQ(config.operationalMode.idleRevertS, 5.0);
+  EXPECT_TRUE(config.identity.platformId.empty());
+  EXPECT_TRUE(config.identity.operationalModeControlSourceId.empty());
+  EXPECT_TRUE(config.console.platformId.empty());
   EXPECT_EQ(config.planner.maxReplans, 10);
   EXPECT_FALSE(config.platformCapabilities.surface.maxForwardSpeedMps.has_value());
   EXPECT_FALSE(config.constraints.maxSpeedMps.has_value());
@@ -180,6 +194,55 @@ TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
   EXPECT_DOUBLE_EQ(config.safety.safeMode.srp.repositionSpeedMps, 2.0);
   ASSERT_TRUE(config.safety.safeMode.srp.safeElevationM.has_value());
   EXPECT_DOUBLE_EQ(config.safety.safeMode.srp.safeElevationM.value(), 3.0);
+}
+
+TEST_F(YamlConfigLoaderTest, LoadsOperationalModeAndConsoleFields) {
+  // GIVEN: a config with identity platform/mode IDs, an operational_mode block, and a
+  // console identity block
+  writeConfig(
+      "identity:\n"
+      "  platform_id: \"00000000-0000-0000-0000-00000000c0fe\"\n"
+      "  operational_mode_control_source_id: \"77777777-7777-7777-7777-777777777777\"\n"
+      "  operational_mode_status_source_id: \"99999999-9999-9999-9999-999999999999\"\n"
+      "operational_mode:\n"
+      "  allow_implicit_mode_transitions: false\n"
+      "  commands_out_of_mode_are_failed: false\n"
+      "  idle_revert_s: 12.5\n"
+      "console:\n"
+      "  platform_id: \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\"\n"
+      "  source_id: \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\"\n");
+
+  // WHEN: the config is loaded
+  AutopilotConfig config;
+  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+
+  // THEN: every new field round-trips
+  EXPECT_EQ(config.identity.platformId, "00000000-0000-0000-0000-00000000c0fe");
+  EXPECT_EQ(config.identity.operationalModeControlSourceId, "77777777-7777-7777-7777-777777777777");
+  EXPECT_EQ(config.identity.operationalModeStatusSourceId, "99999999-9999-9999-9999-999999999999");
+  EXPECT_FALSE(config.operationalMode.allowImplicitModeTransitions);
+  EXPECT_FALSE(config.operationalMode.commandsOutOfModeAreFailed);
+  EXPECT_DOUBLE_EQ(config.operationalMode.idleRevertS, 12.5);
+  EXPECT_EQ(config.console.platformId, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+  EXPECT_EQ(config.console.sourceId, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+}
+
+TEST_F(YamlConfigLoaderTest, LegacyFlatArbitrationKeysAreIgnored) {
+  // GIVEN: a config still using the pre-operational-mode flat arbitration schema
+  writeConfig(
+      "arbitration:\n"
+      "  vector_priority: 42\n"
+      "  waypoint_priority: 7\n"
+      "  safe_priority: 800\n");
+
+  // WHEN: the config is loaded
+  AutopilotConfig config;
+  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+
+  // THEN: the obsolete flat keys are ignored (warned), safe_priority still applies
+  EXPECT_EQ(config.arbitration.local.vectorPriority, 100);
+  EXPECT_EQ(config.arbitration.local.waypointPriority, 10);
+  EXPECT_EQ(config.arbitration.safePriority, 800);
 }
 
 }  // namespace arlcore::autopilot

@@ -34,13 +34,11 @@ class FakeVehicle : public IVehicleControl {
     ++sendCount;
     return true;
   }
-  UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType getPlatformSpecs() const override { return {}; }
-  UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType getPlatformCapabilities() const override {
-    return {};
-  }
+  bool isManualEngaged() const override { return manualEngaged; }
 
   std::optional<ControlVector> last;
   int sendCount = 0;
+  bool manualEngaged = false;
 };
 
 class FakeConstraintSource : public IConstraintSource {
@@ -109,6 +107,30 @@ TEST_F(AutopilotBrainSafetyTest, NoConstraintSourceEmitsUnclamped) {
   brain_->onNavUpdate();
   ASSERT_TRUE(vehicle_.last.has_value());
   EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 6.0);
+}
+
+TEST_F(AutopilotBrainSafetyTest, ManualEngagedSuppressesAllActuation) {
+  // GIVEN: an installed vector setpoint driving the vehicle
+  brain_->setVectorSetpoint(vectorCommand(1.0, 3.0));
+  brain_->onNavUpdate();
+  ASSERT_TRUE(vehicle_.last.has_value());
+  const int sendsBefore = vehicle_.sendCount;
+
+  // WHEN: the platform engages manual control and control paths keep running
+  vehicle_.manualEngaged = true;
+  brain_->onNavUpdate();
+  brain_->clearSetpoint(DriveSource::VECTOR);  // would normally emit a zero-speed hold
+  brain_->activateSafeHold();                  // even safe mode must not actuate
+
+  // THEN: nothing reached the platform while manual was engaged
+  EXPECT_EQ(vehicle_.sendCount, sendsBefore);
+
+  // WHEN: manual is released
+  vehicle_.manualEngaged = false;
+  brain_->activateSafeHold();
+
+  // THEN: actuation resumes
+  EXPECT_GT(vehicle_.sendCount, sendsBefore);
 }
 
 TEST_F(AutopilotBrainSafetyTest, StaticPlatformCapClampsWhenSourceInstalled) {
