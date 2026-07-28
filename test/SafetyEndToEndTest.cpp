@@ -62,10 +62,7 @@ class SimVehicle : public IVehicleControl {
     last = cv;
     return true;
   }
-  UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType getPlatformSpecs() const override { return {}; }
-  UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType getPlatformCapabilities() const override {
-    return {};
-  }
+  bool isManualEngaged() const override { return manualEngaged; }
 
   GlobalPoseReportType pose() const {
     GlobalPoseReportType p;
@@ -95,6 +92,7 @@ class SimVehicle : public IVehicleControl {
   double yN = 0.0;
   double yawRad = 0.0;
   std::optional<ControlVector> last;
+  bool manualEngaged = false;
 };
 
 //! \brief A keep-in [0,200]x[0,200] water-zone conditional in the test frame.

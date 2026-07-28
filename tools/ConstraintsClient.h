@@ -40,6 +40,7 @@
 #include <UMAA/MM/ConditionalReport/ConditionalReportType.hpp>
 #include <UMAA/MM/ConditionalStateReport/ConditionalStateReportType.hpp>
 
+#include "ClientIdentity.hpp"
 #include "CycloneReader.h"
 #include "CycloneSender.h"
 #include "LargeSetReader.h"
@@ -93,7 +94,8 @@ class ConstraintsClient {
                     const dds::pub::qos::DataWriterQos& wqos,
                     const dds::sub::qos::DataReaderQos& rqos,
                     const dds::sub::qos::DataReaderQos& largeSetRqos,
-                    const arlcore::NumericGuid& destinationId);
+                    const arlcore::NumericGuid& destinationId,
+                    const ClientIdentity& identity);
 
   //! \brief Create or update a water zone (empty `id` mints a new one). The ceiling/floor
   //! frames are "depth" (meters below the surface) or "asf" (meters above the sea floor) —
@@ -165,7 +167,7 @@ class ConstraintsClient {
   std::shared_ptr<arlcore::io::CycloneReader<
       UMAA::MM::ConditionalStateReport::ConditionalStateReportType>> stateReader_;
 
-  arlcore::NumericGuid sourceId_;
+  ClientIdentity identity_;
   arlcore::NumericGuid destinationId_;
 
   std::optional<UMAA::Common::LargeSetMetadata> lastMetadata_;

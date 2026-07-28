@@ -35,7 +35,8 @@ using CommandStatusEnumType =
 WaypointMissionClient::WaypointMissionClient(const dds::domain::DomainParticipant& participant,
                                              const dds::pub::qos::DataWriterQos& wqos,
                                              const dds::sub::qos::DataReaderQos& rqos,
-                                             const arlcore::NumericGuid& destinationId)
+                                             const arlcore::NumericGuid& destinationId,
+                                             const ClientIdentity& identity)
     : cmdSender_(std::make_shared<CycloneSender<CommandType>>(
           participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeTopic, wqos)),
       elementSender_(std::make_shared<CycloneSender<ListElement>>(
@@ -45,7 +46,7 @@ WaypointMissionClient::WaypointMissionClient(const dds::domain::DomainParticipan
           participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandStatusTypeTopic, rqos)),
       ackReader_(std::make_shared<CycloneReader<CommandAckType>>(
           participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandAckReportTypeTopic, rqos)),
-      sourceId_(arlcore::UuidFactory::getInstance().generateGuid()),
+      identity_(identity),
       destinationId_(destinationId) {}
 
 arlcore::NumericGuid WaypointMissionClient::start(const std::vector<GlobalWaypointType>& waypoints) {
@@ -57,7 +58,8 @@ arlcore::NumericGuid WaypointMissionClient::start(const std::vector<GlobalWaypoi
   const arlcore::NumericGuid sessionId = arlcore::UuidFactory::getInstance().generateGuid();
   cmd_ = CommandType();
   cmd_.sessionID() = sessionId.getGuid();
-  cmd_.source().id() = sourceId_.getGuid();
+  cmd_.source().id() = identity_.sourceId.getGuid();
+  cmd_.source().parentID() = identity_.platformId.getGuid();
   cmd_.destination().id() = destinationId_.getGuid();
   cmd_.timeStamp() = arlcore::umaa::getTimestamp();
   cmd_.waypointsListMetadata() = listWriter_->getMetadata();
@@ -102,6 +104,9 @@ std::vector<MissionStatusUpdate> WaypointMissionClient::pollStatus() {
     lastReason_ = update.reason;
     if (update.terminal) {
       terminal_ = true;
+      // Dispose the (transient-local) command instance so a restarted autopilot can never
+      // re-read and re-execute a finished mission from the retained sample.
+      cmdSender_->dispose(cmd_);
     }
     updates.push_back(update);
   }

@@ -18,12 +18,14 @@
 #define APPS_AUTOPILOT_INCLUDE_AUTOPILOT_AUTOPILOTAPP_H_
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 
 #include <dds/dds.hpp>
 
 #include <UMAA/EO/UVPlatformSpecs/UVPlatformSpecsReportType.hpp>
 #include <UMAA/EO/UVPlatformSpecs/UVPlatformCapabilitiesReportType.hpp>
+#include <UMAA/MM/OperationalModeStatus/OperationalModeReportType.hpp>
 
 #include "ActiveConstraintsControlProvider.h"
 #include "AutopilotBrain.h"
@@ -39,6 +41,8 @@
 #include "GlobalPoseReportConsumer.h"
 #include "NavObservers.h"
 #include "NavState.h"
+#include "OperationalModeControlProvider.hpp"
+#include "OperationalModeManager.hpp"
 #include "ReportProvider.h"
 #include "SafeReturnPath.h"
 #include "SimVehicleControl.h"
@@ -99,6 +103,15 @@ class AutopilotApp {
   std::unique_ptr<arlcore::umaa::services::ReportProvider<
       UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType>> capabilitiesReportProvider_;
 
+  // MM operational mode services (constructed only when
+  // identity.operational_mode_control_source_id is set).
+  std::unique_ptr<OperationalModeManager> modeManager_;
+  std::unique_ptr<OperationalModeControlProvider> operationalModeProvider_;
+  std::unique_ptr<arlcore::umaa::services::ReportProvider<
+      UMAA::MM::OperationalModeStatus::OperationalModeReportType>> operationalModeReportProvider_;
+  OperationalMode lastReportedMode_ = OperationalMode::STANDBY;
+  std::chrono::steady_clock::time_point lastModeReportAt_{};
+
   // MM constraint services (constructed only when identity.constraints_source_id is set).
   // The autopilot both provides AND consumes its own ConditionalReport over DDS loopback:
   // the published report is the single source of truth every peer (console included) sees.
@@ -117,6 +130,17 @@ class AutopilotApp {
 
   //! \brief Construct the MM conditional/constraint services and wire the supervisor.
   bool initializeConstraintServices();
+
+  //! \brief Construct the MM operational mode manager/provider/report and publish the initial
+  //! mode from the first manual poll.
+  bool initializeOperationalModeServices();
+
+  //! \brief Publish the OperationalModeStatus report for a mode change.
+  void publishOperationalMode(OperationalMode mode);
+
+  //! \brief Whether either driving provider has a non-terminal session of this class (feeds
+  //! the manager's idle-revert; sessions of the other class never affect it).
+  bool commandClassActive(CommandClass cls) const;
 };
 
 }  // namespace arlcore::autopilot

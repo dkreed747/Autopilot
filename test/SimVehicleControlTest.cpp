@@ -40,12 +40,10 @@ struct SimFixture {
   std::shared_ptr<arlcore::io::LocalReaderSender<VelocityReportType>> velocityIo =
       std::make_shared<arlcore::io::LocalReaderSender<VelocityReportType>>();
 
-  PlatformSpecsConfig specs;
   PlatformCapabilitiesConfig caps;
   SimVehicleConfig sim;
 
   SimFixture() {
-    specs.name = "test-vehicle";
     caps.surface.maxForwardSpeedMps = 6.0;
     caps.surface.maxReverseSpeedMps = 2.0;
     caps.surface.maxTurnRateRps = 0.25;
@@ -58,7 +56,7 @@ struct SimFixture {
 
   std::unique_ptr<SimVehicleControl> make() {
     return std::make_unique<SimVehicleControl>(
-        specs, caps, sim, arlcore::UuidFactory::getInstance().generateGuid(),
+        caps, sim, arlcore::UuidFactory::getInstance().generateGuid(),
         poseIo, speedIo, velocityIo);
   }
 };

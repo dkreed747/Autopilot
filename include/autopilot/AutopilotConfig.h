@@ -33,19 +33,50 @@ struct DdsConfig {
 
 //! \brief UMAA source identifiers (UUID strings) this application publishes under.
 struct IdentityConfig {
+  std::string platformId;  // this platform's UMAA identity; command sources whose parentID
+                           // matches are classified as local (onboard) autonomy
   std::string vectorSourceId;
   std::string waypointSourceId;
   std::string specsSourceId;
   std::string capabilitiesSourceId;
   std::string navSourceId;  // source for the sim vehicle's SA navigation reports
   std::string constraintsSourceId;  // MM conditional/constraint services source
+  std::string operationalModeControlSourceId;  // MM operational mode control provider (empty = disabled)
+  std::string operationalModeStatusSourceId;   // MM operational mode status report source
 };
 
-//! \brief Driving-resource arbitration priorities. Higher wins.
-struct ArbitrationConfig {
+//! \brief Operational-mode FSM policy (MM OperationalModeControl/Status services).
+struct OperationalModeConfig {
+  bool allowImplicitModeTransitions = true;  // incoming driving commands may move
+                                             // STANDBY->REMOTE/AUTONOMOUS and AUTONOMOUS->REMOTE
+  bool commandsOutOfModeAreFailed = true;    // true = UMAA-strict fail; false = hold at ISSUED
+                                             // until the mode becomes compatible
+  double idleRevertS = 5.0;  // implicitly-entered REMOTE/AUTONOMOUS revert to STANDBY after
+                             // this long with no active command of the mode's class
+};
+
+//! \brief Driving-resource arbitration priorities for one command class. Higher wins.
+struct ClassArbitrationPriorities {
   int vectorPriority = 100;
   int waypointPriority = 10;
-  int safePriority = 1000;  // safe-mode maneuvers preempt everything
+};
+
+//! \brief Driving-resource arbitration priorities. Defaults keep safe-mode maneuvers above
+//! everything and any remote (off-board operator) command above any local (onboard autonomy)
+//! command.
+struct ArbitrationConfig {
+  ClassArbitrationPriorities local;
+  ClassArbitrationPriorities remote{500, 400};
+  int safePriority = 1000;
+};
+
+//! \brief Consumer-side UMAA identity for the mission console / mission runner tools. Their
+//! outgoing commands carry source id = source_id and source parentID = platform_id; a
+//! platform_id equal to identity.platform_id makes the tool a local autonomy, anything else
+//! (the expected console default) makes it a remote operator.
+struct ConsoleConfig {
+  std::string platformId;
+  std::string sourceId;  // stable so restarts keep the same identity; empty = mint per process
 };
 
 struct LoopConfig {
@@ -204,6 +235,7 @@ struct SimVehicleConfig {
 struct AutopilotConfig {
   DdsConfig dds;
   IdentityConfig identity;
+  OperationalModeConfig operationalMode;
   ArbitrationConfig arbitration;
   LoopConfig loop;
   VectorToleranceConfig vectorTolerances;
@@ -218,6 +250,7 @@ struct AutopilotConfig {
   SimVehicleConfig simVehicle;
   PlatformSpecsConfig platformSpecs;
   PlatformCapabilitiesConfig platformCapabilities;
+  ConsoleConfig console;
 };
 
 }  // namespace arlcore::autopilot

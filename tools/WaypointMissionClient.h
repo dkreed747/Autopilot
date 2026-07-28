@@ -29,6 +29,7 @@
 #include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandType.hpp>
 #include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
 
+#include "ClientIdentity.hpp"
 #include "CycloneReader.h"
 #include "CycloneSender.h"
 #include "LargeListWriter.h"
@@ -57,11 +58,13 @@ class WaypointMissionClient {
   using CommandAckType = UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandAckReportType;
   using ListElement = UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeWaypointsListElement;
 
-  //! \brief `destinationId` is the waypoint provider's source ID (identity.waypoint_source_id).
+  //! \brief `destinationId` is the waypoint provider's source ID (identity.waypoint_source_id);
+  //! `identity` stamps the outgoing command's source id/parentID.
   WaypointMissionClient(const dds::domain::DomainParticipant& participant,
                         const dds::pub::qos::DataWriterQos& wqos,
                         const dds::sub::qos::DataReaderQos& rqos,
-                        const arlcore::NumericGuid& destinationId);
+                        const arlcore::NumericGuid& destinationId,
+                        const ClientIdentity& identity);
 
   //! \brief Publish the route and command. Returns the new session ID.
   arlcore::NumericGuid start(const std::vector<GlobalWaypointType>& waypoints);
@@ -90,7 +93,7 @@ class WaypointMissionClient {
   std::shared_ptr<arlcore::io::CycloneReader<CommandStatusType>> statusReader_;
   std::shared_ptr<arlcore::io::CycloneReader<CommandAckType>> ackReader_;
 
-  arlcore::NumericGuid sourceId_;
+  ClientIdentity identity_;
   arlcore::NumericGuid destinationId_;
   std::optional<arlcore::umaa::LargeListWriter<GlobalWaypointType, ListElement>> listWriter_;
   CommandType cmd_;

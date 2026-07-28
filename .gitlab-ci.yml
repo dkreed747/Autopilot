@@ -157,6 +157,27 @@ image-smoke:
       sleep 1
     done
     [ -n "${addback}" ] || { echo "add-after-edit never round-tripped (stale-metadata regression)"; exit 1; }
+    # Operational-mode round trip: the sim boots in STANDBY; command REMOTE through the
+    # console and wait for the OperationalModeStatus report to echo back via /api/state.
+    http_get /api/state | grep -q '"operational_mode"' || { echo "no operational_mode block"; exit 1; }
+    http_post /api/mode '{"mode":"REMOTE"}' | grep -q '"session"' || { echo "mode POST rejected"; exit 1; }
+    modeok=""
+    for i in $(seq 1 20); do
+      if http_get /api/state | grep -q '"mode":"REMOTE"'; then modeok=1; break; fi
+      sleep 1
+    done
+    [ -n "${modeok}" ] || { echo "mode never round-tripped"; exit 1; }
+    # Vector round trip while REMOTE. The shipped console platform_id differs from the
+    # autopilot's, so the console classifies REMOTE — this doubles as a mode-gating check.
+    http_post /api/vector '{"heading_deg":90,"speed_mps":1.0,"timeout_s":30}' \
+      | grep -q '"session"' || { echo "vector POST rejected"; exit 1; }
+    vecok=""
+    for i in $(seq 1 15); do
+      if http_get /api/state | grep -q '"status":"EXECUTING"'; then vecok=1; break; fi
+      sleep 1
+    done
+    [ -n "${vecok}" ] || { echo "vector command never executed"; exit 1; }
+    http_post /api/vector/cancel '{}' | grep -q '"canceled":true' || { echo "vector cancel failed"; exit 1; }
     kill -TERM "${RUNNER}"
     wait "${RUNNER}" || true
-    echo "image smoke OK: web UI served, constraint round-tripped, clean shutdown"
+    echo "image smoke OK: web UI served, constraint + mode + vector round-tripped, clean shutdown"

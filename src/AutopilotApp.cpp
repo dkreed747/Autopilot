@@ -31,6 +31,7 @@
 #include "CycloneSender.h"
 #include "CycloneUtilities.h"
 #include "Logger.h"
+#include "PlatformReportFactory.hpp"
 #include "UuidFactory.h"
 
 namespace arlcore::autopilot {
@@ -63,7 +64,8 @@ bool validSourceId(const std::string& uuid, const char* name) {
 bool AutopilotApp::initialize(const AutopilotConfig& config) {
   config_ = config;
 
-  if (!validSourceId(config_.identity.vectorSourceId, "vector_source_id") ||
+  if (!validSourceId(config_.identity.platformId, "platform_id") ||
+      !validSourceId(config_.identity.vectorSourceId, "vector_source_id") ||
       !validSourceId(config_.identity.waypointSourceId, "waypoint_source_id") ||
       !validSourceId(config_.identity.specsSourceId, "specs_source_id") ||
       !validSourceId(config_.identity.capabilitiesSourceId, "capabilities_source_id") ||
@@ -98,7 +100,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
       << "', defaulting to sim")
   }
   vehicle_ = std::make_unique<SimVehicleControl>(
-      config_.platformSpecs, config_.platformCapabilities, config_.simVehicle,
+      config_.platformCapabilities, config_.simVehicle,
       parseId(config_.identity.navSourceId),
       std::make_shared<CycloneSender<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>>(
           participant_, UMAA::SA::GlobalPoseStatus::GlobalPoseReportTypeTopic, wqos),
@@ -137,6 +139,12 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
     return false;
   }
 
+  // MM operational mode services next: the command providers take the mode gate at
+  // construction too.
+  if (!initializeOperationalModeServices()) {
+    return false;
+  }
+
   const double maxForwardSpeed = config_.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
 
   // --- Vector control provider ---
@@ -151,7 +159,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
           participant_, UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportTypeTopic, wqos));
   vectorProvider_ = std::make_unique<VectorControlServiceProvider>(
       parseId(config_.identity.vectorSourceId), vectorIo, brain_.get(), maxForwardSpeed,
-      supervisor_.get());
+      supervisor_.get(), modeManager_.get());
 
   // --- Waypoint control provider (with large-list element reader) ---
   auto waypointIo = std::make_shared<WaypointControlServiceProviderIo>(
@@ -168,7 +176,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
           largeListRqos));
   waypointProvider_ = std::make_unique<WaypointControlServiceProvider>(
       parseId(config_.identity.waypointSourceId), waypointIo, brain_.get(), maxForwardSpeed,
-      config_.planner.maxListWaitCycles, supervisor_.get(), zoneMap_.get());
+      config_.planner.maxListWaitCycles, supervisor_.get(), zoneMap_.get(), modeManager_.get());
 
   // --- Platform report providers: publish specs + capabilities once on startup ---
   specsReportProvider_ = std::make_unique<ReportProvider<UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>>(
@@ -181,8 +189,8 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
           std::make_shared<CycloneSender<UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType>>(
               participant_, UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportTypeTopic, wqos));
 
-  auto specs = vehicle_->getPlatformSpecs();
-  auto capabilities = vehicle_->getPlatformCapabilities();
+  auto specs = makePlatformSpecsReport(config_.platformSpecs);
+  auto capabilities = makePlatformCapabilitiesReport(config_.platformCapabilities);
   specsReportProvider_->send(&specs);
   capabilitiesReportProvider_->send(&capabilities);
 
@@ -386,6 +394,119 @@ bool AutopilotApp::initializeConstraintServices() {
   return true;
 }
 
+bool AutopilotApp::initializeOperationalModeServices() {
+  if (config_.identity.operationalModeControlSourceId.empty()) {
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "identity.operational_mode_control_source_id not set; MM "
+      "operational mode services disabled")
+    return true;
+  }
+  if (!validSourceId(config_.identity.operationalModeControlSourceId,
+                     "operational_mode_control_source_id") ||
+      !validSourceId(config_.identity.operationalModeStatusSourceId,
+                     "operational_mode_status_source_id")) {
+    // The pair is configured together: a control service without the status report is
+    // UMAA-non-compliant, and a report without the control service is pointless.
+    return false;
+  }
+
+  modeManager_ = std::make_unique<OperationalModeManager>(config_.operationalMode,
+                                                          parseId(config_.identity.platformId));
+
+  arlcore::io::CycloneQosProviderWrapper qosProvider(config_.dds.qosFile, config_.dds.domainQosProfile);
+  const auto rqos = qosProvider.datareader_qos();
+  const auto wqos = qosProvider.datawriter_qos();
+
+  operationalModeReportProvider_ = std::make_unique<
+      ReportProvider<UMAA::MM::OperationalModeStatus::OperationalModeReportType>>(
+      parseId(config_.identity.operationalModeStatusSourceId),
+      std::make_shared<CycloneSender<UMAA::MM::OperationalModeStatus::OperationalModeReportType>>(
+          participant_, UMAA::MM::OperationalModeStatus::OperationalModeReportTypeTopic, wqos));
+
+  auto modeIo = std::make_shared<OperationalModeControlProviderIo>(
+      std::make_shared<CycloneReader<OperationalModeCommandType>>(
+          participant_, UMAA::MM::OperationalModeControl::OperationalModeCommandTypeTopic, rqos),
+      std::make_shared<CycloneSender<OperationalModeCommandAckReportType>>(
+          participant_, UMAA::MM::OperationalModeControl::OperationalModeCommandAckReportTypeTopic, wqos),
+      std::make_shared<CycloneSender<OperationalModeCommandStatusType>>(
+          participant_, UMAA::MM::OperationalModeControl::OperationalModeCommandStatusTypeTopic, wqos));
+  operationalModeProvider_ = std::make_unique<OperationalModeControlProvider>(
+      parseId(config_.identity.operationalModeControlSourceId), modeIo, modeManager_.get());
+
+  modeManager_->setModeChangedCallback([this](OperationalMode mode) {
+    publishOperationalMode(mode);
+    if (vehicle_) {
+      vehicle_->onOperationalModeChanged(mode);
+    }
+    // Leaving MANUAL lands in STANDBY; a safe-mode plan made before the human drove the
+    // vehicle elsewhere may be arbitrarily stale, so replan it. Any other STANDBY entry
+    // (explicit command, idle revert) must not disturb a running safe-mode maneuver.
+    if (supervisor_ && lastReportedMode_ == OperationalMode::MANUAL &&
+        mode == OperationalMode::STANDBY) {
+      supervisor_->refreshSafeModePlan();
+    }
+    lastReportedMode_ = mode;
+  });
+
+  // The initial mode comes from the first manual poll (a hardware strategy may boot engaged;
+  // the sim never does) and is published through the callback.
+  modeManager_->beginStep(vehicle_->isManualEngaged());
+
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "MM operational mode services initialized (control source "
+    << config_.identity.operationalModeControlSourceId << ")")
+  return true;
+}
+
+void AutopilotApp::publishOperationalMode(OperationalMode mode) {
+  if (!operationalModeReportProvider_) {
+    return;
+  }
+  using OperationalModeEnumType =
+      UMAA::Common::MaritimeEnumeration::OperationalModeEnumModule::OperationalModeEnumType;
+  UMAA::MM::OperationalModeStatus::OperationalModeReportType report;
+  switch (mode) {
+    case OperationalMode::MANUAL:
+      report.operationalMode() = OperationalModeEnumType::MANUAL;
+      break;
+    case OperationalMode::REMOTE:
+      report.operationalMode() = OperationalModeEnumType::REMOTE;
+      break;
+    case OperationalMode::AUTONOMOUS:
+      report.operationalMode() = OperationalModeEnumType::AUTONOMOUS;
+      break;
+    case OperationalMode::STANDBY:
+    default:
+      report.operationalMode() = OperationalModeEnumType::STANDBY;
+      break;
+  }
+  // ReportProvider::send stamps only source().id(); parentID identifies the platform.
+  report.source().parentID(parseId(config_.identity.platformId).getGuid());
+  operationalModeReportProvider_->send(&report);
+  lastModeReportAt_ = std::chrono::steady_clock::now();
+}
+
+bool AutopilotApp::commandClassActive(CommandClass cls) const {
+  if (!modeManager_) {
+    return false;
+  }
+  // Any session still tracked by a provider is non-terminal (terminal sessions are reaped
+  // within the provider's cycle), including held-at-ISSUED sessions of the other class.
+  if (vectorProvider_) {
+    for (const auto& cmd : vectorProvider_->getActiveCommands()) {
+      if (modeManager_->classify(cmd.source()) == cls) {
+        return true;
+      }
+    }
+  }
+  if (waypointProvider_) {
+    for (const auto& cmd : waypointProvider_->getActiveCommands()) {
+      if (modeManager_->classify(cmd.source()) == cls) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 void AutopilotApp::step() {
   // Cycle nav consumers first; their observers refresh nav state and drive the control
   // recompute (pose-triggered) before the providers publish status reflecting the latest state.
@@ -411,8 +532,26 @@ void AutopilotApp::step() {
   if (supervisor_) {
     supervisor_->update();
   }
+  // Operational mode: manual edges first (manual wins every same-tick race), then explicit
+  // mode commands, so the driving providers admit against the freshest mode. Idle-revert
+  // evaluates AFTER the providers so a command arriving this very tick suppresses it.
+  if (modeManager_) {
+    modeManager_->beginStep(vehicle_->isManualEngaged());
+  }
+  if (operationalModeProvider_) {
+    operationalModeProvider_->cycle();
+  }
   vectorProvider_->cycle();
   waypointProvider_->cycle();
+  if (modeManager_) {
+    modeManager_->endStep(commandClassActive(CommandClass::LOCAL),
+                          commandClassActive(CommandClass::REMOTE));
+    // Periodic republish (on top of on-change publication) so consumers can treat report
+    // age as a liveness signal rather than "time since the last mode change".
+    if (std::chrono::steady_clock::now() - lastModeReportAt_ >= std::chrono::seconds(1)) {
+      publishOperationalMode(modeManager_->mode());
+    }
+  }
 }
 
 void AutopilotApp::run() {
