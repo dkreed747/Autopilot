@@ -6,14 +6,12 @@
 
 namespace arlcore::autopilot {
 
-namespace {
 
 //! An axis-aligned square [0,100]x[0,100], given clockwise to exercise re-winding.
-LocalPolygon square100() {
+static LocalPolygon square100() {
   return LocalPolygon({{0.0, 0.0}, {0.0, 100.0}, {100.0, 100.0}, {100.0, 0.0}});
 }
 
-}  // namespace
 
 TEST(LocalPolygonTest, ContainsAndSignedDistance) {
   const LocalPolygon poly = square100();

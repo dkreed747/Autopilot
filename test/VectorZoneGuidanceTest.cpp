@@ -8,12 +8,10 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 constexpr double kTurnRadiusM = 20.0;
 constexpr double kMarginM = 5.0;
 
-VectorAvoidanceConfig testConfig() {
+static VectorAvoidanceConfig testConfig() {
   VectorAvoidanceConfig c;
   c.minFollowS = 0.0;   // let the episode end as soon as geometry allows (test speed)
   c.exitClearTicks = 3;
@@ -42,8 +40,6 @@ struct BugSim {
     return minClearance;
   }
 };
-
-}  // namespace
 
 TEST(VectorZoneGuidanceTest, PassesThroughWhenClear) {
   VectorZoneGuidance guidance(testConfig(), kTurnRadiusM, kMarginM);

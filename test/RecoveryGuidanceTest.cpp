@@ -8,12 +8,10 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 constexpr double kLat = 39.0;
 constexpr double kLon = -76.5;
 
-GeoPoint at(double east, double north) {
+static GeoPoint at(double east, double north) {
   static const GeographicLib::LocalCartesian frame(kLat, kLon, 0.0);
   GeoPoint p;
   double h = 0.0;
@@ -22,7 +20,7 @@ GeoPoint at(double east, double north) {
 }
 
 //! A [0,200]x[0,200] zone in the test frame.
-ZoneRecord squareZone(ZoneKind kind) {
+static ZoneRecord squareZone(ZoneKind kind) {
   ZoneRecord zone;
   zone.kind = kind;
   ZoneShape shape;
@@ -31,7 +29,7 @@ ZoneRecord squareZone(ZoneKind kind) {
   return zone;
 }
 
-ZoneMap mapWith(ZoneKind kind) {
+static ZoneMap mapWith(ZoneKind kind) {
   ZoneMap map(ZonesConfig{});
   ConstraintSnapshot snapshot;
   snapshot.revision = 1;
@@ -40,14 +38,12 @@ ZoneMap mapWith(ZoneKind kind) {
   return map;
 }
 
-RecoveryConfig instantConfig() {
+static RecoveryConfig instantConfig() {
   RecoveryConfig c;
   c.speedMps = 1.5;
   c.completeHoldS = 0.0;  // complete as soon as COMPLIANT (test speed)
   return c;
 }
-
-}  // namespace
 
 TEST(RecoveryGuidanceTest, DrivesOutOfKeepOut) {
   const ZoneMap map = mapWith(ZoneKind::KEEP_OUT);

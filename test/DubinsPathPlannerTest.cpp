@@ -11,8 +11,6 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 
@@ -20,7 +18,7 @@ constexpr double kOriginLat = 39.0;
 constexpr double kOriginLon = -76.5;
 
 //! \brief Test-local kinematic vehicle: instant speed response, rate-limited turning.
-struct SimVehicle {
+struct PlannerSimVehicle {
   GeographicLib::LocalCartesian frame{kOriginLat, kOriginLon, 0.0};
   double xE = 0.0;
   double yN = 0.0;
@@ -69,7 +67,7 @@ struct SimVehicle {
   }
 };
 
-GlobalWaypointType makeWaypoint(double xE, double yN, double speedMps,
+static GlobalWaypointType makeWaypoint(double xE, double yN, double speedMps,
                                 std::optional<double> arrivalYawRad = std::nullopt,
                                 std::optional<double> depthM = std::nullopt,
                                 std::optional<double> altitudeAsfM = std::nullopt) {
@@ -113,7 +111,7 @@ GlobalWaypointType makeWaypoint(double xE, double yN, double speedMps,
   return wp;
 }
 
-PlannerParams testParams() {
+static PlannerParams testParams() {
   PlannerParams p;
   p.turnRadiusM = 20.0;
   p.leadDistanceM = 30.0;
@@ -126,18 +124,16 @@ PlannerParams testParams() {
 }
 
 //! \brief Drive the vehicle under planner guidance until the route completes/fails.
-void runMission(DubinsPathPlanner* planner, SimVehicle* vehicle, int maxSteps, double dtS = 0.5) {
+static void runMission(DubinsPathPlanner* planner, PlannerSimVehicle* vehicle, int maxSteps, double dtS = 0.5) {
   for (int i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
     const ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
     vehicle->step(cv, dtS);
   }
 }
 
-}  // namespace
-
 TEST(DubinsPathPlannerTest, EmptyRouteIsImmediatelyComplete) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   planner.plan({}, vehicle.pose(), testParams());
   EXPECT_TRUE(planner.routeComplete());
   const ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
@@ -146,7 +142,7 @@ TEST(DubinsPathPlannerTest, EmptyRouteIsImmediatelyComplete) {
 
 TEST(DubinsPathPlannerTest, FollowsMultiWaypointRouteToCompletion) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   std::vector<GlobalWaypointType> route = {
       makeWaypoint(0.0, 300.0, 4.0),
       makeWaypoint(250.0, 500.0, 4.0),
@@ -168,7 +164,7 @@ TEST(DubinsPathPlannerTest, FollowsMultiWaypointRouteToCompletion) {
 
 TEST(DubinsPathPlannerTest, HonorsArrivalAttitude) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   const double arrivalYaw = M_PI_2;  // arrive heading due east
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 400.0, 4.0, arrivalYaw)};
   planner.plan(route, vehicle.pose(), testParams());
@@ -182,7 +178,7 @@ TEST(DubinsPathPlannerTest, HonorsArrivalAttitude) {
 
 TEST(DubinsPathPlannerTest, WaypointBehindVehicleLoopsAround) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   vehicle.yawRad = 0.0;  // facing north, waypoint due south behind the vehicle
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, -250.0, 4.0)};
   planner.plan(route, vehicle.pose(), testParams());
@@ -194,7 +190,7 @@ TEST(DubinsPathPlannerTest, WaypointBehindVehicleLoopsAround) {
 
 TEST(DubinsPathPlannerTest, UnmeetableElevationFailsAfterBudget) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;  // reports no depth, so a depth requirement can never be achieved
+  PlannerSimVehicle vehicle;  // reports no depth, so a depth requirement can never be achieved
   PlannerParams params = testParams();
   params.maxMissesPerWaypoint = 2;
   params.maxReplans = 4;
@@ -209,7 +205,7 @@ TEST(DubinsPathPlannerTest, UnmeetableElevationFailsAfterBudget) {
 
 TEST(DubinsPathPlannerTest, MeetableElevationCompletes) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   vehicle.depthM = 10.0;  // already at the required depth
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 250.0, 4.0, std::nullopt, 10.0)};
   planner.plan(route, vehicle.pose(), testParams());
@@ -221,7 +217,7 @@ TEST(DubinsPathPlannerTest, MeetableElevationCompletes) {
 
 TEST(DubinsPathPlannerTest, ProgressMetricsAreSane) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   std::vector<GlobalWaypointType> route = {
       makeWaypoint(0.0, 300.0, 4.0),
       makeWaypoint(0.0, 600.0, 4.0),
@@ -250,7 +246,7 @@ TEST(DubinsPathPlannerTest, TightTurnRadiusWithLongLeadStillCaptures) {
   // so hard the vehicle orbited a pinned carrot just past the waypoint forever. The lead is
   // now capped relative to the turn radius and the carrot keeps receding past the path end.
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   vehicle.maxTurnRateRps = 0.2618;  // 3 m/s cruise -> 11.46 m turn radius
   PlannerParams params = testParams();
   params.turnRadiusM = 3.0 / 0.2618;
@@ -275,7 +271,7 @@ TEST(DubinsPathPlannerTest, DenseLawnmowerWithArrivalAttitudes) {
   // tighter than the turning circle diameter (~23 m), forcing bulb turns whose planned path
   // crosses neighboring capture zones mid-turn. Those crossings must not burn the miss budget.
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   vehicle.maxTurnRateRps = 0.2618;
   PlannerParams params = testParams();
   params.turnRadiusM = 3.0 / 0.2618;
@@ -306,7 +302,7 @@ TEST(DubinsPathPlannerTest, GateCaptureHappensAtTheWaypointPlane) {
   // contact with a bubble: at capture the vehicle must be abeam the waypoint (crossing its
   // gate plane), not a capture-radius early.
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   PlannerParams params = testParams();
   params.posCaptureM = 2.5;
   const double arrivalYaw = 0.0;  // gate plane is the east-west line through the waypoint
@@ -336,7 +332,7 @@ TEST(DubinsPathPlannerTest, DepthRateLimitedLegSpiralsWithoutFailing) {
   // the 2D path: the planner must budget spiral loop-backs and complete without consuming
   // the miss budget.
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   vehicle.depthM = 5.0;
   vehicle.maxDepthRateMps = 0.15;
   PlannerParams params = testParams();
@@ -359,7 +355,7 @@ TEST(DubinsPathPlannerTest, DepthRateLimitedLegSpiralsWithoutFailing) {
 
 TEST(DubinsPathPlannerTest, AltitudeAboveSeaFloorWaypointCompletes) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   vehicle.depthM = 10.0;   // floor at 60 -> ASF 50
   vehicle.floorDepthM = 60.0;
   PlannerParams params = testParams();
@@ -378,7 +374,7 @@ TEST(DubinsPathPlannerTest, AltitudeAboveSeaFloorWaypointCompletes) {
 
 TEST(DubinsPathPlannerTest, CrossTrackErrorIsJudgedAgainstThePlannedPath) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   vehicle.yawRad = M_PI_2;  // start facing east: the planned path begins with a turn
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 300.0, 3.0)};
   planner.plan(route, vehicle.pose(), testParams());
@@ -400,7 +396,7 @@ TEST(DubinsPathPlannerTest, CrossTrackErrorIsJudgedAgainstThePlannedPath) {
 
 TEST(DubinsPathPlannerTest, CommandsWaypointSpeedAndElevation) {
   DubinsPathPlanner planner;
-  SimVehicle vehicle;
+  PlannerSimVehicle vehicle;
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 300.0, 3.5, std::nullopt, 25.0)};
   planner.plan(route, vehicle.pose(), testParams());
 

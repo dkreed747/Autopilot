@@ -7,8 +7,6 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 //! Captures every control vector the brain emits.
 class FakeVehicle : public IVehicleControl {
  public:
@@ -35,7 +33,7 @@ class FakeConstraintSource : public IConstraintSource {
   ConstraintSnapshot snapshot_;
 };
 
-AutopilotConfig testConfig() {
+static AutopilotConfig testConfig() {
   AutopilotConfig config;
   config.platformCapabilities.surface.cruisingSpeedMps = 3.0;
   config.platformCapabilities.surface.maxForwardSpeedMps = 8.0;
@@ -43,7 +41,7 @@ AutopilotConfig testConfig() {
   return config;
 }
 
-UMAA::MO::GlobalVectorControl::GlobalVectorCommandType vectorCommand(
+static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType vectorCommand(
     double headingRad, double speedMps, std::optional<double> depthM = std::nullopt) {
   UMAA::MO::GlobalVectorControl::GlobalVectorCommandType cmd;
   UMAA::Common::Orientation::DirectionTrueNorthRequirementVariantType dir;
@@ -63,15 +61,13 @@ UMAA::MO::GlobalVectorControl::GlobalVectorCommandType vectorCommand(
   return cmd;
 }
 
-UMAA::SA::GlobalPoseStatus::GlobalPoseReportType poseAt(double yawRad) {
+static UMAA::SA::GlobalPoseStatus::GlobalPoseReportType poseAt(double yawRad) {
   UMAA::SA::GlobalPoseStatus::GlobalPoseReportType pose;
   pose.position().geodeticLatitude(39.0);
   pose.position().geodeticLongitude(-76.5);
   pose.attitude().yaw().yaw(yawRad);
   return pose;
 }
-
-}  // namespace
 
 class AutopilotBrainSafetyTest : public ::testing::Test {
  protected:

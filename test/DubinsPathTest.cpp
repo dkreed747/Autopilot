@@ -7,14 +7,12 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 constexpr double kPi = M_PI;
 
-double angleErr(double a, double b) { return std::fabs(std::remainder(a - b, 2.0 * kPi)); }
+static double angleErr(double a, double b) { return std::fabs(std::remainder(a - b, 2.0 * kPi)); }
 
 //! \brief Endpoint check: sampling the full path length must land on the goal pose.
-void expectReachesGoal(const Dubins2DPose& start, const Dubins2DPose& goal, double rho) {
+static void expectReachesGoal(const Dubins2DPose& start, const Dubins2DPose& goal, double rho) {
   const auto path = DubinsPath::solve(start, goal, rho);
   ASSERT_TRUE(path.has_value());
   const Dubins2DPose end = path->sample(path->lengthM());
@@ -22,8 +20,6 @@ void expectReachesGoal(const Dubins2DPose& start, const Dubins2DPose& goal, doub
   EXPECT_NEAR(end.y, goal.y, 1e-6) << "word=" << path->word();
   EXPECT_LT(angleErr(end.theta, goal.theta), 1e-6) << "word=" << path->word();
 }
-
-}  // namespace
 
 TEST(DubinsPathTest, StraightLineAhead) {
   const auto path = DubinsPath::solve({0.0, 0.0, 0.0}, {100.0, 0.0, 0.0}, 10.0);

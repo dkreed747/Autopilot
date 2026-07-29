@@ -20,8 +20,6 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 using arlcore::umaa::conditional::ConditionalType;
 using arlcore::umaa::conditional::WaterZoneConditional;
 using UMAA::Common::MaritimeEnumeration::WaterZoneKindEnumModule::WaterZoneKindEnumType;
@@ -33,13 +31,13 @@ constexpr double kLat = 39.0;
 constexpr double kLon = -76.5;
 const char* kSrpCsvPath = "safety_e2e_srp.csv";
 
-const GeographicLib::LocalCartesian& testFrame() {
+static const GeographicLib::LocalCartesian& testFrame() {
   static const GeographicLib::LocalCartesian frame(kLat, kLon, 0.0);
   return frame;
 }
 
 //! \brief Captures emitted control vectors and integrates simple kinematics from them.
-class SimVehicle : public IVehicleControl {
+class EndToEndSimVehicle : public IVehicleControl {
  public:
   bool initialize() override { return true; }
   bool sendControlVector(const ControlVector& cv) override {
@@ -80,7 +78,7 @@ class SimVehicle : public IVehicleControl {
 };
 
 //! \brief A keep-in [0,200]x[0,200] water-zone conditional in the test frame.
-std::shared_ptr<WaterZoneConditional> keepInConditional() {
+static std::shared_ptr<WaterZoneConditional> keepInConditional() {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const DateTime stamp(1, 0);
@@ -111,7 +109,7 @@ std::shared_ptr<WaterZoneConditional> keepInConditional() {
   return std::make_shared<WaterZoneConditional>(base, spec);
 }
 
-AutopilotConfig safetyConfig() {
+static AutopilotConfig safetyConfig() {
   AutopilotConfig config;
   config.platformCapabilities.surface.cruisingSpeedMps = 3.0;
   config.platformCapabilities.surface.maxForwardSpeedMps = 6.0;
@@ -159,14 +157,14 @@ struct Harness {
 
   AutopilotConfig config;
   NavState nav;
-  SimVehicle vehicle;
+  EndToEndSimVehicle vehicle;
   ZoneMap zoneMap;
   std::unique_ptr<AutopilotBrain> brain;
   std::unique_ptr<ConstraintSupervisor> supervisor;
   std::shared_ptr<WaterZoneConditional> zone;
 };
 
-void writeSrpCsv() {
+static void writeSrpCsv() {
   std::ofstream out(kSrpCsvPath);
   out << "east_m,north_m,speed_mps,capture_radius_m\n"
       << "100,80,3.0,8.0\n"
@@ -174,7 +172,7 @@ void writeSrpCsv() {
   out.close();
 }
 
-SrpConfig srpConfig(bool acceptAfter) {
+static SrpConfig srpConfig(bool acceptAfter) {
   SrpConfig srp;
   srp.csvPath = kSrpCsvPath;
   srp.originLatDeg = kLat;
@@ -184,8 +182,6 @@ SrpConfig srpConfig(bool acceptAfter) {
   srp.repositionSpeedMps = 2.0;
   return srp;
 }
-
-}  // namespace
 
 class SafetyEndToEndTest : public ::testing::Test {
  protected:

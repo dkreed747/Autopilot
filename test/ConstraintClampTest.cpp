@@ -4,9 +4,8 @@
 
 namespace arlcore::autopilot {
 
-namespace {
 
-ControlVector cvWith(double speedMps, std::optional<double> depthM = std::nullopt) {
+static ControlVector cvWith(double speedMps, std::optional<double> depthM = std::nullopt) {
   ControlVector cv;
   cv.headingRad = 1.0;
   cv.speedMps = speedMps;
@@ -15,7 +14,6 @@ ControlVector cvWith(double speedMps, std::optional<double> depthM = std::nullop
   return cv;
 }
 
-}  // namespace
 
 TEST(ConstraintClampTest, NoLimitsPassThrough) {
   const ClampResult r = applyConstraintClamps(cvWith(4.0, 12.0), ConstraintSnapshot{}, ClampLimits{});

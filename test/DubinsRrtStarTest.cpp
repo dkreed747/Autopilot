@@ -6,9 +6,7 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
-DubinsRrtParams testParams() {
+static DubinsRrtParams testParams() {
   DubinsRrtParams p;
   p.rhoM = 20.0;
   p.marginM = 5.0;
@@ -19,7 +17,7 @@ DubinsRrtParams testParams() {
 }
 
 //! \brief Minimum clearance over every sample of the chain at 1 m resolution.
-double chainMinClearance(const std::vector<DubinsPath>& chain, const ZoneSet& zones) {
+static double chainMinClearance(const std::vector<DubinsPath>& chain, const ZoneSet& zones) {
   double minClearance = 1e18;
   for (const DubinsPath& path : chain) {
     const int steps = std::max(1, static_cast<int>(std::ceil(path.lengthM())));
@@ -32,7 +30,7 @@ double chainMinClearance(const std::vector<DubinsPath>& chain, const ZoneSet& zo
 }
 
 //! \brief Largest positional discontinuity between consecutive chain segments.
-double chainMaxGap(const Dubins2DPose& start, const std::vector<DubinsPath>& chain) {
+static double chainMaxGap(const Dubins2DPose& start, const std::vector<DubinsPath>& chain) {
   double maxGap = 0.0;
   Dubins2DPose prev = start;
   for (const DubinsPath& path : chain) {
@@ -42,8 +40,6 @@ double chainMaxGap(const Dubins2DPose& start, const std::vector<DubinsPath>& cha
   }
   return maxGap;
 }
-
-}  // namespace
 
 TEST(DubinsRrtStarTest, FindsDetourAroundKeepOut) {
   ZoneSet zones;

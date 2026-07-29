@@ -4,16 +4,14 @@
 
 namespace arlcore::autopilot {
 
-namespace {
 //! \brief Config with the default class split: safe > remote {500,400} > local {vector,waypoint}.
-ArbitrationConfig makeConfig(int localVector = 100, int localWaypoint = 10, int safe = 1000) {
+static ArbitrationConfig makeConfig(int localVector = 100, int localWaypoint = 10, int safe = 1000) {
   ArbitrationConfig config;
   config.local.vectorPriority = localVector;
   config.local.waypointPriority = localWaypoint;
   config.safePriority = safe;
   return config;
 }
-}  // namespace
 
 TEST(DrivingResourceArbiterTest, StartsUnowned) {
   DrivingResourceArbiter arbiter(makeConfig());

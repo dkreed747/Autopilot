@@ -13,20 +13,18 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 
 constexpr double kOriginLat = 39.0;
 constexpr double kOriginLon = -76.5;
 
-const GeographicLib::LocalCartesian& testFrame() {
+static const GeographicLib::LocalCartesian& testFrame() {
   static const GeographicLib::LocalCartesian frame(kOriginLat, kOriginLon, 0.0);
   return frame;
 }
 
-GeoPoint at(double east, double north) {
+static GeoPoint at(double east, double north) {
   GeoPoint p;
   double h = 0.0;
   testFrame().Reverse(east, north, 0.0, p.latDeg, p.lonDeg, h);
@@ -34,7 +32,7 @@ GeoPoint at(double east, double north) {
 }
 
 //! \brief Same kinematic vehicle as DubinsPathPlannerTest.
-struct SimVehicle {
+struct ConstrainedSimVehicle {
   double xE = 0.0;
   double yN = 0.0;
   double yawRad = 0.0;
@@ -63,7 +61,7 @@ struct SimVehicle {
   }
 };
 
-GlobalWaypointType makeWaypoint(double xE, double yN, double speedMps) {
+static GlobalWaypointType makeWaypoint(double xE, double yN, double speedMps) {
   const GeoPoint p = at(xE, yN);
   GlobalWaypointType wp;
   wp.position().value().geodeticLatitude(p.latDeg);
@@ -79,7 +77,7 @@ GlobalWaypointType makeWaypoint(double xE, double yN, double speedMps) {
   return wp;
 }
 
-PlannerParams testParams() {
+static PlannerParams testParams() {
   PlannerParams p;
   p.turnRadiusM = 20.0;
   p.leadDistanceM = 30.0;
@@ -92,7 +90,7 @@ PlannerParams testParams() {
 }
 
 //! \brief A keep-out square in the test frame.
-ZoneRecord keepOut(double x0, double y0, double x1, double y1) {
+static ZoneRecord keepOut(double x0, double y0, double x1, double y1) {
   ZoneRecord zone;
   zone.kind = ZoneKind::KEEP_OUT;
   ZoneShape shape;
@@ -101,7 +99,7 @@ ZoneRecord keepOut(double x0, double y0, double x1, double y1) {
   return zone;
 }
 
-ZoneMap makeMap(std::vector<ZoneRecord> zones, uint64_t revision = 1) {
+static ZoneMap makeMap(std::vector<ZoneRecord> zones, uint64_t revision = 1) {
   ZoneMap map(ZonesConfig{});
   ConstraintSnapshot snapshot;
   snapshot.revision = revision;
@@ -111,7 +109,7 @@ ZoneMap makeMap(std::vector<ZoneRecord> zones, uint64_t revision = 1) {
 }
 
 //! \brief Minimum keep-out clearance over a geodetic preview polyline.
-double previewMinClearance(const std::vector<std::pair<double, double>>& preview, const ZoneMap& map) {
+static double previewMinClearance(const std::vector<std::pair<double, double>>& preview, const ZoneMap& map) {
   double minClearance = 1e18;
   for (const auto& [lat, lon] : preview) {
     minClearance = std::min(minClearance, map.clearanceM(GeoPoint{lat, lon}, 0.0));
@@ -119,14 +117,12 @@ double previewMinClearance(const std::vector<std::pair<double, double>>& preview
   return minClearance;
 }
 
-void runMission(DubinsPathPlanner* planner, SimVehicle* vehicle, int maxSteps, double dtS = 0.5) {
+static void runMission(DubinsPathPlanner* planner, ConstrainedSimVehicle* vehicle, int maxSteps, double dtS = 0.5) {
   for (int i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
     const ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
     vehicle->step(cv, dtS);
   }
 }
-
-}  // namespace
 
 TEST(ConstrainedPlannerTest, NoZonesMatchesUnconstrainedBehavior) {
   // Regression: a planner with an empty zone map plans/flies exactly like a zone-blind one.
@@ -135,7 +131,7 @@ TEST(ConstrainedPlannerTest, NoZonesMatchesUnconstrainedBehavior) {
   ZoneMap empty = makeMap({});
   mapped.setZones(&empty);
 
-  SimVehicle vehicle;
+  ConstrainedSimVehicle vehicle;
   const std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 300.0, 4.0),
                                                  makeWaypoint(250.0, 500.0, 4.0)};
   blind.plan(route, vehicle.pose(), testParams());
@@ -157,7 +153,7 @@ TEST(ConstrainedPlannerTest, DirectLegDetoursAroundKeepOut) {
   DubinsPathPlanner planner;
   planner.setZones(&map);
 
-  SimVehicle vehicle;  // at origin facing north
+  ConstrainedSimVehicle vehicle;  // at origin facing north
   planner.plan({makeWaypoint(0.0, 400.0, 4.0)}, vehicle.pose(), testParams());
   ASSERT_FALSE(planner.failed());
 
@@ -181,7 +177,7 @@ TEST(ConstrainedPlannerTest, WaypointInsideKeepOutFailsRoute) {
   DubinsPathPlanner planner;
   planner.setZones(&map);
 
-  SimVehicle vehicle;
+  ConstrainedSimVehicle vehicle;
   planner.plan({makeWaypoint(0.0, 400.0, 4.0)}, vehicle.pose(), testParams());
   EXPECT_TRUE(planner.failed());
   EXPECT_TRUE(planner.progress().failed);
@@ -192,7 +188,7 @@ TEST(ConstrainedPlannerTest, MidRouteConstraintChangeReplansCurrentLeg) {
   DubinsPathPlanner planner;
   planner.setZones(&map);
 
-  SimVehicle vehicle;
+  ConstrainedSimVehicle vehicle;
   planner.plan({makeWaypoint(0.0, 500.0, 4.0)}, vehicle.pose(), testParams());
   ASSERT_FALSE(planner.failed());
 
@@ -223,7 +219,7 @@ TEST(ConstrainedPlannerTest, MidRouteConstraintChangeFailsWhenTargetSwallowed) {
   DubinsPathPlanner planner;
   planner.setZones(&map);
 
-  SimVehicle vehicle;
+  ConstrainedSimVehicle vehicle;
   planner.plan({makeWaypoint(0.0, 500.0, 4.0)}, vehicle.pose(), testParams());
   runMission(&planner, &vehicle, 50);
   ASSERT_FALSE(planner.failed());
@@ -241,7 +237,7 @@ TEST(ConstrainedPlannerTest, ReplanCurrentLegFromLivePose) {
   DubinsPathPlanner planner;
   planner.setZones(&map);
 
-  SimVehicle vehicle;
+  ConstrainedSimVehicle vehicle;
   planner.plan({makeWaypoint(0.0, 400.0, 4.0)}, vehicle.pose(), testParams());
   ASSERT_FALSE(planner.failed());
   runMission(&planner, &vehicle, 60);

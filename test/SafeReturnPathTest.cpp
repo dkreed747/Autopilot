@@ -8,17 +8,16 @@
 
 namespace arlcore::autopilot {
 
-namespace {
 
 const char* kCsvPath = "srp_test_mission.csv";
 
-void writeCsv(const std::string& contents) {
+static void writeCsv(const std::string& contents) {
   std::ofstream out(kCsvPath);
   out << contents;
   out.close();
 }
 
-SrpConfig configWithCsv() {
+static SrpConfig configWithCsv() {
   SrpConfig config;
   config.csvPath = kCsvPath;
   config.originLatDeg = 39.0;
@@ -26,7 +25,6 @@ SrpConfig configWithCsv() {
   return config;
 }
 
-}  // namespace
 
 class SafeReturnPathTest : public ::testing::Test {
  protected:

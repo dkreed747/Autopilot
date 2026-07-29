@@ -8,13 +8,12 @@
 
 namespace arlcore::autopilot {
 
-namespace {
 
 constexpr double kLat = 39.0;
 constexpr double kLon = -76.5;
 
 //! Geodetic point `east`/`north` meters from the test origin.
-GeoPoint at(double east, double north) {
+static GeoPoint at(double east, double north) {
   static const GeographicLib::LocalCartesian frame(kLat, kLon, 0.0);
   GeoPoint p;
   double h = 0.0;
@@ -23,7 +22,7 @@ GeoPoint at(double east, double north) {
 }
 
 //! A square keep-out/keep-in zone [0,size]x[0,size] in the test frame.
-ZoneRecord squareZone(ZoneKind kind, double size, ElevationBand band = {}) {
+static ZoneRecord squareZone(ZoneKind kind, double size, ElevationBand band = {}) {
   ZoneRecord zone;
   zone.kind = kind;
   zone.band = band;
@@ -33,18 +32,17 @@ ZoneRecord squareZone(ZoneKind kind, double size, ElevationBand band = {}) {
   return zone;
 }
 
-ConstraintSnapshot snapshotWith(std::vector<ZoneRecord> zones, uint64_t revision = 1) {
+static ConstraintSnapshot snapshotWith(std::vector<ZoneRecord> zones, uint64_t revision = 1) {
   ConstraintSnapshot snapshot;
   snapshot.revision = revision;
   snapshot.zones = std::move(zones);
   return snapshot;
 }
 
-ZonesConfig defaultZonesConfig() {
+static ZonesConfig defaultZonesConfig() {
   return ZonesConfig{};  // 5 m margin, 2 m hysteresis, 2 m elevation margin, 32 segments
 }
 
-}  // namespace
 
 TEST(ZoneMapTest, ClassifyAgainstKeepOut) {
   ZoneMap map(defaultZonesConfig());

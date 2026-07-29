@@ -9,15 +9,13 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-const char* kTestConfigPath = "autopilot_test_config.yaml";
+static const char* const kTestConfigPath = "autopilot_test_config.yaml";
 
-void writeConfig(const std::string& contents) {
+static void writeConfig(const std::string& contents) {
   std::ofstream out(kTestConfigPath);
   out << contents;
   out.close();
 }
-}  // namespace
 
 class YamlConfigLoaderTest : public ::testing::Test {
  protected:

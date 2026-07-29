@@ -25,11 +25,10 @@ using UMAA::Common::Measurement::DateTime;
 using UMAA::Common::Measurement::GeoPosition2D;
 using UMAA::MM::ConditionalStateReport::ConditionalStateReportType;
 
-namespace {
 
 const DateTime kStamp(1, 100);
 
-std::shared_ptr<WaterZoneConditional> makeZone(WaterZoneKindEnumType kind, double ceilingDepthM,
+static std::shared_ptr<WaterZoneConditional> makeZone(WaterZoneKindEnumType kind, double ceilingDepthM,
                                                double floorDepthM, bool floorAsAsf = false) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
@@ -63,7 +62,7 @@ std::shared_ptr<WaterZoneConditional> makeZone(WaterZoneKindEnumType kind, doubl
   return std::make_shared<WaterZoneConditional>(base, spec);
 }
 
-std::shared_ptr<SpeedConditional> makeSpeed(ConditionalOperatorEnumType op, double valueMps) {
+static std::shared_ptr<SpeedConditional> makeSpeed(ConditionalOperatorEnumType op, double valueMps) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const UMAA::MM::Conditional::SpeedConditionalType spec(op, valueMps, kStamp, specId.getGuid());
@@ -72,7 +71,7 @@ std::shared_ptr<SpeedConditional> makeSpeed(ConditionalOperatorEnumType op, doub
   return std::make_shared<SpeedConditional>(base, spec);
 }
 
-std::shared_ptr<DepthConditional> makeDepth(ConditionalOperatorEnumType op, double valueM) {
+static std::shared_ptr<DepthConditional> makeDepth(ConditionalOperatorEnumType op, double valueM) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const UMAA::MM::Conditional::DepthConditionalType spec(op, valueM, kStamp, specId.getGuid());
@@ -81,7 +80,6 @@ std::shared_ptr<DepthConditional> makeDepth(ConditionalOperatorEnumType op, doub
   return std::make_shared<DepthConditional>(base, spec);
 }
 
-}  // namespace
 
 class ConstraintSupervisorTest : public ::testing::Test {
  protected:

@@ -10,7 +10,6 @@
 
 namespace arlcore::autopilot {
 
-namespace {
 
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 using UMAA::SA::SpeedStatus::SpeedReportType;
@@ -45,14 +44,13 @@ struct SimFixture {
   }
 };
 
-ControlVector makeCv(double headingRad, double speedMps) {
+static ControlVector makeCv(double headingRad, double speedMps) {
   ControlVector cv;
   cv.headingRad = headingRad;
   cv.speedMps = speedMps;
   return cv;
 }
 
-}  // namespace
 
 TEST(SimVehicleControlTest, PublishesAllThreeNavReportsEachStep) {
   SimFixture f;
