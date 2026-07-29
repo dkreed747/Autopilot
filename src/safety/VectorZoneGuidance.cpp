@@ -39,8 +39,8 @@ flt64_t VectorZoneGuidance::steer(flt64_t commandedAz, const Vec2& vehicle, flt6
     if (!commandedBlocked) {
       return commandedAz;
     }
-    // Enter boundary-follow. Follow direction: the boundary tangent (perpendicular to the
-    // clearance gradient) closer to the commanded heading, remembered for the whole episode.
+    // Follow direction: the boundary tangent (perpendicular to the clearance gradient) closer
+    // to the commanded heading, remembered for the whole episode.
     const ClearanceInfo info = zones.clearanceInfo(vehicle);
     const Vec2 n = info.improveDir;
     const Vec2 tRight{n.y, -n.x};

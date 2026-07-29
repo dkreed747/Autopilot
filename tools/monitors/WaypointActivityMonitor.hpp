@@ -40,10 +40,9 @@ struct ObservedMission {
 };
 
 //! \brief Read-only bus-wide observer of Global Waypoint missions, whoever
-//! commanded them: the console renders every route with a per-commander
-//! classification. Canceled missions arrive as disposed command instances;
-//! terminal missions are evicted after a grace period and the tracked set is
-//! capped so the GUI snapshot cannot grow without bound.
+//! commanded them. Canceled missions arrive as disposed command instances;
+//! terminal missions age out and the tracked set is capped so the GUI
+//! snapshot stays bounded.
 class WaypointActivityMonitor {
  public:
   using CommandType =

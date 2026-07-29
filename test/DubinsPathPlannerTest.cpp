@@ -244,9 +244,8 @@ TEST(DubinsPathPlannerTest, ProgressMetricsAreSane) {
 }
 
 TEST(DubinsPathPlannerTest, TightTurnRadiusWithLongLeadStillCaptures) {
-  // Regression: a lead distance much longer than the turn radius used to cut the final arc
-  // so hard the vehicle orbited a pinned carrot just past the waypoint forever. The lead is
-  // now capped relative to the turn radius and the carrot keeps receding past the path end.
+  // Regression: a lead distance much longer than the turn radius used to orbit a pinned carrot
+  // just past the waypoint forever; the lead is now capped relative to the turn radius.
   DubinsPathPlanner planner;
   PlannerSimVehicle vehicle;
   vehicle.maxTurnRateRps = 0.2618;  // 3 m/s cruise -> 11.46 m turn radius
@@ -269,9 +268,8 @@ TEST(DubinsPathPlannerTest, TightTurnRadiusWithLongLeadStillCaptures) {
 }
 
 TEST(DubinsPathPlannerTest, DenseLawnmowerWithArrivalAttitudes) {
-  // Survey lawnmower: north/south lanes with required arrival attitudes, lane spacing (10 m)
-  // tighter than the turning circle diameter (~23 m), forcing bulb turns whose planned path
-  // crosses neighboring capture zones mid-turn. Those crossings must not burn the miss budget.
+  // Lawnmower lanes (10 m) tighter than the turning circle diameter (~23 m) force bulb turns
+  // that cross neighboring capture zones mid-turn; those crossings must not burn the miss budget.
   DubinsPathPlanner planner;
   PlannerSimVehicle vehicle;
   vehicle.maxTurnRateRps = 0.2618;

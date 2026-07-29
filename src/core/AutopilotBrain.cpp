@@ -35,8 +35,8 @@ AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const Au
     vehicle_(vehicle),
     config_(config),
     arbiter_(config.arbitration) {
-  // Static side of the output clamp: the autopilot's own constraint settings merged with the
-  // platform's speed capability. Dynamic active constraints merge in per emit.
+  // Static side of the output clamp (own constraint settings merged with the platform's speed
+  // capability); dynamic active constraints merge in per emit.
   staticClampLimits_.minSpeedMps = config_.constraints.minSpeedMps;
   staticClampLimits_.maxSpeedMps = config_.constraints.maxSpeedMps;
   staticClampLimits_.minDepthM = config_.constraints.minDepthM;
@@ -94,9 +94,9 @@ bool AutopilotBrain::activateSafeRoute(
   safePlanner_.setZones(zoneMap_);
   safePlanner_.plan(waypoints, pose.value(), derivePlannerParams());
   if (safePlanner_.failed()) {
-    // Safe mode often engages while the vehicle is IN violation, where no zone-compliant path
-    // out of the current position exists. Reaching the safe route trumps zone margins: retry
-    // zone-blind rather than parking the vehicle in the violating region.
+    // Safe mode often engages while the vehicle is IN violation (no zone-compliant path out
+    // exists); reaching the safe route trumps zone margins, so retry zone-blind rather than
+    // parking the vehicle in the violating region.
     UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Safe route is zone-blocked from the current position; "
       "replanning zone-blind (the SRP takes precedence over zone margins)")
     safePlanner_.setZones(nullptr);
@@ -218,8 +218,8 @@ bool AutopilotBrain::recovering() const {
 
 void AutopilotBrain::emitControl(const ControlVector& cv) {
   // MANUAL is polled from the strategy directly (not the mode FSM) so actuation safety never
-  // depends on whether the mode services are configured. While engaged nothing reaches the
-  // platform -- not even safe-mode outputs or zero-speed holds, which would fight the human.
+  // depends on whether the mode services are configured; while engaged nothing reaches the
+  // platform, not even safe-mode outputs, which would fight the human.
   if (vehicle_->isManualEngaged()) {
     if (!manualSuppressed_) {
       manualSuppressed_ = true;
@@ -430,9 +430,9 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
     prog.elevationAchieved = true;
   }
 
-  // Hard tolerances: after all criteria have been achieved once, a violation persisting
-  // longer than the configured failure delay fails the command (UMAA failureDelay semantics).
-  // Suspended while zone avoidance overrides the heading: the deviation is deliberate.
+  // Hard tolerances (UMAA failureDelay semantics): after all criteria have been achieved
+  // once, a violation persisting past the failure delay fails the command; suspended while
+  // zone avoidance overrides the heading, since that deviation is deliberate.
   const bool allAchieved = prog.directionAchieved && prog.speedAchieved && prog.elevationAchieved;
   if (avoiding) {
     vectorViolationSince_.reset();

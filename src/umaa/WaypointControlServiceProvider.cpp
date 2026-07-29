@@ -78,8 +78,8 @@ CommandStateResult WaypointControlServiceProvider::failInCommanded(
     return CommandStateResult::ERROR;
   }
   // Fail directly from COMMANDED: reasons like RESOURCE_REJECTED are only legal from this
-  // state (CommandStateMachine), so they cannot be routed through isCommandFailed() in
-  // EXECUTING. The base reaps the session once it observes the FAILED state.
+  // state, so they cannot be routed through isCommandFailed() in EXECUTING; the base reaps
+  // the session once it observes the FAILED state.
   if (!s->fail(reason)) {
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Unable to fail waypoint session " << s->getSessionId()
       << " with reason " << reason)
@@ -145,8 +145,8 @@ CommandStateResult WaypointControlServiceProvider::onIssued(const std::weak_ptr<
   const CommandClass cls = classOf(cmd);
   if (held_ && heldSessionId_ == arlcore::NumericGuid(cmd.sessionID()) &&
       heldEpoch_ != modeGate_->authoritativeEpoch() && !modeGate_->classAllowed(cls)) {
-    // An explicit mode command or manual engagement occurred while held: flush the hold.
-    // INTERRUPTED is legal from ISSUED; the base reaps the session once it sees the state.
+    // An authoritative mode change occurred while held: flush the hold with INTERRUPTED
+    // (legal from ISSUED); the base reaps the session once it sees the state.
     if (!s->fail(CommandStatusReasonEnumType::INTERRUPTED)) {
       return CommandStateResult::ERROR;
     }
@@ -156,11 +156,10 @@ CommandStateResult WaypointControlServiceProvider::onIssued(const std::weak_ptr<
   }
   if (modeGate_->requestAdmission(cls) == AdmissionDecision::HOLD) {
     if (!held_ || heldSessionId_ != arlcore::NumericGuid(cmd.sessionID())) {
-      // The session may have been COMMANDED/EXECUTING before an update re-issued it:
-      // release the driving resource and clear the installed route so nothing keeps
-      // driving out-of-mode while it waits. The large list is deliberately kept (its
-      // elements were already consumed from the shared reader and could never be
-      // re-derived after a removal) so a later release can replan from it.
+      // The session may have been COMMANDED/EXECUTING before an update re-issued it, so
+      // release the resource and clear the route (nothing may keep driving out-of-mode);
+      // the large list is deliberately kept — its elements were already consumed from the
+      // shared reader and could never be re-derived — so a later release can replan.
       autopilot_->clearSetpoint(DriveSource::WAYPOINT);
       autopilot_->arbiter().release(DriveSource::WAYPOINT);
       resetPlanningState();
@@ -187,10 +186,9 @@ bool WaypointControlServiceProvider::waypointsZoneCompliant(
     const GlobalWaypointType& wp = waypoints[i];
     const GeoPoint at{wp.position().value().geodeticLatitude(),
                       wp.position().value().geodeticLongitude()};
-    // Gate at the waypoint's commanded vertical position. A depth elevation gives an exact
-    // depth; an above-sea-floor elevation gives an exact ASF but an unknown depth (no
-    // bathymetry), so the depth interval widens to everything — conservative. No elevation
-    // means the surface.
+    // Gate at the commanded vertical position: depth is exact, an ASF elevation leaves the
+    // depth unknown (no bathymetry) so its depth interval conservatively widens to
+    // everything, and no elevation means the surface.
     ElevationEnvelope envelope = ElevationEnvelope::atPoint(0.0);
     if (wp.elevation().has_value()) {
       const std::optional<ElevationValue> el = tolerance::extractElevation(wp.elevation().value());
@@ -248,7 +246,7 @@ CommandStateResult WaypointControlServiceProvider::onCommanded(const std::weak_p
                            "Preempted by a higher-priority driving command");
   }
 
-  // Acquire the (low-priority) driving resource. Denied if a vector command holds it.
+  // The low-priority acquire is denied if a vector command holds the resource.
   if (!acquired_) {
     if (autopilot_->arbiter().acquire(DriveSource::WAYPOINT, classOf(s->getCommand()))) {
       acquired_ = true;
@@ -298,18 +296,16 @@ CommandStateResult WaypointControlServiceProvider::onCommanded(const std::weak_p
 }
 
 CommandStateResult WaypointControlServiceProvider::onExecuting(const std::weak_ptr<CmdSession> session) {
-  // The brain drives off each navigation packet; keep the command executing. Failure (revoked
-  // resource / objective failure) is surfaced via isCommandFailed.
+  // The brain drives off each navigation packet; failure (revoked resource / objective
+  // failure) is surfaced via isCommandFailed.
   return CommandStateResult::OK;
 }
 
 bool WaypointControlServiceProvider::onUpdated(const std::weak_ptr<CmdSession> session,
     const GlobalWaypointCommandType& previousCmd, const GlobalWaypointCommandType& updatedCmd) {
-  // Treat an update as a new route: drop the previous large list and replan from the
-  // (possibly updated) list next cycle. The driving resource is kept. When the update
-  // reuses the SAME list id its elements were already consumed from the shared reader,
-  // so removing the list would destroy the updated route too — only drop a switched-away
-  // list.
+  // Treat an update as a new route (keeping the driving resource) and replan next cycle;
+  // only drop a switched-away list — a reused list id's elements were already consumed from
+  // the shared reader, so removing it would destroy the updated route too.
   if (arlcore::NumericGuid(previousCmd.waypointsListMetadata().listID()) !=
       arlcore::NumericGuid(updatedCmd.waypointsListMetadata().listID())) {
     listReader_.removeListByMetadata(previousCmd.waypointsListMetadata());

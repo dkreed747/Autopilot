@@ -28,7 +28,6 @@ struct ControlVector {
   //! \brief Target elevation/depth. std::nullopt means "hold current / any acceptable".
   std::optional<flt64_t> elevationM = std::nullopt;
 
-  //! \brief Reference frame for elevationM.
   ElevationFrame elevationFrame = ElevationFrame::DEPTH;
 
   //! \brief Optional desired pitch while changing depth/elevation (radians).

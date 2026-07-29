@@ -40,10 +40,8 @@
 
 namespace arlcore::autopilot {
 
-//! \brief Top-level autopilot application. Aggregates the DDS participant, the three SA nav
-//! consumers (driven as listeners), the two MO command providers, the autopilot brain, the
-//! configured vehicle-control strategy, and the platform report providers. Runs a single
-//! control loop.
+//! \brief Top-level application: aggregates the DDS participant, UMAA consumers/providers,
+//! brain, and vehicle-control strategy, and runs the single control loop.
 class AutopilotApp {
  public:
   AutopilotApp() = default;
@@ -58,8 +56,7 @@ class AutopilotApp {
   //! \brief Request the control loop to exit.
   void stop();
 
-  //! \brief Execute a single control iteration (cycle nav consumers then providers). Exposed
-  //! for deterministic testing.
+  //! \brief Execute a single control iteration; exposed for deterministic testing.
   void step();
 
  private:
@@ -98,9 +95,9 @@ class AutopilotApp {
   OperationalMode lastReportedMode_ = OperationalMode::STANDBY;
   std::chrono::steady_clock::time_point lastModeReportAt_{};
 
-  // MM constraint services (constructed only when identity.constraints_source_id is set).
-  // The autopilot both provides AND consumes its own ConditionalReport over DDS loopback:
-  // the published report is the single source of truth every peer (console included) sees.
+  // MM constraint services (constructed only when identity.constraints_source_id is set); the
+  // autopilot consumes its own published ConditionalReport over DDS loopback so every peer
+  // sees the same single source of truth.
   std::shared_ptr<arlcore::umaa::conditional::ConditionalReportProvider> conditionalReportProvider_;
   std::shared_ptr<arlcore::umaa::ConditionalFactoryIo> conditionalFactoryIo_;
   std::shared_ptr<arlcore::umaa::conditional::ConditionalFactory> conditionalFactory_;

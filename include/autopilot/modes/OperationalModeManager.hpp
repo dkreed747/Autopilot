@@ -15,22 +15,9 @@
 namespace arlcore::autopilot {
 
 //! \brief The MANUAL / STANDBY / REMOTE / AUTONOMOUS command-authority state
-//! machine.
-//!
-//! MANUAL is platform-owned: it is entered and exited only through the per-tick
-//! manual poll (beginStep) and always wins. STANDBY/REMOTE/AUTONOMOUS move via
-//! explicit mode commands (commandMode), via implicit transitions fired by
-//! incoming driving commands (requestAdmission, config-gated), and via idle
-//! revert (endStep): a mode entered implicitly falls back to STANDBY once no
-//! command of its class has been active for idle_revert_s, while an
-//! explicitly-commanded mode sticks until the next explicit command or manual
-//! engagement.
-//!
-//! The mode-changed callback is invoked without the internal lock held
-//! (ConstraintSupervisor pattern);
-//! beginStep/endStep/commandMode/requestAdmission all run on the single
-//! control-loop thread, the gate reads may be called from provider hooks on
-//! that same thread.
+//! machine: MANUAL is platform-owned and always wins, and an implicitly-entered
+//! mode idle-reverts to STANDBY while an explicitly-commanded one sticks. The
+//! mode-changed callback is invoked without the internal lock held.
 class OperationalModeManager : public ICommandModeGate {
  public:
   OperationalModeManager(const OperationalModeConfig& config,

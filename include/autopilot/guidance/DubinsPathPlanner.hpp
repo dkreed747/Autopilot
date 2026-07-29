@@ -40,37 +40,19 @@ struct PlannerParams {
   DubinsRrtParams rrt;              // fallback planner tuning (rho/margin filled per leg)
 };
 
-//! \brief A horizontal path planner that drives a vehicle through a series of 3D waypoints
-//! along true Dubins paths. For every leg (previous waypoint or the plan/replan pose, to the
-//! next waypoint) the shortest curvature-bounded Dubins path is solved (all six words, see
-//! DubinsPath) using the platform-derived turn radius; each leg ends with a straight
-//! final-approach runway through the waypoint so arrival happens with position and attitude
-//! settled. Waypoints without an attitude requirement get a natural fly-through heading
-//! toward the following waypoint. Elevation/depth and speed pass through per-waypoint.
-//!
-//! Tracking uses a path-frame guidance law: the commanded heading is the planned-path tangent
-//! (sampled slightly ahead of the closest point for actuation phase lead) plus a cross-track
-//! correction term atan(xte / turnRadius) that steers back onto the path — feedback comes
-//! from the live navigation reports (pose + ground speed). Cross-track error is measured from
-//! the planned Dubins path itself (not the straight lines between waypoints), which is also
-//! the reference the UMAA track tolerance is evaluated against.
-//!
-//! Capture uses a gate, not a bubble: a segment of half-width posCapture (or the waypoint's
-//! position tolerance) through the waypoint, perpendicular to the arrival heading. The
-//! waypoint is captured the instant the vehicle crosses the gate plane inside the half-width
-//! with attitude/elevation criteria met — so the vehicle always flies *through* the waypoint
-//! instead of "popping a bubble" early and cutting the corner. Crossing the plane outside the
-//! gate (or overflying the path without crossing) is a miss and replans the leg from the live
-//! pose, bounded by maxMissesPerWaypoint and maxReplans. Depth-limited legs are special: when
-//! the commanded elevation change needs more time than the 2D path provides (from the
-//! platform's max depth rate), the planner budgets the expected number of loop-back passes up
-//! front and elevation-only gate failures within that budget replan for free — the spiral is
-//! the plan, not a failure. When the route completes the planner commands zero speed.
+//! \brief Drives a vehicle through a series of 3D waypoints along true Dubins paths, each leg
+//! ending in a straight final-approach runway so arrival happens with position and attitude
+//! settled.
+//! Tracking commands the planned-path tangent (sampled slightly ahead for phase lead) plus a
+//! cross-track correction atan(xte / turnRadius); cross-track error is measured from the
+//! planned Dubins path itself, which is also the UMAA track-tolerance reference.
+//! Capture is a gate, not a bubble: a segment of the position-tolerance half-width through the
+//! waypoint, perpendicular to the arrival heading, so the vehicle always flies through the
+//! waypoint; crossing outside the gate is a miss that replans the leg from the live pose.
 class DubinsPathPlanner {
  public:
-  //! \brief Install the shared zone map. Legs planned afterwards avoid the active zones with
-  //! the configured margin: the direct Dubins solution is used when it is compliant, otherwise
-  //! the Dubins-RRT* fallback finds a detour. Nullable (no zone awareness).
+  //! \brief Install the shared zone map (nullable = no zone awareness); legs planned
+  //! afterwards avoid the active zones with the configured margin.
   void setZones(const ZoneMap* zoneMap) { zoneMap_ = zoneMap; }
 
   //! \brief Re-project the active zones (the constraint set changed mid-route): the remaining

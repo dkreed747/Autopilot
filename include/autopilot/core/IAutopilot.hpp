@@ -12,10 +12,8 @@
 
 namespace arlcore::autopilot {
 
-//! \brief The autopilot "brain": the shared driving controller (formerly "vehicle control").
-//! It holds the active driving mode and setpoint, recomputes a control vector from the latest
-//! navigation data on every nav tick, and pushes it to the vehicle-control strategy. The two
-//! command providers drive it via the setpoint methods and read progress back for UMAA status.
+//! \brief The autopilot "brain": holds the active driving mode and setpoint, recomputes a
+//! control vector on every nav tick, and pushes it to the vehicle-control strategy.
 class IAutopilot {
  public:
   virtual ~IAutopilot() = default;

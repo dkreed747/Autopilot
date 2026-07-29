@@ -63,14 +63,9 @@ struct ConstraintEvent {
 };
 
 //! \brief The UMAA consumer side of the autopilot's constraint services: publishes
-//! specialization payloads + ConditionalControl Add/Delete commands + ActiveConstraints
-//! commands, and reads back the ConditionalReport (the authoritative constraint list), the
-//! standing ActiveConstraints ack (the authoritative applied set — the console's restart
-//! recovery), and the per-conditional state reports (violation display).
-//!
-//! The console mints each constraint's conditionalID (the stable upsert key); every publish
-//! carries a fresh specializationReferenceID. Editing = a fresh payload + Add with the same
-//! conditionalID; deleting prunes the active set first, then Deletes.
+//! specialization payloads plus Add/Delete/ActiveConstraints commands and reads back the
+//! reports, acks, and per-conditional states. The standing ActiveConstraints ack is the
+//! authoritative applied set (the console's restart recovery).
 class ConstraintsClient {
  public:
   //! \brief `destinationId` is the autopilot's constraints source ID
@@ -82,9 +77,8 @@ class ConstraintsClient {
                     const arlcore::NumericGuid& destinationId,
                     const ClientIdentity& identity);
 
-  //! \brief Create or update a water zone (empty `id` mints a new one). The ceiling/floor
-  //! frames are "depth" (meters below the surface) or "asf" (meters above the sea floor) —
-  //! mixable, e.g. a ceiling at depth 0 with a floor 5 m above the sea floor. Returns the id.
+  //! \brief Create or update a water zone (empty `id` mints a new one); the ceiling/floor
+  //! frames are "depth" (below the surface) or "asf" (above the sea floor) and may be mixed.
   std::string upsertZone(const std::string& id, const std::string& name, bool keepIn,
                          const std::vector<std::array<flt64_t, 2>>& polygonLatLon,
                          flt64_t ceilingM, const std::string& ceilingFrame,

@@ -22,12 +22,9 @@ enum class ZoneCompliance {
 
 //! \brief Geodetic store of the active water zones, shared by the supervisor (violation truth),
 //! the planners (obstacle queries), and command validation.
-//!
-//! Zones are stored geodetically and projected on demand: the map owns one LocalCartesian anchor
-//! fixed at the first ingest (zones are global and long-lived), while planners keep their own
-//! per-plan frames and ask for `activeSet(plannerFrame, envelope)` — projecting the same geodetic
-//! vertices into either frame is exact, so both views agree. Ellipse shapes are converted to
-//! conservative polygons at ingest (circumscribed for keep-out, inscribed for keep-in).
+//! Zones are stored geodetically and projected on demand into any caller frame, so all views
+//! agree; ellipse shapes are converted to conservative polygons at ingest (circumscribed for
+//! keep-out, inscribed for keep-in).
 class ZoneMap {
  public:
   explicit ZoneMap(const ZonesConfig& config);

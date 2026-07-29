@@ -12,9 +12,8 @@
 
 namespace arlcore::autopilot {
 
-//! \brief Thread-safe snapshot of the latest navigation data from the three SA services.
-//! The autopilot brain reads from this on every control tick. Writes happen on the nav
-//! observer callbacks; getters return copies so callers never hold the lock.
+//! \brief Thread-safe snapshot of the latest navigation data from the three SA services;
+//! getters return copies so callers never hold the lock.
 class NavState {
  public:
   void setPose(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose) {

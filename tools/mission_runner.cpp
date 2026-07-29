@@ -1,19 +1,5 @@
-//! \brief End-to-end waypoint mission driver for the autopilot. Acts as the UMAA consumer
-//! side (via WaypointMissionClient): publishes a GlobalWaypointCommandType (destination =
-//! the autopilot's waypoint provider) plus its large-list route, then records the vehicle's
-//! Global Pose track and the command status until the mission completes. Outputs:
-//!   <out>/track.csv        elapsed_s, lat_deg, lon_deg, yaw_rad, speed_mps, depth_m, alt_asf_m
-//!   <out>/waypoints.csv    index, lat_deg, lon_deg, capture_radius_m, arrival_yaw_rad,
-//!                          elev_value_m, elev_frame
-//!   <out>/planned_path.csv the ideal planned Dubins route (lat_deg, lon_deg samples)
-//!   <out>/status.log       command status transitions
-//! Usage: mission_runner [autopilot.yaml] [output-dir] [mission.csv]
-//!
-//! The optional mission CSV defines the route in the local tangent plane at the sim start,
-//! one waypoint per line:
-//!   east_m,north_m,speed_mps,capture_radius_m[,arrival_yaw_rad][,elev_value_m,elev_frame]
-//! (header line ignored; leave arrival_yaw_rad empty for no attitude requirement; elev_frame
-//! is `depth` or `asf`). Without a mission file a built-in closed loop is flown.
+//! \brief End-to-end waypoint mission driver: publishes a UMAA Global Waypoint mission and
+//! records the track, command status, and planned path to files (see tools/README.md).
 
 #include <chrono>
 #include <filesystem>  // NOLINT(build/c++17)
@@ -66,8 +52,8 @@ int main(int argc, char** argv) {
   const auto rqos = qosProvider.datareader_qos();
   const auto wqos = qosProvider.datawriter_qos();
 
-  // The mission: from the CSV when given, otherwise a built-in closed loop with turns in
-  // both directions. CSV coordinates are relative to the sim start.
+  // Mission from the CSV when given (coordinates relative to the sim start), otherwise a
+  // built-in closed loop with turns in both directions.
   GeographicLib::LocalCartesian frame(config.simVehicle.initialLatitudeDeg,
                                       config.simVehicle.initialLongitudeDeg, 0.0);
   std::vector<MissionWaypoint> route;

@@ -26,19 +26,9 @@ struct DubinsRrtParams {
 };
 
 //! \brief Plan a zone-compliant, curvature-bounded path from `start` to `goal` (poses in the
-//! caller's local frame, math convention) as a chain of Dubins paths.
-//!
-//! Standard Karaman/Frazzoli RRT* with full-edge Dubins steering: every tree edge is one exact
-//! DubinsPath (never truncated), so edge costs are exact and rewiring is sound; the returned
-//! chain is drivable end to end by a Dubins tracker. Samples are drawn from the keep-in
-//! intersection AABB when one exists (else the start/goal AABB padded by samplePadM), points
-//! below the margin are rejected before steering, and choose-parent/rewire use the nearK exact
-//! Dubins neighbors from a 3x Euclidean prefilter. After the first goal connection the planner
-//! keeps improving until the iteration/time budget runs out, then re-validates the best
-//! solution at the fine step. Deterministic for a fixed (seed ^ seedSalt).
-//!
-//! Returns the chain of Dubins paths (start -> ... -> goal), or nullopt when no compliant path
-//! was found within the budget.
+//! caller's local frame, math convention) as a chain of exact Dubins paths; returns nullopt
+//! when no compliant path is found within the iteration/time budget.
+//! Deterministic for a fixed (seed ^ seedSalt).
 std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& start,
                                                          const Dubins2DPose& goal,
                                                          const ZoneSet& zones,

@@ -31,11 +31,10 @@ class AutopilotBrain;
 
 using ConditionalList = std::vector<std::shared_ptr<arlcore::umaa::conditional::ConditionalBase>>;
 
-//! \brief The autopilot's constraint authority. Consumes the conditional set (from the report
-//! consumer) and the active subset (from the standing ActiveConstraints provider), converts the
-//! supported specializations (water zone, speed, depth) into a ConstraintSnapshot, feeds the
-//! ZoneMap, and publishes per-conditional ConditionalStateReports. Implements IConstraintSource
-//! for the brain/planner and ISafetyGate for the command providers.
+//! \brief The autopilot's constraint authority: converts the active conditionals (water zone,
+//! speed, depth) into a ConstraintSnapshot, feeds the ZoneMap, publishes per-conditional
+//! ConditionalStateReports, and serves the brain as IConstraintSource and the command
+//! providers as ISafetyGate.
 class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
  public:
   ConstraintSupervisor(const AutopilotConfig& config, NavState* nav, ZoneMap* zoneMap,
@@ -48,9 +47,9 @@ class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
   std::shared_ptr<CallbackObserver<ConditionalList>> conditionalSetObserver() { return setObserver_; }
   std::shared_ptr<CallbackObserver<ConditionalList>> activeSetObserver() { return activeObserver_; }
 
-  //! \brief The violation-response states. RECOVERING = a zone violation is being driven back
-  //! to compliance while the grace timer runs; SAFE_MODE = latched escalation running the
-  //! configured strategy.
+  //! \brief Violation-response states: RECOVERING drives a zone violation back to compliance
+  //! while the grace timer runs; SAFE_MODE is the latched escalation running the configured
+  //! strategy.
   enum class SafetyState { MONITORING, RECOVERING, SAFE_MODE };
 
   //! \brief Arm the violation FSM: violations confirmed against the active conditionals drive

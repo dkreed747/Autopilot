@@ -556,11 +556,9 @@ bool DubinsPathPlanner::allowSpiralPass(const GlobalPoseReportType& pose, flt64_
     lastSpiralElevErrM_ = errM;
     return true;
   }
-  // The up-front budget is estimated from the first pass of the leg, which is usually longer
-  // than the loop-back passes, so it can undercount. Extend it from the remaining error and
-  // the actual loop time — but only while the elevation is genuinely converging (at least half
-  // the expected per-pass change since the previous pass); a vehicle that cannot make depth
-  // must start consuming the miss budget.
+  // The up-front budget is estimated from the first (usually longest) pass and can undercount,
+  // so extend it from the remaining error and the actual loop time — but only while the
+  // elevation is genuinely converging; a vehicle that cannot make depth must consume the miss budget.
   if (lastSpiralElevErrM_.has_value() && expectedPerPassM > 1e-6 &&
       lastSpiralElevErrM_.value() - errM.value() >= 0.5 * expectedPerPassM) {
     const int32_t remaining = std::max(1, static_cast<int32_t>(std::ceil(errM.value() / expectedPerPassM)));
@@ -631,9 +629,8 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_
   const flt64_t gateHalfM = gateHalfWidthM(wp, params_);
   const flt64_t overshootBudget = std::max(searchLead, 4.0 * gateHalfM);
 
-  // Advance the monotonic arc-length progress pointer: search a bounded window ahead of the
-  // previous progress (with a small allowance backward) for the closest path sample. The
-  // parametrization extends past the path end so progress keeps flowing through the gate.
+  // Advance the monotonic progress pointer by searching a bounded window around the previous
+  // progress on a parametrization extended past the path end so progress keeps flowing through the gate.
   flt64_t pathXteM = 0.0;  // signed cross-track error from the planned path (+ = starboard)
   {
     const flt64_t back = std::min(legProgressS_, 2.0 * step);
@@ -685,8 +682,7 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_
   lastVector_ = cv;
 
   // Capture gate: a segment of half-width gateHalfM through the waypoint, perpendicular to
-  // the arrival heading. Signed along-track distance to the gate plane and lateral offset
-  // along the gate.
+  // the arrival heading.
   const flt64_t dirE = std::sin(leg.endAzimuthRad);
   const flt64_t dirN = std::cos(leg.endAzimuthRad);
   const flt64_t relE = xE - wpX_[targetIndex_];

@@ -86,8 +86,8 @@ CommandStateResult VectorControlServiceProvider::onIssued(const std::weak_ptr<Cm
   const CommandClass cls = classOf(cmd);
   if (held_ && heldSessionId_ == arlcore::NumericGuid(cmd.sessionID()) &&
       heldEpoch_ != modeGate_->authoritativeEpoch() && !modeGate_->classAllowed(cls)) {
-    // An explicit mode command or manual engagement occurred while held: flush the hold.
-    // INTERRUPTED is legal from ISSUED; the base reaps the session once it sees the state.
+    // An authoritative mode change occurred while held: flush the hold with INTERRUPTED
+    // (legal from ISSUED); the base reaps the session once it sees the state.
     if (!cmdSession->fail(CommandStatusReasonEnumType::INTERRUPTED)) {
       return CommandStateResult::ERROR;
     }
@@ -141,9 +141,8 @@ CommandStateResult VectorControlServiceProvider::onExecuting(const std::weak_ptr
 bool VectorControlServiceProvider::onUpdated(const std::weak_ptr<CmdSession> session,
     const GlobalVectorCommandType& previousCmd, const GlobalVectorCommandType& updatedCmd) {
   // The base re-runs handleIssued right after this, so validation/mode admission apply to the
-  // updated command and the ISSUED->COMMANDED path reinstalls the setpoint. Returning false
-  // here would fail EVERY active session with SERVICE_FAILED, so rejection must flow through
-  // the re-validation instead.
+  // updated command; returning false here would fail EVERY active session with
+  // SERVICE_FAILED, so rejection must flow through that re-validation instead.
   return true;
 }
 

@@ -23,15 +23,10 @@
 
 namespace arlcore::autopilot {
 
-//! \brief A simulated vehicle-control strategy. It keeps an internal kinematic vehicle whose
-//! limits come from the configured platform capabilities (max forward/reverse speed, max turn
-//! rate, max depth-change rate) and integrates it on its own thread at the configured cycle
-//! rate, acting on the most recent control-vector setpoint. Every cycle it publishes the
-//! three SA navigation reports — Global Pose, Speed, and Velocity — closing the control loop
-//! for the autopilot exactly as a real vehicle's navigation suite would.
-//!
-//! The strategy is transport-agnostic: it takes the three report senders (DDS in the app,
-//! LocalReaderSender in tests) and signs reports with the configured nav source ID.
+//! \brief Simulated vehicle-control strategy: integrates a kinematic vehicle (limits from the
+//! platform capabilities) on its own thread and publishes the three SA navigation reports
+//! each cycle, closing the control loop like a real nav suite. Transport-agnostic: takes the
+//! three report senders (DDS in the app, LocalReaderSender in tests).
 class SimVehicleControl : public IVehicleControl {
  public:
   SimVehicleControl(const PlatformCapabilitiesConfig& caps,

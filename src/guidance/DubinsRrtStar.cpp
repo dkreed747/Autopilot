@@ -74,7 +74,7 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
   std::vector<Node> nodes;
   nodes.emplace_back(start);
 
-  // Best goal connections found so far: (cost, tree node index, edge to goal).
+  // All goal connections are kept: the fine recheck may reject the cheapest.
   struct GoalLink {
     flt64_t cost;
     int32_t from;

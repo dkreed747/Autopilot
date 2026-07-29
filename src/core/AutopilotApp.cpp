@@ -99,7 +99,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
 
   brain_ = std::make_unique<AutopilotBrain>(&navState_, vehicle_.get(), config_);
 
-  // --- Navigation consumers (listeners) ---
+  // Navigation consumers (listeners)
   poseConsumer_ = std::make_shared<GlobalPoseReportConsumer>(
       std::make_shared<CycloneReader<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>>(
           participant_, UMAA::SA::GlobalPoseStatus::GlobalPoseReportTypeTopic, rqos));
@@ -131,7 +131,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
 
   const flt64_t maxForwardSpeed = config_.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
 
-  // --- Vector control provider ---
+  // Vector control provider
   auto vectorIo = std::make_shared<VectorControlServiceProviderIo>(
       std::make_shared<CycloneReader<GlobalVectorCommandType>>(
           participant_, UMAA::MO::GlobalVectorControl::GlobalVectorCommandTypeTopic, rqos),
@@ -145,7 +145,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
       parseId(config_.identity.vectorSourceId), vectorIo, brain_.get(), maxForwardSpeed,
       supervisor_.get(), modeManager_.get());
 
-  // --- Waypoint control provider (with large-list element reader) ---
+  // Waypoint control provider (with large-list element reader)
   auto waypointIo = std::make_shared<WaypointControlServiceProviderIo>(
       std::make_shared<CycloneReader<GlobalWaypointCommandType>>(
           participant_, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeTopic, rqos),
@@ -162,7 +162,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
       parseId(config_.identity.waypointSourceId), waypointIo, brain_.get(), maxForwardSpeed,
       config_.planner.maxListWaitCycles, supervisor_.get(), zoneMap_.get(), modeManager_.get());
 
-  // --- Platform report providers: publish specs + capabilities once on startup ---
+  // Platform report providers: publish specs + capabilities once on startup
   specsReportProvider_ = std::make_unique<ReportProvider<UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>>(
       parseId(config_.identity.specsSourceId),
       std::make_shared<CycloneSender<UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>>(
@@ -204,7 +204,7 @@ bool AutopilotApp::initializeConstraintServices() {
   namespace condControl = UMAA::MM::ConditionalControl;
   namespace acControl = UMAA::MM::ActiveConstraintsControl;
 
-  // --- Conditional report provider: owns the working conditional set and every payload topic ---
+  // Conditional report provider: owns the working conditional set and every payload topic
   auto reportIo = std::make_shared<arlcore::umaa::ConditionalReportProviderIo>(
       std::make_shared<CycloneSender<condReport::ConditionalReportType>>(
           participant_, condReport::ConditionalReportTypeTopic, wqos),
@@ -251,8 +251,8 @@ bool AutopilotApp::initializeConstraintServices() {
   conditionalReportProvider_ = std::make_shared<arlcore::umaa::conditional::ConditionalReportProvider>(
       constraintsId, reportIo);
 
-  // --- Factory io: shares the SA nav consumers; the specialization readers see both the
-  // console-published payloads and our own re-published instances (loopback) ---
+  // Factory io: shares the SA nav consumers; the specialization readers see both the
+  // console-published payloads and our own re-published instances (loopback)
   conditionalFactoryIo_ = std::make_shared<arlcore::umaa::ConditionalFactoryIo>(
       poseConsumer_, speedConsumer_, velocityConsumer_,
       std::make_shared<CycloneReader<cond::ConstraintViolatedConditionalType>>(
@@ -295,7 +295,7 @@ bool AutopilotApp::initializeConstraintServices() {
           participant_, cond::YawRateConditionalTypeTopic, rqos));
   conditionalFactory_ = std::make_shared<arlcore::umaa::conditional::ConditionalFactory>(conditionalFactoryIo_);
 
-  // --- Loopback read-back of our own report; the consumer resolves evaluable conditionals ---
+  // Loopback read-back of our own report; the consumer resolves evaluable conditionals
   conditionalReportConsumer_ = std::make_shared<arlcore::umaa::conditional::ConditionalReportConsumer>(
       std::make_shared<CycloneReader<condReport::ConditionalReportType>>(
           participant_, condReport::ConditionalReportTypeTopic, rqos),
@@ -303,7 +303,7 @@ bool AutopilotApp::initializeConstraintServices() {
           participant_, condReport::ConditionalReportTypeConditionalsSetElementTopic, largeRqos),
       conditionalFactory_);
 
-  // --- Standing ActiveConstraints provider: the applied set outlives any one commander ---
+  // Standing ActiveConstraints provider: the applied set outlives any one commander
   auto activeIo = std::make_shared<ActiveConstraintsControlProviderIo>(
       std::make_shared<CycloneReader<acControl::ActiveConstraintsCommandType>>(
           participant_, acControl::ActiveConstraintsCommandTypeTopic, rqos),
@@ -315,7 +315,7 @@ bool AutopilotApp::initializeConstraintServices() {
       constraintsId, activeIo, /*standingSession=*/true);
   conditionalReportConsumer_->registerObserver(activeConstraintsProvider_);
 
-  // --- ConditionalControl Add/Delete providers (supported subset: water zone, speed, depth) ---
+  // ConditionalControl Add/Delete providers (supported subset: water zone, speed, depth)
   auto addIo = std::make_shared<ConditionalAddProviderIo>(
       std::make_shared<CycloneReader<condControl::ConditionalAddCommandType>>(
           participant_, condControl::ConditionalAddCommandTypeTopic, rqos),
@@ -339,7 +339,7 @@ bool AutopilotApp::initializeConstraintServices() {
   conditionalDeleteProvider_ = std::make_unique<arlcore::umaa::conditional::ConditionalDeleteProvider>(
       constraintsId, deleteIo, conditionalReportProvider_);
 
-  // --- Supervisor: snapshot authority, zone map feed, state reports, safety gate ---
+  // Supervisor: snapshot authority, zone map feed, state reports, safety gate
   zoneMap_ = std::make_unique<ZoneMap>(config_.zones);
   auto stateSender = std::make_shared<CycloneSender<
       UMAA::MM::ConditionalStateReport::ConditionalStateReportType>>(
@@ -351,7 +351,7 @@ bool AutopilotApp::initializeConstraintServices() {
   brain_->setConstraintSource(supervisor_.get());
   brain_->setZoneMap(zoneMap_.get());
 
-  // --- Safe Return Path: loaded and validated at startup, executed by the SRP strategy ---
+  // Safe Return Path: loaded and validated at startup, executed by the SRP strategy
   std::string srpError;
   safeReturnPath_ = SafeReturnPath::load(config_.safety.safeMode.srp, &srpError);
   if (!srpError.empty()) {
@@ -421,9 +421,8 @@ bool AutopilotApp::initializeOperationalModeServices() {
     if (vehicle_) {
       vehicle_->onOperationalModeChanged(mode);
     }
-    // Leaving MANUAL lands in STANDBY; a safe-mode plan made before the human drove the
-    // vehicle elsewhere may be arbitrarily stale, so replan it. Any other STANDBY entry
-    // (explicit command, idle revert) must not disturb a running safe-mode maneuver.
+    // Leaving MANUAL lands in STANDBY and the human may have driven anywhere, so replan a
+    // stale safe-mode plan; any other STANDBY entry must not disturb a running safe maneuver.
     if (supervisor_ && lastReportedMode_ == OperationalMode::MANUAL &&
         mode == OperationalMode::STANDBY) {
       supervisor_->refreshSafeModePlan();
@@ -516,9 +515,9 @@ void AutopilotApp::step() {
   if (supervisor_) {
     supervisor_->update();
   }
-  // Operational mode: manual edges first (manual wins every same-tick race), then explicit
-  // mode commands, so the driving providers admit against the freshest mode. Idle-revert
-  // evaluates AFTER the providers so a command arriving this very tick suppresses it.
+  // Operational mode: manual edges then explicit mode commands first (manual wins every
+  // same-tick race, providers admit against the freshest mode); idle-revert evaluates AFTER
+  // the providers so a command arriving this very tick suppresses it.
   if (modeManager_) {
     modeManager_->beginStep(vehicle_->isManualEngaged());
   }

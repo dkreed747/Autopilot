@@ -10,12 +10,11 @@
 
 namespace arlcore::autopilot {
 
-//! \brief Derive the planner parameters from configuration. The platform capabilities drive
-//! the planner: the planned turn radius is the kinematic minimum (representative speed / max
-//! turn rate) inflated by planner.turn_radius_margin so the tracker retains turn authority to
-//! close tracking error mid-maneuver, and the underwater depth-rate limit feeds the
-//! spiral-descent approach budget. Callers must validate the capabilities first (see
-//! AutopilotApp::initialize); this falls back to a conservative 25 m radius if they are absent.
+//! \brief Derive the planner parameters from configuration and the platform capabilities.
+//! The planned turn radius is the kinematic minimum (representative speed / max turn rate)
+//! inflated by planner.turn_radius_margin so the tracker retains turn authority mid-maneuver.
+//! Callers must validate the capabilities first (see AutopilotApp::initialize); absent
+//! capabilities fall back to a conservative 25 m radius.
 inline PlannerParams derivePlannerParams(const AutopilotConfig& config) {
   PlannerParams p;
   p.leadDistanceM = config.planner.leadDistanceM;

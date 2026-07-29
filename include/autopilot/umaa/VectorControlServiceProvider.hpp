@@ -13,16 +13,11 @@
 
 namespace arlcore::autopilot {
 
-//! \brief UMAA Global Vector control PROVIDER. Validates incoming vector commands against the
-//! platform's speed limit and the operational-mode gate, acquires the (high-priority) driving
-//! resource — preempting any active waypoint route — installs the vector setpoint on the
-//! autopilot brain, and reports per-cycle execution status.
-//!
-//! Mode gating: under the fail policy an out-of-mode command dies at validation
-//! (VALIDATION_FAILED); under the hold policy it parks silently at ISSUED (onIssued returns
-//! OK) until the mode becomes compatible, an authoritative mode change flushes it
-//! (INTERRUPTED), or it is canceled/replaced. Sessions past ISSUED whose class becomes
-//! disallowed fail INTERRUPTED via isCommandFailed.
+//! \brief UMAA Global Vector control PROVIDER: validates incoming commands, acquires the
+//! high-priority driving resource (preempting any waypoint route), and installs the vector
+//! setpoint on the brain. Under the hold policy an out-of-mode command parks at ISSUED until
+//! the mode becomes compatible, an authoritative mode change flushes it (INTERRUPTED), or it
+//! is canceled/replaced.
 class VectorControlServiceProvider : public arlcore::umaa::services::CommandProviderBase<
     GlobalVectorCommandType,
     GlobalVectorCommandAckReportType,

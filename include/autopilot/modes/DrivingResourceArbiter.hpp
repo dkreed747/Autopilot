@@ -12,21 +12,10 @@
 namespace arlcore::autopilot {
 
 //! \brief Arbitrates the single driving resource between the vector and waypoint command
-//! providers. Because the two providers are separate CommandProviderBase instances (different
-//! command types), the per-provider IncomingCommandBehavior cannot deconflict across them, so
-//! this shared arbiter is required.
-//!
-//! Higher priority wins. Priorities are per command class (local autonomy vs remote operator)
-//! so any remote command can preempt any local one. The holder's priority is recorded at
-//! grant time and later requests compare against it, which stays correct in the operational
-//! mode transition window where a remote command acquires before the preempted local holder
-//! has cycled (a class-swapped table would misprice the stale holder there).
-//!
-//! Acquiring with a higher priority preempts the current lower-priority holder by marking it
-//! "revoked"; the preempted provider learns of this by polling wasRevoked() in its
-//! isCommandFailed() hook and then fails the command with INTERRUPTED. A lower-priority
-//! acquire while a higher-priority holder owns the resource is denied; that provider then
-//! fails its command with RESOURCE_REJECTED.
+//! providers (separate CommandProviderBase instances cannot deconflict across command types);
+//! higher per-class priority wins. The holder's priority is recorded at grant time so later
+//! requests compare correctly even in the mode-transition window where the preempted holder
+//! has not yet cycled.
 class DrivingResourceArbiter {
  public:
   explicit DrivingResourceArbiter(const ArbitrationConfig& config);

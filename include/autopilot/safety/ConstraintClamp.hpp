@@ -29,12 +29,9 @@ struct ClampResult {
 };
 
 //! \brief Clamp a control vector to the most restrictive of the dynamic active constraints and
-//! the static limits. Pure function, applied at the single control-output funnel.
-//!
-//! Rules: max bounds clamp down, min bounds clamp up; the min speed bound only raises commanded
-//! speeds that are already nonzero (a commanded stop/hold is never sped up); elevation clamps
-//! apply in the DEPTH frame only (other frames pass through untouched); a min bound above a max
-//! bound clamps to the max and flags `conflict`.
+//! the static limits; pure function, applied at the single control-output funnel.
+//! Min speed never raises a commanded stop, elevation clamps apply only in the DEPTH frame,
+//! and a min bound above its max clamps to the max and flags `conflict`.
 ClampResult applyConstraintClamps(const ControlVector& cv, const ConstraintSnapshot& snapshot,
                                   const ClampLimits& staticLimits);
 

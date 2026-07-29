@@ -21,9 +21,8 @@
 
 namespace arlcore::autopilot {
 
-//! \brief Concrete autopilot brain. Single-threaded by design: onNavUpdate() and the provider
-//! setpoint calls all run on the main loop thread (the nav observer fires inside the nav
-//! consumer's cycle()). The mutex is defensive should a future strategy introduce threads.
+//! \brief Concrete autopilot brain; single-threaded by design (everything runs on the main
+//! loop thread), the mutex is defensive should a future strategy introduce threads.
 class AutopilotBrain : public IAutopilot {
  public:
   AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const AutopilotConfig& config);
@@ -34,9 +33,8 @@ class AutopilotBrain : public IAutopilot {
   void clearSetpoint(DriveSource src) override;
   void onNavUpdate() override;
 
-  //! \brief Called every control-loop tick: if a drive mode is active but the newest pose is
-  //! older than the configured staleness timeout, command a zero-speed hold so the vehicle
-  //! does not keep driving blind on stale navigation.
+  //! \brief Per-tick guard: commands a zero-speed hold when a drive mode is active but the
+  //! newest pose exceeds the staleness timeout, so the vehicle never drives blind.
   void enforceNavStaleness();
   VectorProgress vectorProgress() const override;
   WaypointProgress waypointProgress() const override;
@@ -54,11 +52,10 @@ class AutopilotBrain : public IAutopilot {
   //! changes mid-route). Nullable; without one guidance is zone-blind.
   void setZoneMap(const ZoneMap* zoneMap);
 
-  // --- Safe mode (driven by the safety supervisor's strategy) -------------------------------
+  // Safe mode (driven by the safety supervisor's strategy)
 
-  //! \brief Enter SAFE mode running a waypoint route on the dedicated safe planner (keeps SRP
-  //! progress out of the failing mission provider's teardown). Preempts the current driving
-  //! command through the arbiter (the provider surfaces INTERRUPTED). Falls back to a
+  //! \brief Enter SAFE mode running a waypoint route on the dedicated safe planner; preempts
+  //! the current driving command (the provider surfaces INTERRUPTED) and falls back to a
   //! zero-speed hold (returning false) when the route cannot be planned.
   bool activateSafeRoute(const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints);
 
@@ -73,11 +70,11 @@ class AutopilotBrain : public IAutopilot {
   //! \brief Leave SAFE mode and release the driving resource (commands flow again).
   void clearSafeMode();
 
-  // --- Zone-violation recovery ---------------------------------------------------------------
+  // Zone-violation recovery
 
   //! \brief Begin the recovery maneuver: the active command stays installed (and EXECUTING)
-  //! but ticks route through RecoveryGuidance toward the nearest compliant point. Returns
-  //! false when no recovery target could be found (the brain holds zero speed instead).
+  //! while ticks route toward the nearest compliant point; returns false when no recovery
+  //! target could be found (the brain holds zero speed instead).
   bool beginRecovery();
 
   //! \brief Whether the recovery has held COMPLIANT long enough to count as recovered.
@@ -102,9 +99,8 @@ class AutopilotBrain : public IAutopilot {
   //! \brief Zero-speed hold at the current (or last known) heading.
   void emitHold(const std::optional<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>& pose);
 
-  //! \brief The single control-output funnel: applies the constraint clamps (most restrictive
-  //! of dynamic constraints, static settings, and platform capabilities) to every control
-  //! vector before it reaches the vehicle. All send sites route through here.
+  //! \brief The single control-output funnel: applies the most-restrictive constraint clamp
+  //! to every control vector before it reaches the vehicle; all send sites route through here.
   void emitControl(const ControlVector& cv);
 
   NavState* nav_;

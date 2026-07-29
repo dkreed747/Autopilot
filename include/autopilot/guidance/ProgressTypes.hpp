@@ -37,7 +37,7 @@ struct WaypointProgress {
   bool elevationAchieved = true;
   bool speedAchieved = false;
   bool trackLineAchieved = true;          // true when no trackTolerance requested
-  std::optional<flt64_t> crossTrackErrorM;  // set only when trackTolerance is defined
+  std::optional<flt64_t> crossTrackErrorM;  // signed offset from the planned path (+ = starboard); set every update
   flt64_t groundSpeedMps = 0.0;            // current ground speed (for ETA estimation)
   flt64_t distanceToWaypointM = 0.0;
   flt64_t distanceRemainingM = 0.0;

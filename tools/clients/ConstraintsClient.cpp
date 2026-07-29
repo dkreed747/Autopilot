@@ -215,9 +215,8 @@ bool ConstraintsClient::setActive(const std::vector<std::string>& ids) {
 }
 
 void ConstraintsClient::poll() {
-  // Latest conditional report -> the working constraint list. The set is re-derived every
-  // poll (not only when a report sample arrives): set elements and their disposals can land
-  // after the metadata, and only a re-check picks them up.
+  // The set is re-derived every poll, not only on a fresh report: set elements and their
+  // disposals can land after the metadata, and only a re-check picks them up.
   ConditionalReportType report;
   if (reportReader_->readLatest(&report) == ReadStatus::SUCCESS) {
     lastMetadata_ = report.conditionalsSetMetadata();

@@ -53,9 +53,6 @@ static std::optional<ZoneRecord> convertWaterZone(const WaterZoneConditional& zo
   record.kind = zone.getConditionalWaterZoneKind() == WaterZoneKindEnumType::INSIDE
       ? ZoneKind::KEEP_IN : ZoneKind::KEEP_OUT;
 
-  // The zone's vertical extent: ceiling = shallow cutoff, floor = deep cutoff, each in its own
-  // frame (mixed depth/ASF bands are supported; e.g. ceiling at depth 0 with a floor above the
-  // sea floor). Frames with no evaluable equivalent make the band always-applicable.
   record.band.ceiling = toElevationBound(zone.getCeiling());
   record.band.floor = toElevationBound(zone.getFloor());
   if (!record.band.ceiling.has_value() || !record.band.floor.has_value()) {
@@ -252,7 +249,6 @@ void ConstraintSupervisor::updateSafety() {
   }
   lastSafetyTick_ = now;
 
-  // --- Advance per-conditional violation trackers -------------------------------------------
   const std::optional<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType> pose = nav_->pose();
   const GeoPoint at{pose.has_value() ? pose->position().geodeticLatitude() : 0.0,
                     pose.has_value() ? pose->position().geodeticLongitude() : 0.0};
@@ -341,9 +337,8 @@ void ConstraintSupervisor::updateSafety() {
   }
   }  // release the lock: the brain/strategy calls below must run unlocked
 
-  // --- State transitions ----------------------------------------------------------------------
-  // Everything runs on the single control thread; state_ writes take the lock briefly, the
-  // brain/strategy calls happen unlocked (they take their own locks).
+  // State transitions: everything runs on the single control thread; state_ writes take the
+  // lock briefly, the brain/strategy calls happen unlocked (they take their own locks).
   const bool graceExpired = anyConfirmed && earliestDeadline.has_value() &&
                             now >= earliestDeadline.value();
   flt64_t allClearS = 0.0;

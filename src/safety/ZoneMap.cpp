@@ -34,8 +34,8 @@ void ZoneMap::ensureAnchor(const ConstraintSnapshot& snapshot) {
 
 std::vector<GeoPoint> ZoneMap::ellipseToRing(const ZoneEllipse& ellipse, ZoneKind kind) const {
   const int32_t n = std::max(config_.ellipseSegments, 8);
-  // Circumscribing a keep-out grows the forbidden region; inscribing a keep-in shrinks the
-  // allowed one. Both directions are conservative.
+  // Circumscribing a keep-out grows the forbidden region and inscribing a keep-in shrinks the
+  // allowed one — both conservative.
   const flt64_t scale = kind == ZoneKind::KEEP_OUT ? 1.0 / std::cos(M_PI / n) : 1.0;
   const flt64_t a = ellipse.semiMajorM * scale;
   const flt64_t b = ellipse.semiMinorM * scale;

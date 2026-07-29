@@ -60,8 +60,7 @@ struct AttitudeValue {
 }  // namespace arlcore::autopilot
 
 //! \brief Helpers to pull plain scalar values + tolerances out of UMAA requirement-variant
-//! unions, and to evaluate achievement against them. Centralizing this keeps the
-//! union-discriminator handling and the per-type tolerance semantics in one place.
+//! unions, and to evaluate achievement against them.
 namespace arlcore::autopilot::tolerance {
 
 //! \brief Extract the commanded heading + tolerance from a direction requirement. Supports

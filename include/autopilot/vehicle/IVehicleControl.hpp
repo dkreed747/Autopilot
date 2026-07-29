@@ -6,10 +6,8 @@
 
 namespace arlcore::autopilot {
 
-//! \brief Hardware-abstraction strategy. The autopilot brain drives the vehicle purely
-//! through this interface, so the same autopilot runs on different robots by swapping the
-//! concrete strategy (Strategy pattern). The platform also owns MANUAL control through this
-//! interface: it can always take it and alone decides when it is released.
+//! \brief Hardware-abstraction strategy the brain drives the vehicle through. The platform
+//! owns MANUAL control here: it can always take it and alone decides when it is released.
 class IVehicleControl {
  public:
   virtual ~IVehicleControl() = default;

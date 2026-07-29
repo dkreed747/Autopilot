@@ -44,7 +44,6 @@ bool DrivingResourceArbiter::acquire(DriveSource who, CommandClass cls) {
     return true;
   }
   if (priorityOf(who, cls) > holderPriority_) {
-    // Preempt the lower-priority holder.
     revoked_.insert(holder_);
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Driving resource preempted by higher-priority source")
     holder_ = who;
@@ -52,7 +51,6 @@ bool DrivingResourceArbiter::acquire(DriveSource who, CommandClass cls) {
     revoked_.erase(who);
     return true;
   }
-  // Equal or lower priority: denied.
   return false;
 }
 

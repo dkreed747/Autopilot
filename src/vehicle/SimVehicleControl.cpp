@@ -121,21 +121,18 @@ void SimVehicleControl::stepOnce(flt64_t dtS) {
     flt64_t targetSpeed = setpoint_.has_value() ? setpoint_->speedMps : 0.0;
     targetSpeed = std::clamp(targetSpeed, -maxReverseSpeedMps(), maxForwardSpeedMps());
 
-    // Turn toward the commanded heading, limited by the platform's max turn rate.
     const flt64_t headingErr = wrapPi(targetHeading - headingRad_);
     const flt64_t maxDelta = maxTurnRateRps() * dtS;
     const flt64_t applied = std::clamp(headingErr, -maxDelta, maxDelta);
     headingRad_ = wrapPi(headingRad_ + applied);
     yawRateRps_ = applied / dtS;
 
-    // Accelerate toward the commanded speed, limited by the surge acceleration.
     const flt64_t speedErr = targetSpeed - speedMps_;
     const flt64_t maxDv = std::max(0.0, simConfig_.accelMps2) * dtS;
     speedMps_ += std::clamp(speedErr, -maxDv, maxDv);
 
-    // Drive depth toward a commanded DEPTH or ALTITUDE_ASF (above sea floor) setpoint when
-    // the platform supports it; both are converted to a target depth against the configured
-    // floor depth. Other elevation frames are not modeled by the sim.
+    // A DEPTH or above-floor (ASF/AGL) setpoint converts to a target depth against the
+    // configured floor depth; other elevation frames are not modeled by the sim.
     if (caps_.underwaterEnabled && setpoint_.has_value() && setpoint_->elevationM.has_value()) {
       std::optional<flt64_t> targetDepth;
       if (setpoint_->elevationFrame == ElevationFrame::DEPTH) {
@@ -153,7 +150,6 @@ void SimVehicleControl::stepOnce(flt64_t dtS) {
       }
     }
 
-    // Advance the position in the local tangent plane.
     xEastM_ += speedMps_ * dtS * std::sin(headingRad_);
     yNorthM_ += speedMps_ * dtS * std::cos(headingRad_);
   }

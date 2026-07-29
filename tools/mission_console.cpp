@@ -1,20 +1,5 @@
-//! \brief Live mission-control console for the autopilot: bridges the UMAA DDS bus to a web
-//! GUI. Subscribes to the three SA navigation reports plus the Global Waypoint command /
-//! ack / status / execution-status topics, and serves:
-//!   GET  /                    the single-page GUI (from --web <dir>)
-//!   GET  /api/state           full state snapshot (telemetry + mission) as JSON
-//!   GET  /api/stream          the same snapshot streamed as server-sent events (~5 Hz)
-//!   POST /api/mission         start a mission: {"waypoints":[{lat_deg, lon_deg, speed_mps,
-//!                             capture_radius_m[, arrival_yaw_rad][, elev_value_m,
-//!                             elev_frame]}]} -> {"session": id}
-//!   POST /api/mission/cancel  cancel the active mission (disposes the command instance)
-//!   POST /api/preview         plan the ideal Dubins route for a candidate mission from the
-//!                             vehicle's current pose -> {"path":[[lat,lon],...]}
-//! Usage: mission_console [autopilot.yaml] [port] [webroot]
-//!
-//! The command side reuses WaypointMissionClient (the matured mission_runner core), so the
-//! console is a full UMAA Global Waypoint control consumer: command + large-list route out,
-//! ack + status + execution status back.
+//! \brief Live mission-control web console bridging the UMAA DDS bus to a browser GUI; the
+//! REST API is documented in tools/README.md.
 
 #include <algorithm>
 #include <atomic>
@@ -409,9 +394,8 @@ static void validateConstraintBody(const json& body) {
         throw std::runtime_error("zone elevation frames must be 'depth' or 'asf'");
       }
     }
-    // Ordering (ceiling shallower than floor) is only checkable within one frame: shallower
-    // means a smaller depth but a larger altitude above the sea floor. Mixed frames (e.g.
-    // ceiling at depth 0, floor above the sea floor) are always accepted.
+    // Ceiling/floor ordering is only checkable within one frame (shallower = smaller depth
+    // but larger ASF altitude), so mixed frames are always accepted.
     if (ceilingFrame == floorFrame) {
       const bool ordered = ceilingFrame == "depth" ? ceiling < floor : ceiling > floor;
       if (!ordered) {
@@ -683,8 +667,8 @@ int main(int argc, char** argv) {
       participant, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, rqos);
   auto velocityReader = std::make_shared<CycloneReader<VelocityReportType>>(
       participant, UMAA::SA::VelocityStatus::VelocityReportTypeTopic, rqos);
-  // The console's own UMAA identity (console: block): a distinct platform_id classifies its
-  // commands as a REMOTE operator; equal to identity.platform_id it acts as a local autonomy.
+  // Console identity: platform_id equal to the autopilot's classifies as local autonomy,
+  // anything else as a REMOTE operator.
   const ClientIdentity consoleIdentity =
       arlcore::autopilot::tools::makeClientIdentity(config.console);
   const arlcore::NumericGuid autopilotPlatformId =
@@ -697,7 +681,6 @@ int main(int argc, char** argv) {
       arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.waypointSourceId),
       consoleIdentity);
 
-  // Constraint services client (only when the autopilot's constraint source is configured).
   std::optional<ConstraintsClient> constraintsClient;
   if (!config.identity.constraintsSourceId.empty()) {
     const auto largeSetRqos = qosProvider.datareader_qos(config.dds.largeCollectionsQosProfile);
@@ -707,7 +690,6 @@ int main(int argc, char** argv) {
         consoleIdentity);
   }
 
-  // Operational mode client (only when the autopilot's mode services are configured).
   std::optional<OperationalModeClient> modeClient;
   if (!config.identity.operationalModeControlSourceId.empty()) {
     modeClient.emplace(participant, wqos, rqos,
@@ -780,8 +762,8 @@ int main(int argc, char** argv) {
           state.pushVectorStatus(update.status, update.reason, update.logMessage);
         }
         vectorClient.pollAck();
-        // Server-side RC deadman: the browser's heartbeats stopped, so stop the vehicle. The
-        // DDS endTime (2 s) still covers a dead console process.
+        // Server-side RC deadman: browser heartbeats stopped, so stop the vehicle (the DDS
+        // endTime still covers a dead console process).
         if (rcEngaged && std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() -
                                                        rcLastBeat).count() > kRcServerWatchdogS) {
           if (vectorClient.active() && vectorClient.lastSetpoint().has_value()) {
@@ -801,9 +783,8 @@ int main(int argc, char** argv) {
   });
 
   httplib::Server server;
-  // Each SSE client pins a worker thread for its whole connection. A large pool plus a hard
-  // cap on concurrent streams keeps workers free for the control endpoints — /api/rc
-  // heartbeats starving here would trip the deadman and stop the vehicle mid-drive.
+  // Each SSE client pins a worker thread, so a large pool plus a hard stream cap keeps
+  // workers free for /api/rc heartbeats — starving them would trip the deadman mid-drive.
   server.new_task_queue = [] { return new httplib::ThreadPool(16); };  // NOLINT: httplib takes ownership of the raw pointer
   constexpr int32_t kMaxSseClients = 8;
   auto sseClients = std::make_shared<std::atomic<int32_t>>(0);
@@ -928,9 +909,8 @@ int main(int argc, char** argv) {
         res.set_content(R"({"error":"remote control is engaged"})", "application/json");
         return;
       }
-      // A new session each time: the autopilot's provider replaces any in-flight vector
-      // command. Mode gating may still reject/hold it — that arrives via the status chip,
-      // not as an HTTP error.
+      // A new session each time (the provider replaces any in-flight vector); mode gating
+      // may still reject/hold it, reported via the status chip rather than an HTTP error.
       const arlcore::NumericGuid session = vectorClient.start(sp);
       state.clearVectorStatusHistory();
       res.set_content(json{{"session", guidToString(session)}}.dump(), "application/json");
@@ -951,9 +931,8 @@ int main(int argc, char** argv) {
     res.set_content(json{{"canceled", ok}}.dump(), "application/json");
   });
 
-  // Remote control: a stateful sticky session with a server-owned deadman, deliberately
-  // separate from the one-shot /api/vector. Layers: rolling DDS endTime (console death),
-  // poller watchdog (browser death), client key-release zero-speed.
+  // Remote control: a sticky session with a server-owned deadman, deliberately separate from
+  // one-shot /api/vector (layers: rolling DDS endTime, poller watchdog, key-release stop).
   server.Post("/api/rc", [&](const httplib::Request& req, httplib::Response& res) {
     try {
       const json body = json::parse(req.body);

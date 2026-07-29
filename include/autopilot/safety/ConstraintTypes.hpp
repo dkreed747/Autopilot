@@ -38,10 +38,8 @@ struct ZoneShape {
   std::optional<ZoneEllipse> ellipse;
 };
 
-//! \brief One vertical bound of a zone, in the frame it was commanded in. DEPTH is meters
+//! \brief One vertical bound of a zone, in the frame it was commanded in: DEPTH is meters
 //! below the surface (positive down); ASF is meters above the sea floor (positive up).
-//! Mixed-frame bands are first-class: e.g. ceiling at depth 0 with a floor 5 m above the
-//! sea floor covers the whole water column except a near-bottom corridor.
 struct ElevationBound {
   enum class Frame { DEPTH, ASF };
   Frame frame = Frame::DEPTH;
@@ -67,10 +65,9 @@ struct ElevationEnvelope {
   }
 };
 
-//! \brief The vertical extent a zone applies to. The ceiling is the shallow cutoff, the floor
-//! the deep cutoff; each carries its own frame. A missing bound is unbounded in that
-//! direction. When a UMAA ceiling/floor frame has no evaluable equivalent (AGL/geodetic),
-//! `convertible` is false and the zone is conservatively treated as always applicable.
+//! \brief The vertical extent a zone applies to; a missing bound is unbounded in that
+//! direction, and a non-convertible UMAA frame (AGL/geodetic) conservatively makes the zone
+//! always applicable.
 struct ElevationBand {
   std::optional<ElevationBound> ceiling;  // shallow cutoff
   std::optional<ElevationBound> floor;    // deep cutoff
@@ -83,8 +80,8 @@ struct ElevationBand {
       return true;
     }
     if (ceiling.has_value()) {
-      // Everything shallower than the ceiling is outside the zone. Shallower means a smaller
-      // depth, or a larger altitude above the sea floor.
+      // Shallower than the ceiling is outside the zone: smaller depth, or larger altitude
+      // above the sea floor.
       if (ceiling->frame == ElevationBound::Frame::DEPTH) {
         if (env.maxDepthM < ceiling->value) {
           return false;

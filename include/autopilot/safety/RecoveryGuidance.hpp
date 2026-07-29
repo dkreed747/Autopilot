@@ -13,11 +13,9 @@ namespace arlcore::autopilot {
 
 //! \brief The zone-violation recovery maneuver: drive straight back to the nearest compliant
 //! point (back into a keep-in / out of a keep-out) at recovery speed, holding elevation.
-//!
-//! Steering is a direct carrot pursuit of the (re-validated every tick) target — a Dubins path
-//! back would duplicate the tracker for a tens-of-meters maneuver, and turn-rate-limited
-//! pursuit self-heals under disturbance. Recovery is complete once the position has classified
-//! COMPLIANT for the configured hold time.
+//! Steering is direct carrot pursuit of the every-tick-re-validated target — a Dubins path
+//! would duplicate the tracker for a tens-of-meters maneuver, and pursuit self-heals under
+//! disturbance.
 class RecoveryGuidance {
  public:
   RecoveryGuidance(const RecoveryConfig& config, flt64_t cruiseSpeedMps, flt64_t safetyMarginM);

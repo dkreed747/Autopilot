@@ -186,9 +186,8 @@ TEST(ZoneMapTest, EllipseKeepInIsInscribed) {
   ZoneMap map(defaultZonesConfig());
   map.ingest(snapshotWith({zone}));
 
-  // Inscribed: a boundary point of the true ellipse midway between polygon vertices falls in the
-  // chord sag, outside the conservative polygon. (An exact vertex direction would sit ON the
-  // polygon boundary, so probe mid-edge: 84.375 degrees = 7.5 segments of 11.25 degrees.)
+  // Inscribed: probe mid-edge (84.375 deg = 7.5 segments of 11.25 deg) where the true ellipse
+  // boundary sags outside the conservative polygon — an exact vertex direction would sit ON it.
   EXPECT_EQ(map.classify(at(99.5185, 9.8017), 0.0), ZoneCompliance::VIOLATION);
   EXPECT_EQ(map.classify(at(0.0, 0.0), 0.0), ZoneCompliance::COMPLIANT);
 }

@@ -80,7 +80,6 @@ std::optional<SpeedValue> extractSpeed(
   const auto& sub = speed.VariableSpeedVariantTypeSubtypes();
   switch (sub._d()) {
     case VariableSpeedVariantTypeEnum::REQUIREDSPEEDVARIANT_D:
-      // RequiredSpeedVariantType wraps a SpeedRequirementVariantType.
       return extractSpeed(sub.RequiredSpeedVariantVariant().speed());
     default:
       // RECOMMENDED (SpeedVariantType) and TIMEWITHSPEED variants are not supported for

@@ -9,12 +9,10 @@
 
 namespace arlcore::autopilot {
 
-//! \brief UMAA MM OperationalModeControl PROVIDER. Applies STANDBY / REMOTE /
-//! AUTONOMOUS mode commands to the OperationalModeManager and runs each command
-//! promptly to COMPLETED (no standing session). Commands are honored from any
-//! source (classification does not apply to mode commands) and while safety
-//! recovery/safe mode is engaged; the single rejection is MANUAL, which the
-//! platform alone controls (the command enum cannot even express it).
+//! \brief UMAA MM OperationalModeControl PROVIDER: applies mode commands to the
+//! OperationalModeManager and runs each promptly to COMPLETED (no standing
+//! session). Commands are honored from any source and during recovery/safe
+//! mode; the single rejection is MANUAL, which the platform alone controls.
 class OperationalModeControlProvider
     : public arlcore::umaa::services::CommandProviderBase<
           OperationalModeCommandType, OperationalModeCommandAckReportType,

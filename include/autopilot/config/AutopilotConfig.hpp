@@ -27,7 +27,7 @@ struct IdentityConfig {
   std::string navSourceId;  // source for the sim vehicle's SA navigation reports
   std::string constraintsSourceId;  // MM conditional/constraint services source
   std::string operationalModeControlSourceId;  // MM operational mode control provider (empty = disabled)
-  std::string operationalModeStatusSourceId;   // MM operational mode status report source
+  std::string operationalModeStatusSourceId;
 };
 
 //! \brief Operational-mode FSM policy (MM OperationalModeControl/Status services).

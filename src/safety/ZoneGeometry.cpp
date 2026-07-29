@@ -150,9 +150,8 @@ ClearanceInfo ZoneSet::clearanceInfo(const Vec2& p) const {
     return info;
   }
   dir = scale(dir, 1.0 / len);
-  // `dir` points from the boundary toward p. On the compliant side that direction keeps
-  // increasing clearance; on the violating side improving means heading back through the
-  // boundary, i.e. -dir.
+  // `dir` points from the boundary toward p; on the violating side improving means heading
+  // back through the boundary, i.e. -dir.
   info.improveDir = info.clearanceM >= 0.0 ? dir : scale(dir, -1.0);
   return info;
 }
@@ -213,8 +212,8 @@ std::optional<Vec2> ZoneSet::nearestCompliantPoint(const Vec2& p, flt64_t margin
   if (zones_.empty()) {
     return p;
   }
-  // Iterative projection along the binding zone's clearance gradient. Converges immediately for
-  // a single binding constraint; a few iterations handle points binding several zones.
+  // Iterative projection along the binding zone's clearance gradient; a few iterations handle
+  // points binding several zones.
   constexpr int32_t MAX_PROJECTIONS = 12;
   constexpr flt64_t OVERSHOOT = 1e-3;
   Vec2 q = p;

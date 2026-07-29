@@ -11,20 +11,10 @@
 namespace arlcore::autopilot {
 
 //! \brief Tangent-bug style zone avoidance for vector mode, where the goal is only a heading
-//! (never a position): with perfect zone knowledge the "bug" sensors become geometry queries.
-//!
-//! MOTION_TO_HEADING casts a clearance ray along the commanded heading out to a speed- and
-//! turn-radius-scaled lookahead; a hit switches to BOUNDARY_FOLLOW, which circulates the
-//! blocking boundary at the safety-margin standoff using the same atan2 cross-track law shape
-//! as the waypoint tracker (regulating clearance - margin against the turn radius). The follow
-//! direction is chosen once per episode by minimal heading deviation and remembered (direction
-//! memory prevents oscillation at concave features). Corners need no special code: the
-//! closest-feature clearance gradient rounds convex vertices and miters reflex ones. The
-//! episode ends when the commanded heading has been clear (to an extended lookahead) for a
-//! consecutive-tick streak and a minimum dwell has elapsed.
-//!
-//! A keep-in acts as an inverted obstacle automatically: a commanded heading pointing out of
-//! the area keeps hitting the boundary from the inside, so the vehicle circulates it.
+//! (never a position): ray-cast the commanded heading, follow the blocking boundary at the
+//! safety-margin standoff on a hit, release once the heading stays clear.
+//! The follow direction is chosen once per episode and remembered (prevents oscillation at
+//! concave features), and a keep-in acts as an inverted obstacle automatically.
 class VectorZoneGuidance {
  public:
   VectorZoneGuidance(const VectorAvoidanceConfig& config, flt64_t turnRadiusM, flt64_t safetyMarginM);

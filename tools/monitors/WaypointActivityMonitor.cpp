@@ -81,10 +81,8 @@ void WaypointActivityMonitor::poll() {
     metadataBySession_[session] = cmd.waypointsListMetadata();
     mission.listComplete = false;
     mission.waypoints.clear();
-    // Register the (newest) metadata with the list reader exactly once per
-    // sample. Retries below must NOT re-submit retained metadata —
-    // LargeList::receive rejects metadata older than the newest it has seen —
-    // so they re-derive by list id instead.
+    // Register metadata once per sample; retries below re-derive by list id
+    // because LargeList::receive rejects re-submitted (older) metadata.
     listReader_.getListFromMetadata(cmd.waypointsListMetadata());
   }
 
@@ -108,10 +106,8 @@ void WaypointActivityMonitor::poll() {
     }
   }
 
-  // Status samples update whatever session they belong to. An unmatched session (status
-  // drained before its command, e.g. a restart backlog) creates a stub entry rather than
-  // silently dropping the consumed sample — the command sample fills in identity/route when
-  // (if) it arrives.
+  // An unmatched status (drained before its command, e.g. a restart backlog) creates a stub
+  // entry rather than dropping the consumed sample; the command fills in identity/route later.
   StatusType status;
   while (statusReader_->read(&status) == ReadStatus::SUCCESS) {
     const arlcore::NumericGuid session(status.sessionID());

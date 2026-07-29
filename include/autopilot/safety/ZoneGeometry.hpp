@@ -51,14 +51,10 @@ struct ClearanceInfo {
   Vec2 improveDir{1.0, 0.0};  // unit vector toward increasing clearance
 };
 
-//! \brief The active zones projected into one local frame, exposed as signed-clearance queries.
-//!
-//! Compliance convention: `clearanceM(p) > 0` means `p` satisfies every zone, and the value is
-//! the distance to the nearest violating boundary. Margins stay implicit: callers compare the
-//! clearance against their own margin instead of ever offsetting polygons, which sidesteps the
-//! robustness problems of non-convex polygon offsetting entirely. The clearance function is the
-//! min of per-zone signed distances, hence 1-Lipschitz — which `raycastFirstHit` exploits for
-//! sphere-tracing marches.
+//! \brief The active zones projected into one local frame, exposed as signed-clearance queries:
+//! `clearanceM(p) > 0` means `p` satisfies every zone. The clearance is the min of per-zone
+//! signed distances, hence 1-Lipschitz — which `raycastFirstHit` exploits for sphere-tracing
+//! marches; margins stay implicit (callers compare clearance, polygons are never offset).
 class ZoneSet {
  public:
   void addZone(ZoneKind kind, LocalPolygon polygon);
