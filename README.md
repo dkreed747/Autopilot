@@ -112,6 +112,12 @@ docker compose --profile runner up         # + one-shot demo mission
 [`docker-compose.yml`](docker-compose.yml) runs a bridge network with multicast
 off; the tools unicast-peer at the `autopilot` service (the topology CI
 smoke-tests). All services share `./config/autopilot.yaml` (read-only mount).
+
+> **Never run two autopilot instances with the same `identity.*` on one DDS
+> domain** (e.g. a stray local binary plus the container): both publish nav and
+> consume commands under identical IDs, and missions fail in confusing ways.
+> Compose's single `autopilot` service enforces this; for local runs make sure
+> the previous instance is dead first.
 For a console on another host: run the console image there with
 `CYCLONEDDS_URI` peers pointing at the vehicle's IP (and the vehicle side
 peering back or listening with multicast off), publish 8080.

@@ -9,6 +9,7 @@
 #include "InternalTypes.h"
 #include "autopilot/guidance/AngleMath.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
+#include "autopilot/guidance/PlannerParamsFactory.hpp"
 
 using GlobalWaypointType = UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using GlobalPoseReportType = UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
@@ -552,4 +553,24 @@ TEST(DubinsPathPlannerTest, IntegratorStaysFrozenDuringGrossCapture) {
       EXPECT_EQ(planner.xteIntegratorRad(), 0.0);
     }
   }
+}
+
+TEST(DubinsPathPlannerTest, ColinearArrivalYawPlansDirectLeg) {
+  // GIVEN: a vehicle at the origin heading north and a waypoint 100 m dead ahead that
+  //        requires a north arrival attitude (perfectly colinear start/goal/heading)
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 100.0, 3.0, 0.0)};
+
+  // WHEN: the route is planned with the shipped-config parameter derivation
+  arlcore::autopilot::AutopilotConfig config;
+  config.platformCapabilities.surface.cruisingSpeedMps = 3.0;
+  config.platformCapabilities.surface.maxForwardSpeedMps = 6.0;
+  config.platformCapabilities.surface.maxTurnRateRps = 0.2618;
+  planner.plan(route, vehicle.pose(), arlcore::autopilot::derivePlannerParams(config));
+
+  // THEN: the leg is essentially the straight-line distance, not a looping detour
+  EXPECT_FALSE(planner.failed());
+  EXPECT_LT(planner.progress().distanceRemainingM, 150.0)
+      << "leg=" << planner.progress().distanceRemainingM;
 }
