@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -144,7 +145,7 @@ std::optional<double> DubinsPathPlanner::compliantArrivalAzimuth(std::size_t wpI
   }
   // Scan alternates outward from the natural azimuth in 22.5-degree steps.
   const double step = M_PI / 8.0;
-  for (int k = 1; k <= 8; ++k) {
+  for (int32_t k = 1; k <= 8; ++k) {
     for (const double sign : {1.0, -1.0}) {
       const double az = wrapPi(naturalAz + sign * step * k);
       if (runwayCompliant(az)) {
@@ -528,7 +529,7 @@ void DubinsPathPlanner::computeElevationApproachBudget(const GlobalPoseReportTyp
   const double neededS = errM.value() / params_.maxDepthRateMps;
   const double passS = currentLeg_->lengthM / speed;
   if (neededS > passS && passS > 1e-6) {
-    elevApproachBudget_ = std::min(100, static_cast<int>(std::ceil(neededS / passS)));
+    elevApproachBudget_ = std::min(100, static_cast<int32_t>(std::ceil(neededS / passS)));
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner waypoint " << targetIndex_
       << " elevation change of " << errM.value() << " m needs ~"
       << neededS << " s at the platform depth rate (pass is ~" << passS
@@ -561,8 +562,8 @@ bool DubinsPathPlanner::allowSpiralPass(const GlobalPoseReportType& pose, double
   // must start consuming the miss budget.
   if (lastSpiralElevErrM_.has_value() && expectedPerPassM > 1e-6 &&
       lastSpiralElevErrM_.value() - errM.value() >= 0.5 * expectedPerPassM) {
-    const int remaining = std::max(1, static_cast<int>(std::ceil(errM.value() / expectedPerPassM)));
-    const int extended = std::min(100, elevApproachesUsed_ + remaining);
+    const int32_t remaining = std::max(1, static_cast<int32_t>(std::ceil(errM.value() / expectedPerPassM)));
+    const int32_t extended = std::min(100, elevApproachesUsed_ + remaining);
     if (extended > elevApproachBudget_.value()) {
       UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner waypoint " << targetIndex_
         << " elevation still converging with " << errM.value() << " m to go (~"

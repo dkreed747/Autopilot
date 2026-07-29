@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include <GeographicLib/LocalCartesian.hpp>
@@ -124,8 +125,8 @@ static PlannerParams testParams() {
 }
 
 //! \brief Drive the vehicle under planner guidance until the route completes/fails.
-static void runMission(DubinsPathPlanner* planner, PlannerSimVehicle* vehicle, int maxSteps, double dtS = 0.5) {
-  for (int i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
+static void runMission(DubinsPathPlanner* planner, PlannerSimVehicle* vehicle, int32_t maxSteps, double dtS = 0.5) {
+  for (int32_t i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
     const ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
     vehicle->step(cv, dtS);
   }
@@ -231,7 +232,7 @@ TEST(DubinsPathPlannerTest, ProgressMetricsAreSane) {
   EXPECT_NEAR(first.distanceToWaypointM, 300.0, 5.0);
   EXPECT_GE(first.distanceRemainingM, 590.0);
 
-  for (int i = 0; i < 200; i++) {
+  for (int32_t i = 0; i < 200; i++) {
     cv = planner.update(vehicle.pose(), vehicle.speedMps);
     vehicle.step(cv, 0.5);
   }
@@ -282,7 +283,7 @@ TEST(DubinsPathPlannerTest, DenseLawnmowerWithArrivalAttitudes) {
   std::vector<GlobalWaypointType> route;
   const double y0 = 100.0;
   const double y1 = 300.0;
-  for (int lane = 0; lane < 4; lane++) {
+  for (int32_t lane = 0; lane < 4; lane++) {
     const double x = 10.0 * lane;
     const bool up = (lane % 2 == 0);
     const double yaw = up ? north : south;
@@ -312,7 +313,7 @@ TEST(DubinsPathPlannerTest, GateCaptureHappensAtTheWaypointPlane) {
 
   bool sawFirstCapture = false;
   double captureNorth = 0.0;
-  for (int i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
+  for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
     const ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     if (!sawFirstCapture && planner.progress().waypointsRemaining == 1) {
       sawFirstCapture = true;
@@ -383,7 +384,7 @@ TEST(DubinsPathPlannerTest, CrossTrackErrorIsJudgedAgainstThePlannedPath) {
   // path, so it stays small even while the vehicle is mid-turn, far from any straight line
   // between the waypoints.
   double maxAbsXte = 0.0;
-  for (int i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
+  for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
     const ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     if (planner.progress().crossTrackErrorM.has_value()) {
       maxAbsXte = std::max(maxAbsXte, std::fabs(planner.progress().crossTrackErrorM.value()));

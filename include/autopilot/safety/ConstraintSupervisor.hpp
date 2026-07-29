@@ -2,6 +2,7 @@
 #define AUTOPILOT_SAFETY_CONSTRAINTSUPERVISOR_HPP_
 
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -81,7 +82,7 @@ class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
   //! \brief Debounce/clear state for one active conditional.
   struct ViolationTracker {
     ConstraintClass cls = ConstraintClass::OTHER;
-    int rawViolatingTicks = 0;
+    int32_t rawViolatingTicks = 0;
     bool confirmed = false;
     std::chrono::steady_clock::time_point confirmedAt{};
     std::optional<std::chrono::steady_clock::time_point> compliantSince;

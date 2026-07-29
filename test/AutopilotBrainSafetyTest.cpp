@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -19,7 +20,7 @@ class FakeVehicle : public IVehicleControl {
   bool isManualEngaged() const override { return manualEngaged; }
 
   std::optional<ControlVector> last;
-  int sendCount = 0;
+  int32_t sendCount = 0;
   bool manualEngaged = false;
 };
 
@@ -94,7 +95,7 @@ TEST_F(AutopilotBrainSafetyTest, ManualEngagedSuppressesAllActuation) {
   brain_->setVectorSetpoint(vectorCommand(1.0, 3.0));
   brain_->onNavUpdate();
   ASSERT_TRUE(vehicle_.last.has_value());
-  const int sendsBefore = vehicle_.sendCount;
+  const int32_t sendsBefore = vehicle_.sendCount;
 
   // WHEN: the platform engages manual control and control paths keep running
   vehicle_.manualEngaged = true;

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdint>
 #include <memory>
 
 #include "autopilot/guidance/AngleMath.hpp"
@@ -76,7 +77,7 @@ TEST(SimVehicleControlTest, RespectsTurnRateLimit) {
   vehicle->stepOnce(0.1);
   // 0.25 rad/s * 0.1 s = 0.025 rad per step, far less than the pi/2 error.
   EXPECT_NEAR(vehicle->state().headingRad, 0.025, 1e-9);
-  for (int i = 0; i < 100; i++) {
+  for (int32_t i = 0; i < 100; i++) {
     vehicle->stepOnce(0.1);
   }
   // After 10+ seconds it converges on the commanded heading.
@@ -89,7 +90,7 @@ TEST(SimVehicleControlTest, RespectsAccelerationAndSpeedCap) {
   vehicle->sendControlVector(makeCv(0.0, 100.0));  // way over the platform limit
   vehicle->stepOnce(0.5);
   EXPECT_NEAR(vehicle->state().speedMps, 0.5, 1e-9);  // 1 m/s^2 * 0.5 s
-  for (int i = 0; i < 40; i++) {
+  for (int32_t i = 0; i < 40; i++) {
     vehicle->stepOnce(0.5);
   }
   EXPECT_NEAR(vehicle->state().speedMps, 6.0, 1e-9);  // clamped at maxForwardSpeed
@@ -99,7 +100,7 @@ TEST(SimVehicleControlTest, MovesNorthWhenCommandedNorth) {
   SimFixture f;
   auto vehicle = f.make();
   vehicle->sendControlVector(makeCv(0.0, 4.0));
-  for (int i = 0; i < 200; i++) {
+  for (int32_t i = 0; i < 200; i++) {
     vehicle->stepOnce(0.1);  // 20 s: ramps to 4 m/s then cruises north
   }
   const auto st = vehicle->state();
@@ -114,7 +115,7 @@ TEST(SimVehicleControlTest, VelocityReportMatchesHeadingAndSpeed) {
   SimFixture f;
   auto vehicle = f.make();
   vehicle->sendControlVector(makeCv(M_PI_2, 2.0));  // east
-  for (int i = 0; i < 400; i++) {
+  for (int32_t i = 0; i < 400; i++) {
     vehicle->stepOnce(0.1);
   }
   VelocityReportType velocity;
@@ -134,7 +135,7 @@ TEST(SimVehicleControlTest, DrivesDepthAndPublishesAltitudeAboveSeaFloor) {
   cv.elevationM = 20.0;
   cv.elevationFrame = ElevationFrame::DEPTH;
   vehicle->sendControlVector(cv);
-  for (int i = 0; i < 300; i++) {
+  for (int32_t i = 0; i < 300; i++) {
     vehicle->stepOnce(0.1);
   }
   EXPECT_NEAR(vehicle->state().depthM, 20.0, 1e-6);
@@ -150,7 +151,7 @@ TEST(SimVehicleControlTest, DrivesDepthAndPublishesAltitudeAboveSeaFloor) {
   cv.elevationM = 10.0;
   cv.elevationFrame = ElevationFrame::ALTITUDE_ASF;
   vehicle->sendControlVector(cv);
-  for (int i = 0; i < 300; i++) {
+  for (int32_t i = 0; i < 300; i++) {
     vehicle->stepOnce(0.1);
   }
   EXPECT_NEAR(vehicle->state().depthM, 40.0, 1e-6);
@@ -159,7 +160,7 @@ TEST(SimVehicleControlTest, DrivesDepthAndPublishesAltitudeAboveSeaFloor) {
   cv.elevationM = 500.0;
   cv.elevationFrame = ElevationFrame::DEPTH;
   vehicle->sendControlVector(cv);
-  for (int i = 0; i < 300; i++) {
+  for (int32_t i = 0; i < 300; i++) {
     vehicle->stepOnce(0.1);
   }
   EXPECT_NEAR(vehicle->state().depthM, 50.0, 1e-6);
@@ -174,7 +175,7 @@ TEST(SimVehicleControlTest, ThreadedRunPublishesAtCycleRate) {
   vehicle->shutdown();
 
   // ~15 cycles expected in 300 ms at 50 Hz; allow generous scheduling slop.
-  int count = 0;
+  int32_t count = 0;
   GlobalPoseReportType pose;
   while (f.poseIo->read(&pose) == arlcore::io::ReadStatus::SUCCESS) {
     count++;

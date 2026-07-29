@@ -30,9 +30,9 @@ struct PlannerParams {
   double posCaptureM = 2.5;         // default capture-gate half-width
   double yawCaptureRad = 0.1745;    // default arrival-attitude capture half-width
   double elevCaptureM = 1.0;        // default elevation capture tolerance
-  int maxMissesPerWaypoint = 3;     // misses before the route fails
+  int32_t maxMissesPerWaypoint = 3;     // misses before the route fails
   bool elevationCountsAsMiss = true;
-  int maxReplans = 10;              // guard against endless replanning (spirals excluded)
+  int32_t maxReplans = 10;              // guard against endless replanning (spirals excluded)
   double sampleStepM = 2.0;         // path polyline sampling resolution
   double maxDepthRateMps = 0.0;     // platform depth-change limit (0 = unknown/surface-only)
   double zoneMarginM = 5.0;         // required clearance from active zone boundaries
@@ -194,7 +194,7 @@ class DubinsPathPlanner {
   void updateDistanceMetrics(double xE, double yN, double distToWaypointM);
 
   std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType> waypoints_;
-  std::vector<int> missCounts_;
+  std::vector<int32_t> missCounts_;
   PlannerParams params_;
 
   const ZoneMap* zoneMap_ = nullptr;  // shared zone store (nullable)
@@ -211,9 +211,9 @@ class DubinsPathPlanner {
   std::optional<double> lastGateAlongM_;  // previous signed along-track distance to the gate
   bool routeComplete_ = false;
   bool failed_ = false;
-  int replanCount_ = 0;
-  int elevApproachesUsed_ = 0;          // spiral passes consumed on the current leg
-  std::optional<int> elevApproachBudget_;  // planned spiral passes for the current leg
+  int32_t replanCount_ = 0;
+  int32_t elevApproachesUsed_ = 0;          // spiral passes consumed on the current leg
+  std::optional<int32_t> elevApproachBudget_;  // planned spiral passes for the current leg
   std::optional<double> lastSpiralElevErrM_;  // elevation error at the previous spiral pass
   bool hasLastPos_ = false;
   double lastXE_ = 0.0;                 // previous update position (cumulative distance)

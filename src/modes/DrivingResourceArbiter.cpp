@@ -6,7 +6,7 @@ namespace arlcore::autopilot {
 
 DrivingResourceArbiter::DrivingResourceArbiter(const ArbitrationConfig& config) : config_(config) {}
 
-int DrivingResourceArbiter::priorityOf(DriveSource who, CommandClass cls) const {
+int32_t DrivingResourceArbiter::priorityOf(DriveSource who, CommandClass cls) const {
   const ClassArbitrationPriorities& classPriorities =
       (cls == CommandClass::REMOTE) ? config_.remote : config_.local;
   switch (who) {

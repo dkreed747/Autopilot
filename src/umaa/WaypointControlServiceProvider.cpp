@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -31,7 +32,7 @@ static UMAA::Common::Measurement::DateTime timestampPlus(double secondsAhead) {
 
 WaypointControlServiceProvider::WaypointControlServiceProvider(
     const arlcore::NumericGuid& source, std::shared_ptr<WaypointControlServiceProviderIo> io,
-    IAutopilot* autopilot, double maxForwardSpeedMps, int maxListWaitCycles,
+    IAutopilot* autopilot, double maxForwardSpeedMps, int32_t maxListWaitCycles,
     const ISafetyGate* safetyGate, const ZoneMap* zoneMap, ICommandModeGate* modeGate) :
     CommandProviderBase(source, io),
     sourceId_(source),

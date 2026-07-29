@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -117,8 +118,8 @@ static double previewMinClearance(const std::vector<std::pair<double, double>>& 
   return minClearance;
 }
 
-static void runMission(DubinsPathPlanner* planner, ConstrainedSimVehicle* vehicle, int maxSteps, double dtS = 0.5) {
-  for (int i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
+static void runMission(DubinsPathPlanner* planner, ConstrainedSimVehicle* vehicle, int32_t maxSteps, double dtS = 0.5) {
+  for (int32_t i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
     const ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
     vehicle->step(cv, dtS);
   }
@@ -162,7 +163,7 @@ TEST(ConstrainedPlannerTest, DirectLegDetoursAroundKeepOut) {
 
   // ... and the flown track never violates the zone.
   double minFlownClearance = 1e18;
-  for (int i = 0; i < 3000 && !planner.routeComplete() && !planner.failed(); ++i) {
+  for (int32_t i = 0; i < 3000 && !planner.routeComplete() && !planner.failed(); ++i) {
     const ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     vehicle.step(cv, 0.5);
     minFlownClearance = std::min(minFlownClearance,
@@ -204,7 +205,7 @@ TEST(ConstrainedPlannerTest, MidRouteConstraintChangeReplansCurrentLeg) {
 
   // The replanned remainder respects the new zone and the mission still completes.
   double minFlownClearance = 1e18;
-  for (int i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); ++i) {
+  for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); ++i) {
     const ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     vehicle.step(cv, 0.5);
     minFlownClearance = std::min(minFlownClearance,

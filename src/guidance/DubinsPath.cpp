@@ -216,7 +216,7 @@ std::optional<DubinsPath> DubinsPath::solve(const Dubins2DPose& start, const Dub
 Dubins2DPose DubinsPath::sample(double sM) const {
   double s = std::clamp(sM, 0.0, lengthM());
   Dubins2DPose pose = start_;
-  for (int i = 0; i < 3; i++) {
+  for (std::size_t i = 0; i < 3; i++) {
     const double segLen = lengths_[i];
     if (s <= segLen) {
       return advance(pose, types_[i], s, rho_);
@@ -234,7 +234,7 @@ std::array<DubinsSegment, 3> DubinsPath::segments() const {
 
 std::string DubinsPath::word() const {
   std::string out;
-  for (int i = 0; i < 3; i++) {
+  for (std::size_t i = 0; i < 3; i++) {
     switch (types_[i]) {
       case SegType::LEFT:
         out += 'L';

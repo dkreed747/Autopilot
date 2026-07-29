@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdint>
 #include <random>
 
 #include "autopilot/guidance/DubinsPath.hpp"
@@ -77,7 +78,7 @@ TEST(DubinsPathTest, RandomizedEndpointCorrectness) {
   std::uniform_real_distribution<double> pos(-500.0, 500.0);
   std::uniform_real_distribution<double> ang(-kPi, kPi);
   std::uniform_real_distribution<double> radius(1.0, 80.0);
-  for (int i = 0; i < 2000; i++) {
+  for (int32_t i = 0; i < 2000; i++) {
     const Dubins2DPose start{pos(rng), pos(rng), ang(rng)};
     const Dubins2DPose goal{pos(rng), pos(rng), ang(rng)};
     expectReachesGoal(start, goal, radius(rng));
@@ -88,7 +89,7 @@ TEST(DubinsPathTest, RandomizedShortestIsLowerBoundedByEuclidean) {
   std::mt19937 rng(7);
   std::uniform_real_distribution<double> pos(-300.0, 300.0);
   std::uniform_real_distribution<double> ang(-kPi, kPi);
-  for (int i = 0; i < 500; i++) {
+  for (int32_t i = 0; i < 500; i++) {
     const Dubins2DPose start{pos(rng), pos(rng), ang(rng)};
     const Dubins2DPose goal{pos(rng), pos(rng), ang(rng)};
     const auto path = DubinsPath::solve(start, goal, 25.0);

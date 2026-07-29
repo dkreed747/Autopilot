@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <memory>
@@ -149,8 +150,8 @@ struct Harness {
     vehicle.integrate(dtS);
   }
 
-  void stepFor(int ticks, double dtS = 0.25) {
-    for (int i = 0; i < ticks; ++i) {
+  void stepFor(int32_t ticks, double dtS = 0.25) {
+    for (int32_t i = 0; i < ticks; ++i) {
       step(dtS);
     }
   }
@@ -275,7 +276,7 @@ TEST_F(SafetyEndToEndTest, SrpRunsToCompletionAndReleases) {
   EXPECT_FALSE(h.brain->safeRouteComplete());
 
   // Fly the SRP to completion; the strategy then releases the autopilot.
-  int ticks = 0;
+  int32_t ticks = 0;
   while (h.supervisor->safetyState() == ConstraintSupervisor::SafetyState::SAFE_MODE && ticks < 3000) {
     h.step();
     ++ticks;
@@ -310,7 +311,7 @@ TEST_F(SafetyEndToEndTest, SrpHoldRepositionsOnDriftOut) {
   // so observe the vehicle position rather than the transient route state).
   const auto driftM = [&h] { return std::hypot(h.vehicle.xE - 100.0, h.vehicle.yN - 40.0); };
   const auto holding = [&h] { return h.vehicle.last.has_value() && h.vehicle.last->speedMps == 0.0; };
-  int ticks = 0;
+  int32_t ticks = 0;
   while (!holding() && ticks < 4000) {
     h.step();
     ++ticks;

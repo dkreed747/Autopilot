@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -135,7 +136,7 @@ ClearanceInfo ZoneSet::clearanceInfo(const Vec2& p) const {
     const double probe = 0.5;
     Vec2 bestDir{1.0, 0.0};
     double bestClearance = -std::numeric_limits<double>::max();
-    for (int k = 0; k < 8; ++k) {
+    for (int32_t k = 0; k < 8; ++k) {
       const double a = 2.0 * M_PI * k / 8.0;
       const Vec2 d{std::cos(a), std::sin(a)};
       const double c = clearanceM(add(p, scale(d, probe)));
@@ -160,8 +161,8 @@ bool ZoneSet::segmentClear(const Vec2& a, const Vec2& b, double marginM, double 
     return true;
   }
   const double length = norm(sub(b, a));
-  const int steps = std::max(1, static_cast<int>(std::ceil(length / std::max(stepM, 0.01))));
-  for (int i = 0; i <= steps; ++i) {
+  const int32_t steps = std::max(1, static_cast<int32_t>(std::ceil(length / std::max(stepM, 0.01))));
+  for (int32_t i = 0; i <= steps; ++i) {
     const double t = static_cast<double>(i) / steps;
     const Vec2 p = add(a, scale(sub(b, a), t));
     if (clearanceM(p) < marginM) {
@@ -176,8 +177,8 @@ bool ZoneSet::pathClear(const DubinsPath& path, double marginM, double stepM) co
     return true;
   }
   const double length = path.lengthM();
-  const int steps = std::max(1, static_cast<int>(std::ceil(length / std::max(stepM, 0.01))));
-  for (int i = 0; i <= steps; ++i) {
+  const int32_t steps = std::max(1, static_cast<int32_t>(std::ceil(length / std::max(stepM, 0.01))));
+  for (int32_t i = 0; i <= steps; ++i) {
     const double s = length * i / steps;
     const Dubins2DPose pose = path.sample(s);
     if (clearanceM(Vec2{pose.x, pose.y}) < marginM) {
@@ -213,10 +214,10 @@ std::optional<Vec2> ZoneSet::nearestCompliantPoint(const Vec2& p, double marginM
   }
   // Iterative projection along the binding zone's clearance gradient. Converges immediately for
   // a single binding constraint; a few iterations handle points binding several zones.
-  constexpr int MAX_PROJECTIONS = 12;
+  constexpr int32_t MAX_PROJECTIONS = 12;
   constexpr double OVERSHOOT = 1e-3;
   Vec2 q = p;
-  for (int i = 0; i < MAX_PROJECTIONS; ++i) {
+  for (int32_t i = 0; i < MAX_PROJECTIONS; ++i) {
     const ClearanceInfo info = clearanceInfo(q);
     if (info.clearanceM >= marginM) {
       return q;
@@ -227,8 +228,8 @@ std::optional<Vec2> ZoneSet::nearestCompliantPoint(const Vec2& p, double marginM
   const double startClearance = clearanceM(p);
   const double deficit = std::max(marginM - startClearance, 1.0);
   for (double radius = deficit; radius <= 64.0 * deficit; radius *= 1.5) {
-    constexpr int DIRECTIONS = 32;
-    for (int k = 0; k < DIRECTIONS; ++k) {
+    constexpr int32_t DIRECTIONS = 32;
+    for (int32_t k = 0; k < DIRECTIONS; ++k) {
       const double a = 2.0 * M_PI * k / DIRECTIONS;
       const Vec2 candidate = add(p, Vec2{radius * std::cos(a), radius * std::sin(a)});
       if (clearanceM(candidate) >= marginM) {

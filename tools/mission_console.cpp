@@ -20,6 +20,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <deque>
 #include <iostream>
 #include <memory>
@@ -661,7 +662,7 @@ static VectorSetpoint parseVectorBody(const json& body, const AutopilotConfig& c
 
 int main(int argc, char** argv) {
   const std::string configPath = (argc > 1) ? argv[1] : "autopilot.yaml";
-  const int port = (argc > 2) ? std::stoi(argv[2]) : 8080;
+  const int32_t port = (argc > 2) ? std::stoi(argv[2]) : 8080;
   const std::string webRoot = (argc > 3) ? argv[3] : "web";
 
   AutopilotConfig config;
@@ -803,8 +804,8 @@ int main(int argc, char** argv) {
   // cap on concurrent streams keeps workers free for the control endpoints — /api/rc
   // heartbeats starving here would trip the deadman and stop the vehicle mid-drive.
   server.new_task_queue = [] { return new httplib::ThreadPool(16); };  // NOLINT: httplib takes ownership of the raw pointer
-  constexpr int kMaxSseClients = 8;
-  auto sseClients = std::make_shared<std::atomic<int>>(0);
+  constexpr int32_t kMaxSseClients = 8;
+  auto sseClients = std::make_shared<std::atomic<int32_t>>(0);
   if (!server.set_mount_point("/", webRoot)) {
     std::cerr << "Web root '" << webRoot << "' not found (serving API only)" << std::endl;
   }

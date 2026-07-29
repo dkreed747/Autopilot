@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
+
 #include "autopilot/modes/DrivingResourceArbiter.hpp"
 
 namespace arlcore::autopilot {
 
 //! \brief Config with the default class split: safe > remote {500,400} > local {vector,waypoint}.
-static ArbitrationConfig makeConfig(int localVector = 100, int localWaypoint = 10, int safe = 1000) {
+static ArbitrationConfig makeConfig(int32_t localVector = 100, int32_t localWaypoint = 10, int32_t safe = 1000) {
   ArbitrationConfig config;
   config.local.vectorPriority = localVector;
   config.local.waypointPriority = localWaypoint;

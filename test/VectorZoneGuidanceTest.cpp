@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 #include "autopilot/guidance/AngleMath.hpp"
 #include "autopilot/safety/VectorZoneGuidance.hpp"
@@ -27,9 +28,9 @@ struct BugSim {
   double maxTurnRateRps = 0.3;
   double dtS = 0.25;
 
-  double run(VectorZoneGuidance* guidance, const ZoneSet& zones, double commandedAz, int steps) {
+  double run(VectorZoneGuidance* guidance, const ZoneSet& zones, double commandedAz, int32_t steps) {
     double minClearance = 1e18;
-    for (int i = 0; i < steps; ++i) {
+    for (int32_t i = 0; i < steps; ++i) {
       const double heading = guidance->steer(commandedAz, pos, speed, zones);
       const double err = wrapPi(heading - yawAz);
       yawAz = wrapPi(yawAz + std::clamp(err, -maxTurnRateRps * dtS, maxTurnRateRps * dtS));

@@ -41,8 +41,8 @@ struct OperationalModeConfig {
 
 //! \brief Driving-resource arbitration priorities for one command class. Higher wins.
 struct ClassArbitrationPriorities {
-  int vectorPriority = 100;
-  int waypointPriority = 10;
+  int32_t vectorPriority = 100;
+  int32_t waypointPriority = 10;
 };
 
 //! \brief Driving-resource arbitration priorities. Defaults keep safe-mode maneuvers above
@@ -51,7 +51,7 @@ struct ClassArbitrationPriorities {
 struct ArbitrationConfig {
   ClassArbitrationPriorities local;
   ClassArbitrationPriorities remote{500, 400};
-  int safePriority = 1000;
+  int32_t safePriority = 1000;
 };
 
 //! \brief Consumer-side UMAA identity for the mission console / mission runner tools. Their
@@ -64,8 +64,8 @@ struct ConsoleConfig {
 };
 
 struct LoopConfig {
-  int controlPeriodMs = 50;
-  int navStalenessTimeoutMs = 2000;
+  int32_t controlPeriodMs = 50;
+  int32_t navStalenessTimeoutMs = 2000;
 };
 
 //! \brief Default tolerances applied to a vector command when it omits them.
@@ -87,10 +87,10 @@ struct WaypointToleranceConfig {
 //! \brief RRT* fallback planner settings (used only when the direct Dubins leg clips a zone).
 struct RrtConfig {
   uint32_t seed = 12345;       // deterministic sampling; salted per waypoint index
-  int maxIterations = 2000;
-  int timeBudgetMs = 150;
+  int32_t maxIterations = 2000;
+  int32_t timeBudgetMs = 150;
   double goalBias = 0.10;
-  int nearK = 8;
+  int32_t nearK = 8;
   double edgeCheckStepM = 4.0;   // coarse in-tree edge sampling
   double finalCheckStepM = 1.0;  // fine recheck of the accepted path
 };
@@ -98,10 +98,10 @@ struct RrtConfig {
 struct PlannerConfig {
   double leadDistanceM = 50.0;
   double turnRadiusMargin = 1.25;  // planned radius = margin * (speed / max turn rate)
-  int maxListWaitCycles = 200;
-  int maxMissesPerWaypoint = 3;
+  int32_t maxListWaitCycles = 200;
+  int32_t maxMissesPerWaypoint = 3;
   bool elevationCountsAsMiss = true;
-  int maxReplans = 10;
+  int32_t maxReplans = 10;
   RrtConfig rrt;
 };
 
@@ -119,7 +119,7 @@ struct ZonesConfig {
   double safetyMarginM = 5.0;          // planning/steering standoff from zone boundaries
   double complianceHysteresisM = 2.0;  // clearance needed to count as recovered (anti-flap)
   double elevationMarginM = 2.0;       // pad on the vertical envelope used for band gating
-  int ellipseSegments = 32;            // vertices of the conservative ellipse polygon
+  int32_t ellipseSegments = 32;            // vertices of the conservative ellipse polygon
 };
 
 //! \brief Tangent-bug style vector-mode avoidance tuning.
@@ -127,7 +127,7 @@ struct VectorAvoidanceConfig {
   double lookaheadRhoFactor = 1.5;  // lookahead >= factor * turn radius
   double lookaheadSpeedS = 2.0;     // plus this many seconds at current speed
   double exitClearFactor = 1.3;     // leave boundary-follow when clear to factor * lookahead
-  int exitClearTicks = 10;          // ... for this many consecutive ticks
+  int32_t exitClearTicks = 10;          // ... for this many consecutive ticks
   double minFollowS = 2.0;          // minimum boundary-follow dwell (hysteresis)
 };
 
@@ -160,10 +160,10 @@ struct SafetyConfig {
   std::optional<double> graceZoneS;       // per-class overrides of grace_period_s
   std::optional<double> graceSpeedS;
   std::optional<double> graceElevationS;
-  int violationConfirmTicks = 2;   // consecutive violating ticks before a violation is confirmed
+  int32_t violationConfirmTicks = 2;   // consecutive violating ticks before a violation is confirmed
   double clearHoldS = 2.0;         // how long compliant must hold before a violation clears
   bool exitOnAllClear = true;      // leave safe mode when violations clear (else strategy decides)
-  int stateReportPeriodMs = 1000;  // ConditionalStateReport publish period
+  int32_t stateReportPeriodMs = 1000;  // ConditionalStateReport publish period
   SafeModeConfig safeMode;
 };
 

@@ -2,6 +2,7 @@
 #define AUTOPILOT_SAFETY_VECTORZONEGUIDANCE_HPP_
 
 #include <chrono>
+#include <cstdint>
 
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/safety/ZoneGeometry.hpp"
@@ -53,7 +54,7 @@ class VectorZoneGuidance {
 
   State state_ = State::MOTION_TO_HEADING;
   bool followRight_ = false;  // wall kept to port (follow clockwise) when true
-  int clearTicks_ = 0;
+  int32_t clearTicks_ = 0;
   std::chrono::steady_clock::time_point followStart_{};
 };
 

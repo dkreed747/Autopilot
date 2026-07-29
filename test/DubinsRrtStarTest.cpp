@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdint>
 
 #include "autopilot/guidance/DubinsRrtStar.hpp"
 
@@ -20,8 +21,8 @@ static DubinsRrtParams testParams() {
 static double chainMinClearance(const std::vector<DubinsPath>& chain, const ZoneSet& zones) {
   double minClearance = 1e18;
   for (const DubinsPath& path : chain) {
-    const int steps = std::max(1, static_cast<int>(std::ceil(path.lengthM())));
-    for (int i = 0; i <= steps; ++i) {
+    const int32_t steps = std::max(1, static_cast<int32_t>(std::ceil(path.lengthM())));
+    for (int32_t i = 0; i <= steps; ++i) {
       const Dubins2DPose p = path.sample(path.lengthM() * i / steps);
       minClearance = std::min(minClearance, zones.clearanceM({p.x, p.y}));
     }

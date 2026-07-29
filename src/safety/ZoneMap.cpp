@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -31,7 +32,7 @@ void ZoneMap::ensureAnchor(const ConstraintSnapshot& snapshot) {
 }
 
 std::vector<GeoPoint> ZoneMap::ellipseToRing(const ZoneEllipse& ellipse, ZoneKind kind) const {
-  const int n = std::max(config_.ellipseSegments, 8);
+  const int32_t n = std::max(config_.ellipseSegments, 8);
   // Circumscribing a keep-out grows the forbidden region; inscribing a keep-in shrinks the
   // allowed one. Both directions are conservative.
   const double scale = kind == ZoneKind::KEEP_OUT ? 1.0 / std::cos(M_PI / n) : 1.0;
@@ -48,7 +49,7 @@ std::vector<GeoPoint> ZoneMap::ellipseToRing(const ZoneEllipse& ellipse, ZoneKin
 
   std::vector<GeoPoint> ring;
   ring.reserve(n);
-  for (int k = 0; k < n; ++k) {
+  for (int32_t k = 0; k < n; ++k) {
     const double t = 2.0 * M_PI * k / n;
     const double ex = cx + a * std::cos(t) * uMajor.x + b * std::sin(t) * uMinor.x;
     const double ny = cy + a * std::cos(t) * uMajor.y + b * std::sin(t) * uMinor.y;

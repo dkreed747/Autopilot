@@ -1,6 +1,7 @@
 #ifndef AUTOPILOT_UMAA_WAYPOINTCONTROLSERVICEPROVIDER_HPP_
 #define AUTOPILOT_UMAA_WAYPOINTCONTROLSERVICEPROVIDER_HPP_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,7 +32,7 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
                                  std::shared_ptr<WaypointControlServiceProviderIo> io,
                                  IAutopilot* autopilot,
                                  double maxForwardSpeedMps,
-                                 int maxListWaitCycles,
+                                 int32_t maxListWaitCycles,
                                  const ISafetyGate* safetyGate = nullptr,
                                  const ZoneMap* zoneMap = nullptr,
                                  ICommandModeGate* modeGate = nullptr);
@@ -77,7 +78,7 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
   arlcore::umaa::LargeListReader<UMAA::MO::GlobalWaypointControl::GlobalWaypointType,
       GlobalWaypointCommandTypeWaypointsListElement> listReader_;
   double maxForwardSpeedMps_;
-  int maxListWaitCycles_;
+  int32_t maxListWaitCycles_;
   const ISafetyGate* safetyGate_;
   const ZoneMap* zoneMap_;
   ICommandModeGate* modeGate_;
@@ -87,7 +88,7 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
   bool sessionActive_ = false;
   bool acquired_ = false;
   bool planned_ = false;
-  int listWaitCycles_ = 0;
+  int32_t listWaitCycles_ = 0;
 
   // Hold bookkeeping (one session at a time under CANCEL_EXISTING): the epoch recorded when
   // the hold began; an authoritative mode change bumps the gate's epoch and flushes the hold.

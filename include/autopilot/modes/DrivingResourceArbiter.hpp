@@ -1,6 +1,7 @@
 #ifndef AUTOPILOT_MODES_DRIVINGRESOURCEARBITER_HPP_
 #define AUTOPILOT_MODES_DRIVINGRESOURCEARBITER_HPP_
 
+#include <cstdint>
 #include <mutex>
 #include <set>
 
@@ -50,12 +51,12 @@ class DrivingResourceArbiter {
   bool wasRevoked(DriveSource who) const;
 
  private:
-  int priorityOf(DriveSource who, CommandClass cls) const;
+  int32_t priorityOf(DriveSource who, CommandClass cls) const;
 
   mutable std::mutex mtx_;
   ArbitrationConfig config_;
   DriveSource holder_ = DriveSource::NONE;
-  int holderPriority_ = -1;
+  int32_t holderPriority_ = -1;
   std::set<DriveSource> revoked_;
 };
 

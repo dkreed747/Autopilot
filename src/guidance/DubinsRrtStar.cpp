@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <random>
 
@@ -12,11 +13,11 @@ namespace arlcore::autopilot {
 
 struct Node {
   Dubins2DPose pose;
-  int parent = -1;
+  int32_t parent = -1;
   DubinsPath edge;  // path from parent to this node (unset for the root)
   double cost = 0.0;
 
-  Node(const Dubins2DPose& p, int par, const DubinsPath& e, double c)
+  Node(const Dubins2DPose& p, int32_t par, const DubinsPath& e, double c)
       : pose(p), parent(par), edge(e), cost(c) {}
   explicit Node(const Dubins2DPose& p) : pose(p), edge(*DubinsPath::solve(p, p, 1.0)) {}
 };
@@ -26,13 +27,13 @@ static double euclidean(const Dubins2DPose& a, const Dubins2DPose& b) {
 }
 
 //! \brief Indices of the k nodes nearest to `pose`, Euclidean-prefiltered from 3k candidates.
-static std::vector<int> nearIndices(const std::vector<Node>& nodes, const Dubins2DPose& pose, int k) {
-  std::vector<int> idx(nodes.size());
+static std::vector<int32_t> nearIndices(const std::vector<Node>& nodes, const Dubins2DPose& pose, int32_t k) {
+  std::vector<int32_t> idx(nodes.size());
   for (std::size_t i = 0; i < nodes.size(); ++i) {
-    idx[i] = static_cast<int>(i);
+    idx[i] = static_cast<int32_t>(i);
   }
   const std::size_t keep = std::min(nodes.size(), static_cast<std::size_t>(3 * k));
-  std::partial_sort(idx.begin(), idx.begin() + keep, idx.end(), [&](int a, int b) {
+  std::partial_sort(idx.begin(), idx.begin() + keep, idx.end(), [&](int32_t a, int32_t b) {
     return euclidean(nodes[a].pose, pose) < euclidean(nodes[b].pose, pose);
   });
   idx.resize(keep);
@@ -75,12 +76,12 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
   // Best goal connections found so far: (cost, tree node index, edge to goal).
   struct GoalLink {
     double cost;
-    int from;
+    int32_t from;
     DubinsPath edge;
   };
   std::vector<GoalLink> goalLinks;
 
-  const auto tryGoalConnection = [&](int from) {
+  const auto tryGoalConnection = [&](int32_t from) {
     const std::optional<DubinsPath> edge = DubinsPath::solve(nodes[from].pose, goal, params.rhoM);
     if (edge.has_value() && edgeClear(edge.value(), params.edgeCheckStepM)) {
       goalLinks.push_back(GoalLink{nodes[from].cost + edge->lengthM(), from, edge.value()});
@@ -88,7 +89,7 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
   };
   tryGoalConnection(0);
 
-  for (int iter = 0; iter < params.maxIterations; ++iter) {
+  for (int32_t iter = 0; iter < params.maxIterations; ++iter) {
     if ((iter & 0x1F) == 0 && std::chrono::steady_clock::now() > deadline) {
       UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Dubins-RRT*: time budget reached after " << iter << " iterations")
       break;
@@ -104,14 +105,14 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
       }
     }
 
-    const std::vector<int> near = nearIndices(nodes, sample, params.nearK);
+    const std::vector<int32_t> near = nearIndices(nodes, sample, params.nearK);
 
     // Choose parent: cheapest collision-free exact Dubins edge among the near set.
-    int bestParent = -1;
+    int32_t bestParent = -1;
     double bestCost = std::numeric_limits<double>::max();
     std::optional<DubinsPath> bestEdge;
-    int exactChecked = 0;
-    for (int candidate : near) {
+    int32_t exactChecked = 0;
+    for (int32_t candidate : near) {
       if (exactChecked >= params.nearK) {
         break;
       }
@@ -132,11 +133,11 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
     }
 
     nodes.emplace_back(sample, bestParent, bestEdge.value(), bestCost);
-    const int newIndex = static_cast<int>(nodes.size()) - 1;
+    const int32_t newIndex = static_cast<int32_t>(nodes.size()) - 1;
 
     // Rewire: re-route near nodes through the new node when that is cheaper.
     exactChecked = 0;
-    for (int candidate : near) {
+    for (int32_t candidate : near) {
       if (candidate == bestParent || exactChecked >= params.nearK) {
         continue;
       }
@@ -172,7 +173,7 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
     std::vector<DubinsPath> chain;
     chain.push_back(link.edge);
     bool valid = edgeClear(link.edge, params.finalCheckStepM);
-    for (int i = link.from; valid && i > 0; i = nodes[i].parent) {
+    for (int32_t i = link.from; valid && i > 0; i = nodes[i].parent) {
       valid = edgeClear(nodes[i].edge, params.finalCheckStepM);
       chain.push_back(nodes[i].edge);
     }
