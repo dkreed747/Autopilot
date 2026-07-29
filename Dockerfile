@@ -37,8 +37,8 @@ RUN test -f umaa-cpp/CMakeLists.txt \
 
 # App-only release build (runtime component: binaries, SDK lib, web root,
 # config -- no headers or cmake package files).
-RUN cmake --preset ci -DAUTOPILOT_BUILD_TESTS=OFF \
-    && cmake --build --preset ci \
+RUN cmake --preset amd64-release -DAUTOPILOT_BUILD_TESTS=OFF \
+    && cmake --build --preset amd64-release \
     && cmake --install build --component runtime --prefix /opt/autopilot
 
 # The binaries resolve autopilot.yaml, CYCLONE_QOS_PROFILES.xml, log4cxx.xml,

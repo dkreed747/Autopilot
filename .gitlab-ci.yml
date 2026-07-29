@@ -52,10 +52,10 @@ build-test:
   image: "${DEV_IMAGE}:${BASE_IMAGE_TAG}"
   script: |
     set -e
-    cmake --preset ci
-    cmake --build --preset ci
+    cmake --preset amd64-release
+    cmake --build --preset amd64-release
     mkdir -p reports
-    ctest --preset ci --output-junit "${CI_PROJECT_DIR}/reports/ctest-junit.xml"
+    ctest --preset amd64-release --output-junit "${CI_PROJECT_DIR}/reports/ctest-junit.xml"
   artifacts:
     when: always
     reports:
