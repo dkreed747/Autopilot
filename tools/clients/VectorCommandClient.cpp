@@ -72,6 +72,11 @@ VectorCommandClient::VectorCommandClient(const dds::domain::DomainParticipant& p
       destinationId_(destinationId) {}
 
 arlcore::NumericGuid VectorCommandClient::start(const VectorSetpoint& setpoint) {
+  if (sessionId_.has_value() && !terminal_) {
+    // Dispose the superseded command instance: a retained stale command would replay to a
+    // restarted autopilot and drive it on an old setpoint.
+    cmdSender_->dispose(cmd_);
+  }
   const arlcore::NumericGuid sessionId = arlcore::UuidFactory::getInstance().generateGuid();
   cmd_ = CommandType();
   fillVectorCommand(setpoint, &cmd_);
@@ -84,6 +89,7 @@ arlcore::NumericGuid VectorCommandClient::start(const VectorSetpoint& setpoint) 
   sessionId_ = sessionId;
   lastSetpoint_ = setpoint;
   terminal_ = false;
+  cancelRequestedAt_.reset();
   ackReceived_ = false;
   lastExec_.reset();
   if (cmdSender_->send(cmd_) != SendStatus::SUCCESS) {
@@ -106,7 +112,11 @@ bool VectorCommandClient::cancel() {
   if (!sessionId_.has_value() || terminal_) {
     return false;
   }
-  return cmdSender_->dispose(cmd_) == SendStatus::SUCCESS;
+  const bool ok = cmdSender_->dispose(cmd_) == SendStatus::SUCCESS;
+  if (ok) {
+    cancelRequestedAt_ = std::chrono::steady_clock::now();
+  }
+  return ok;
 }
 
 std::vector<MissionStatusUpdate> VectorCommandClient::pollStatus() {
@@ -127,6 +137,7 @@ std::vector<MissionStatusUpdate> VectorCommandClient::pollStatus() {
                       status.commandStatus() == StatusEnum::CANCELED;
     if (update.terminal) {
       terminal_ = true;
+      cancelRequestedAt_.reset();
       // Dispose the (transient-local) command instance so a restarted autopilot can never
       // re-read and re-execute a finished vector from the retained sample.
       cmdSender_->dispose(cmd_);

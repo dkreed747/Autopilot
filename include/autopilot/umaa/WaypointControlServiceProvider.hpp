@@ -75,6 +75,8 @@ class WaypointControlServiceProvider
                                  GlobalWaypointCommandTypeWaypointsListElement>
       listReader_;
   flt64_t maxForwardSpeedMps_;
+  // TODO(@user): audit long-run growth of the shared large-list reader's table when
+  // foreign commanders publish lists that never bind to a session here.
   int32_t maxListWaitCycles_;
   const ISafetyGate* safetyGate_;
   const ZoneMap* zoneMap_;

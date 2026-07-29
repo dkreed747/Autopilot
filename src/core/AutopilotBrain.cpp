@@ -24,6 +24,8 @@ static std::optional<flt64_t> poseElevation(const GlobalPoseReportType& p, Eleva
       return p.altitudeAGL().has_value() ? std::optional<flt64_t>(p.altitudeAGL().value()) : std::nullopt;
     case ElevationFrame::ALTITUDE_GEODETIC:
       return p.altitudeGeodetic().has_value() ? std::optional<flt64_t>(p.altitudeGeodetic().value()) : std::nullopt;
+    case ElevationFrame::ALTITUDE_ASF:
+      return p.altitudeASF().has_value() ? std::optional<flt64_t>(p.altitudeASF().value()) : std::nullopt;
     default:
       return std::nullopt;
   }
@@ -190,6 +192,7 @@ void AutopilotBrain::endRecovery() {
     return;
   }
   recovering_ = false;
+  vectorViolationSince_.reset();  // recovery time must not count toward the hard-tolerance delay
   if (recovery_) {
     recovery_->end();
   }
@@ -203,6 +206,7 @@ void AutopilotBrain::endRecovery() {
 void AutopilotBrain::abortRecovery() {
   std::scoped_lock lock(mtx_);
   recovering_ = false;
+  vectorViolationSince_.reset();  // recovery time must not count toward the hard-tolerance delay
   if (recovery_) {
     recovery_->end();
   }
@@ -214,6 +218,12 @@ bool AutopilotBrain::recovering() const {
 }
 
 void AutopilotBrain::emitControl(const ControlVector& cv) {
+  if (!std::isfinite(cv.headingRad) || !std::isfinite(cv.speedMps) ||
+      (cv.elevationM.has_value() && !std::isfinite(cv.elevationM.value()))) {
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
+                   "Refusing non-finite control vector (heading " << cv.headingRad << ", speed " << cv.speedMps << ")")
+    return;
+  }
   // MANUAL is polled from the strategy directly (not the mode FSM) so actuation safety never
   // depends on whether the mode services are configured; while engaged nothing reaches the
   // platform, not even safe-mode outputs, which would fight the human.
@@ -297,7 +307,9 @@ void AutopilotBrain::clearSetpoint(DriveSource src) {
 
 void AutopilotBrain::enforceNavStaleness() {
   std::scoped_lock lock(mtx_);
-  if (mode_ == DriveSource::NONE) {
+  // Recovery can drive with no command installed (mode NONE): the guard must still fire
+  // or the vehicle keeps flying the last recovery setpoint blind when the pose stops.
+  if (mode_ == DriveSource::NONE && !recovering_) {
     return;
   }
   const std::optional<int64_t> ageMs = nav_->poseAgeMs();

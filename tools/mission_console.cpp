@@ -27,6 +27,7 @@
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
 #include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/config/ConfigValidation.hpp"
 #include "autopilot/config/YamlConfigLoader.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
 #include "autopilot/guidance/MissionRoute.hpp"
@@ -655,6 +656,17 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // The console addresses its commands to these ids; an empty or malformed id would become
+  // an indeterminate GUID and every command would be silently discarded by the autopilot.
+  for (const auto& [key, value] :
+       {std::pair<const char*, const std::string&>{"identity.waypoint_source_id", config.identity.waypointSourceId},
+        std::pair<const char*, const std::string&>{"identity.vector_source_id", config.identity.vectorSourceId}}) {
+    if (!arlcore::autopilot::isValidUuid(value)) {
+      std::cerr << "mission_console requires a valid UUID for " << key << " (got '" << value << "')" << std::endl;
+      return 1;
+    }
+  }
+
   auto participant = arlcore::io::getDomainParticipant(config.dds.domainId);
   arlcore::io::CycloneQosProviderWrapper qosProvider(config.dds.qosFile, config.dds.domainQosProfile);
   const auto rqos = qosProvider.datareader_qos();
@@ -825,18 +837,28 @@ int main(int argc, char** argv) {
         res.set_content(R"({"error":"mission has no waypoints"})", "application/json");
         return;
       }
-      std::scoped_lock lock(clientMutex);
-      if (client.active()) {
-        res.status = 409;
-        res.set_content(R"({"error":"a mission is already active"})", "application/json");
-        return;
+      {
+        std::scoped_lock lock(clientMutex);
+        if (client.active()) {
+          res.status = 409;
+          res.set_content(R"({"error":"a mission is already active"})", "application/json");
+          return;
+        }
       }
+      // Planning the preview is the expensive part: do it unlocked (like /api/preview) so the
+      // 20 Hz poller and RC heartbeats never wait on route planning.
       std::vector<GlobalWaypointType> waypoints;
       for (const auto& wp : route) {
         waypoints.push_back(arlcore::autopilot::makeWaypoint(wp));
       }
       const GlobalPoseReportType start = state.latestPose().value_or(fallbackStartPose(config));
       const json preview = previewPath(route, start, config);
+      std::scoped_lock lock(clientMutex);
+      if (client.active()) {
+        res.status = 409;
+        res.set_content(R"({"error":"a mission is already active"})", "application/json");
+        return;
+      }
       const arlcore::NumericGuid session = client.start(waypoints);
       state.setMission(guidToString(session), waypointsToJson(route), preview);
       state.setActive(client.active());
@@ -1004,21 +1026,22 @@ int main(int argc, char** argv) {
     }
   });
 
-  server.Delete(R"(/api/constraints/([0-9a-fA-F-]+))", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!constraintsClient.has_value()) {
-      res.status = 503;
-      res.set_content(R"({"error":"constraints are not configured"})", "application/json");
-      return;
-    }
-    try {
-      std::scoped_lock lock(clientMutex);
-      const bool ok = constraintsClient->removeConstraint(req.matches[1]);
-      res.set_content(json{{"deleted", ok}}.dump(), "application/json");
-    } catch (const std::exception& e) {
-      res.status = 400;
-      res.set_content(json{{"error", e.what()}}.dump(), "application/json");
-    }
-  });
+  server.Delete(R"(/api/constraints/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}))",
+                [&](const httplib::Request& req, httplib::Response& res) {
+                  if (!constraintsClient.has_value()) {
+                    res.status = 503;
+                    res.set_content(R"({"error":"constraints are not configured"})", "application/json");
+                    return;
+                  }
+                  try {
+                    std::scoped_lock lock(clientMutex);
+                    const bool ok = constraintsClient->removeConstraint(req.matches[1]);
+                    res.set_content(json{{"deleted", ok}}.dump(), "application/json");
+                  } catch (const std::exception& e) {
+                    res.status = 400;
+                    res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+                  }
+                });
 
   server.Post("/api/constraints/active", [&](const httplib::Request& req, httplib::Response& res) {
     if (!constraintsClient.has_value()) {

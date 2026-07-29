@@ -19,6 +19,7 @@ struct Node {
   flt64_t cost = 0.0;
 
   Node(const Dubins2DPose& p, int32_t par, const DubinsPath& e, flt64_t c) : pose(p), parent(par), edge(e), cost(c) {}
+  // Root only; safe to deref: planDubinsRrtStar rejects non-finite poses on entry.
   explicit Node(const Dubins2DPose& p) : pose(p), edge(*DubinsPath::solve(p, p, 1.0)) {}
 };
 
@@ -41,6 +42,11 @@ static std::vector<int32_t> nearIndices(const std::vector<Node>& nodes, const Du
 std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& start, const Dubins2DPose& goal,
                                                          const ZoneSet& zones, const DubinsRrtParams& params,
                                                          uint32_t seedSalt) {
+  if (!std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(start.theta) || !std::isfinite(goal.x) ||
+      !std::isfinite(goal.y) || !std::isfinite(goal.theta)) {
+    return std::nullopt;
+  }
+
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::microseconds(static_cast<int64_t>(params.timeBudgetMs * 1000.0));
   std::mt19937 rng(params.seed ^ seedSalt);
@@ -86,7 +92,9 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
   tryGoalConnection(0);
 
   for (int32_t iter = 0; iter < params.maxIterations; ++iter) {
-    if ((iter & 0x1F) == 0 && std::chrono::steady_clock::now() > deadline) {
+    // Checked every iteration: near the end of a large tree one iteration costs far
+    // more than the clock read, and this runs on the control thread.
+    if (std::chrono::steady_clock::now() > deadline) {
       UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Dubins-RRT*: time budget reached after " << iter << " iterations")
       break;
     }

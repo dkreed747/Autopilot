@@ -1,12 +1,14 @@
 #include "autopilot/guidance/MissionRoute.hpp"
 
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "InternalTypes.h"
+#include "Logger.h"
 #include "UuidFactory.h"
 
 namespace arlcore::autopilot {
@@ -37,16 +39,23 @@ std::vector<MissionWaypoint> loadMissionCsv(const std::string& path, const Geogr
       continue;
     }
     MissionWaypoint wp;
-    flt64_t h = 0.0;
-    frame.Reverse(std::stod(fields[0]), std::stod(fields[1]), 0.0, wp.latDeg, wp.lonDeg, h);
-    wp.speedMps = std::stod(fields[2]);
-    wp.captureRadiusM = std::stod(fields[3]);
-    if (fields.size() >= 5 && !fields[4].empty()) {
-      wp.arrivalYawRad = std::stod(fields[4]);
-    }
-    if (fields.size() >= 7 && !fields[5].empty() && !fields[6].empty()) {
-      wp.elevValueM = std::stod(fields[5]);
-      wp.elevFrame = fields[6];
+    try {
+      flt64_t h = 0.0;
+      frame.Reverse(std::stod(fields[0]), std::stod(fields[1]), 0.0, wp.latDeg, wp.lonDeg, h);
+      wp.speedMps = std::stod(fields[2]);
+      wp.captureRadiusM = std::stod(fields[3]);
+      if (fields.size() >= 5 && !fields[4].empty()) {
+        wp.arrivalYawRad = std::stod(fields[4]);
+      }
+      if (fields.size() >= 7 && !fields[5].empty() && !fields[6].empty()) {
+        wp.elevValueM = std::stod(fields[5]);
+        wp.elevFrame = fields[6];
+      }
+    } catch (const std::exception&) {
+      // A malformed field fails the WHOLE file: silently flying a partial route is worse
+      // than refusing it. Semantic checks (speed/capture bounds) stay with the callers.
+      UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Rejecting mission CSV: malformed row '" << line << "'")
+      return {};
     }
     route.push_back(wp);
   }

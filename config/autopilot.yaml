@@ -86,7 +86,7 @@ planner:
   rrt:                           # fallback planner when the direct Dubins leg clips a zone
     seed: 12345                  # deterministic sampling, salted per waypoint index
     max_iterations: 2000
-    time_budget_ms: 150
+    time_budget_ms: 50           # runs on the control thread: keep <= loop.control_period_ms
     goal_bias: 0.10
     near_k: 8
     edge_check_step_m: 4.0       # coarse in-tree edge sampling

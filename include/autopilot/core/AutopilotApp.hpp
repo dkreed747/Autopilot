@@ -107,7 +107,7 @@ class AutopilotApp {
   std::shared_ptr<ConstraintSupervisor> supervisor_;
   std::optional<SafeReturnPath> safeReturnPath_;
 
-  std::atomic<bool> running_{false};
+  std::atomic<bool> stopRequested_{false};
 
   //! \brief Construct the MM conditional/constraint services and wire the supervisor.
   bool initializeConstraintServices();

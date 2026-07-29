@@ -90,7 +90,7 @@ struct WaypointToleranceConfig {
 struct RrtConfig {
   uint32_t seed = 12345;  // deterministic sampling; salted per waypoint index
   int32_t maxIterations = 2000;
-  int32_t timeBudgetMs = 150;
+  int32_t timeBudgetMs = 50;  // runs on the control thread: keep <= loop.control_period_ms
   flt64_t goalBias = 0.10;
   int32_t nearK = 8;
   flt64_t edgeCheckStepM = 4.0;   // coarse in-tree edge sampling

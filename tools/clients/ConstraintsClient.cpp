@@ -7,6 +7,7 @@
 #include "InternalTypes.h"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
+#include "autopilot/config/ConfigValidation.hpp"
 #include "autopilot/guidance/MissionRoute.hpp"
 
 namespace arlcore::autopilot::tools {
@@ -41,8 +42,10 @@ std::string formatUuid(const arlcore::NumericGuid& guid) {
   return std::string(out);
 }
 
+//! \brief Parse a client-supplied id, minting a fresh GUID for empty OR malformed input:
+//! the SDK's parseGuidFromString leaves the GUID uninitialized when parsing fails.
 static arlcore::NumericGuid parseOrMint(const std::string& id) {
-  if (id.empty()) {
+  if (id.empty() || !arlcore::autopilot::isValidUuid(id)) {
     return arlcore::UuidFactory::getInstance().generateGuid();
   }
   return arlcore::UuidFactory::getInstance().parseGuidFromString(id);
@@ -174,6 +177,9 @@ std::string ConstraintsClient::upsertDepth(const std::string& id, const std::str
 }
 
 bool ConstraintsClient::removeConstraint(const std::string& id) {
+  if (!arlcore::autopilot::isValidUuid(id)) {
+    return false;  // a malformed id would publish an uninitialized-memory GUID
+  }
   // Deleting an active conditional implicitly deactivates it, but pruning the applied set
   // first keeps the standing ack (every console's source of truth) coherent.
   if (activeIds_.count(id) > 0) {
@@ -194,6 +200,9 @@ bool ConstraintsClient::removeConstraint(const std::string& id) {
 bool ConstraintsClient::setActive(const std::vector<std::string>& ids) {
   ActiveConstraintsCommandType cmd;
   for (const std::string& id : ids) {
+    if (!arlcore::autopilot::isValidUuid(id)) {
+      return false;
+    }
     cmd.constraintConditionalIDs().push_back(arlcore::UuidFactory::getInstance().parseGuidFromString(id).getGuid());
   }
   cmd.timeStamp(arlcore::umaa::getTimestamp());

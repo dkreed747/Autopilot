@@ -63,6 +63,11 @@ std::optional<arlcore::NumericGuid> OperationalModeClient::command(const std::st
   if (!requested.has_value()) {
     return std::nullopt;
   }
+  if (sessionId_.has_value()) {
+    // Dispose the superseded command instance so a restarted autopilot cannot re-apply a
+    // stale retained mode command.
+    cmdSender_->dispose(cmd_);
+  }
   const arlcore::NumericGuid sessionId = arlcore::UuidFactory::getInstance().generateGuid();
   cmd_ = CommandType();
   cmd_.operationalMode() = requested.value();

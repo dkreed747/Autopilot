@@ -14,6 +14,8 @@ namespace arlcore::autopilot {
 
 ZoneMap::ZoneMap(const ZonesConfig& config) : config_(config) {}
 
+// TODO(@user): the anchor pins to the first ingested vertex forever; ellipse zones
+// materialized far from it distort slightly. Revisit if operating areas span >10 km.
 void ZoneMap::ensureAnchor(const ConstraintSnapshot& snapshot) {
   if (anchor_.has_value()) {
     return;

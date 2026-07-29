@@ -2,6 +2,7 @@
 #define AUTOPILOT_UMAA_SPEEDOBSERVER_HPP_
 
 #include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
+#include <cmath>
 
 #include "Observer.h"
 #include "autopilot/core/NavState.hpp"

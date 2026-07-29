@@ -477,11 +477,11 @@ bool AutopilotApp::commandClassActive(CommandClass cls) const {
 }
 
 void AutopilotApp::step() {
-  // Cycle nav consumers first; their observers refresh nav state and drive the control
-  // recompute (pose-triggered) before the providers publish status reflecting the latest state.
-  poseConsumer_->cycle();
+  // Cycle nav consumers first; speed/velocity before pose so the pose-triggered control
+  // recompute pairs the pose with the speed published in the same vehicle tick.
   speedConsumer_->cycle();
   velocityConsumer_->cycle();
+  poseConsumer_->cycle();
   brain_->enforceNavStaleness();
   // Constraint pipeline: mutate the set (add/delete), read the report back over loopback,
   // resolve the active subset, then let the supervisor rebuild its snapshot — all before the
@@ -523,12 +523,19 @@ void AutopilotApp::step() {
 }
 
 void AutopilotApp::run() {
-  running_ = true;
   const auto period = std::chrono::milliseconds(config_.loop.controlPeriodMs);
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot control loop starting")
-  while (running_) {
+  // Absolute scheduling (like the sim thread) so processing time does not stretch the
+  // period; run() never writes the stop flag, so a signal delivered at startup cannot race.
+  auto next = std::chrono::steady_clock::now() + period;
+  while (!stopRequested_) {
     step();
-    std::this_thread::sleep_for(period);
+    std::this_thread::sleep_until(next);
+    next += period;
+    const auto now = std::chrono::steady_clock::now();
+    if (now > next) {
+      next = now + period;  // a stalled tick (e.g. a long replan) resets rather than bursts
+    }
   }
   // Vehicle teardown happens here on the loop thread, NOT in stop(): stop()
   // runs in signal-handler context on an arbitrary thread, and a repeated
@@ -539,6 +546,6 @@ void AutopilotApp::run() {
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot control loop stopped")
 }
 
-void AutopilotApp::stop() { running_ = false; }
+void AutopilotApp::stop() { stopRequested_ = true; }
 
 }  // namespace arlcore::autopilot

@@ -5,6 +5,7 @@
 #include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandStatusType.hpp>
 #include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandType.hpp>
 #include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
+#include <chrono>
 #include <dds/dds.hpp>
 #include <memory>
 #include <optional>
@@ -59,7 +60,18 @@ class WaypointMissionClient {
   bool pollAck();
 
   //! \brief True while a session is started and not yet terminal.
-  bool active() const { return sessionId_.has_value() && !terminal_; }
+  //! \brief Whether a session is live. A cancel with no status echo (autopilot down)
+  //! times out after kCancelEchoTimeoutS so the console can never wedge on 409.
+  bool active() const {
+    if (!sessionId_.has_value() || terminal_) {
+      return false;
+    }
+    if (cancelRequestedAt_.has_value() &&
+        std::chrono::steady_clock::now() - cancelRequestedAt_.value() > std::chrono::seconds(5)) {
+      return false;
+    }
+    return true;
+  }
 
   const std::optional<arlcore::NumericGuid>& sessionId() const { return sessionId_; }
   const std::vector<GlobalWaypointType>& waypoints() const { return waypoints_; }
@@ -80,6 +92,7 @@ class WaypointMissionClient {
   std::optional<arlcore::NumericGuid> sessionId_;
   std::vector<GlobalWaypointType> waypoints_;
   bool terminal_ = true;
+  std::optional<std::chrono::steady_clock::time_point> cancelRequestedAt_;
   bool ackReceived_ = false;
   std::string lastStatus_;
   std::string lastReason_;

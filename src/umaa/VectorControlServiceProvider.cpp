@@ -37,16 +37,17 @@ CommandClass VectorControlServiceProvider::classOf(const GlobalVectorCommandType
 }
 
 bool VectorControlServiceProvider::isCommandValid(const GlobalVectorCommandType& cmd) {
-  if (safetyGate_ != nullptr && !safetyGate_->commandsAllowed()) {
+  // Held-at-ISSUED sessions bypass both gate rejections: they are not driving, and a
+  // transient recovery must not destroy them with VALIDATION_FAILED (authoritative mode
+  // flushes fail them with INTERRUPTED in onIssued instead).
+  const bool heldSession = held_ && heldSessionId_ == arlcore::NumericGuid(cmd.sessionID());
+  if (!heldSession && safetyGate_ != nullptr && !safetyGate_->commandsAllowed()) {
     UMAA_LOG_WARN(util::SYSTEM_LOGGER,
                   "Vector command rejected: the safety supervisor holds "
                   "the vehicle (recovery/safe mode)")
     return false;
   }
   if (modeGate_ != nullptr) {
-    // Held sessions bypass the validation-stage mode check: an authoritative flush must fail
-    // them with INTERRUPTED (in onIssued), never VALIDATION_FAILED.
-    const bool heldSession = held_ && heldSessionId_ == arlcore::NumericGuid(cmd.sessionID());
     if (!heldSession && modeGate_->rejectedAtValidation(classOf(cmd))) {
       UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Vector command rejected: not permitted in the current operational mode")
       return false;
@@ -60,6 +61,10 @@ bool VectorControlServiceProvider::isCommandValid(const GlobalVectorCommandType&
   const std::optional<SpeedValue> speed = tolerance::extractSpeed(cmd.speed());
   if (!speed.has_value()) {
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command speed variant is unsupported")
+    return false;
+  }
+  if (!(speed->speedMps >= 0.0)) {  // 0 = hold; also rejects NaN
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command speed " << speed->speedMps << " must be >= 0")
     return false;
   }
   if (maxForwardSpeedMps_ > 0.0 && speed->speedMps > maxForwardSpeedMps_) {

@@ -19,6 +19,7 @@
 #include "InternalTypes.h"
 #include "UuidFactory.h"
 #include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/config/ConfigValidation.hpp"
 #include "autopilot/config/YamlConfigLoader.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
 #include "autopilot/guidance/MissionRoute.hpp"
@@ -44,6 +45,14 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::filesystem::create_directories(outDir);
+
+  if (!arlcore::autopilot::isValidUuid(config.identity.waypointSourceId)) {
+    std::cerr << "mission_runner requires a valid UUID for identity.waypoint_source_id (got '"
+
+              << config.identity.waypointSourceId << "')" << std::endl;
+
+    return 1;
+  }
 
   auto participant = arlcore::io::getDomainParticipant(config.dds.domainId);
   arlcore::io::CycloneQosProviderWrapper qosProvider(config.dds.qosFile, config.dds.domainQosProfile);

@@ -176,12 +176,14 @@ void SimVehicleControl::publishReports() {
   poseProvider_.send(&pose);
 
   SpeedReportType speedReport;
-  speedReport.speedOverGround() = std::fabs(speed);
+  const flt64_t groundE = speed * std::sin(heading) + simConfig_.currentEastMps;
+  const flt64_t groundN = speed * std::cos(heading) + simConfig_.currentNorthMps;
+  speedReport.speedOverGround() = std::hypot(groundE, groundN);
   speedProvider_.send(&speedReport);
 
   VelocityReportType velocity;
-  velocity.velocity().northSpeed(speed * std::cos(heading));
-  velocity.velocity().eastSpeed(speed * std::sin(heading));
+  velocity.velocity().northSpeed(groundN);
+  velocity.velocity().eastSpeed(groundE);
   velocity.velocity().downSpeed(0.0);
   velocity.attitudeRate().yawRate(yawRate);
   velocityProvider_.send(&velocity);

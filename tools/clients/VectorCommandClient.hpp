@@ -69,7 +69,18 @@ class VectorCommandClient {
   std::optional<ExecType> pollExec();
   std::optional<flt64_t> execAgeS() const;
 
-  bool active() const { return sessionId_.has_value() && !terminal_; }
+  //! \brief Whether a session is live. A cancel with no status echo (autopilot down)
+  //! times out after 5 s so the console can never wedge on 409.
+  bool active() const {
+    if (!sessionId_.has_value() || terminal_) {
+      return false;
+    }
+    if (cancelRequestedAt_.has_value() &&
+        std::chrono::steady_clock::now() - cancelRequestedAt_.value() > std::chrono::seconds(5)) {
+      return false;
+    }
+    return true;
+  }
   const std::optional<arlcore::NumericGuid>& sessionId() const { return sessionId_; }
   const std::optional<VectorSetpoint>& lastSetpoint() const { return lastSetpoint_; }
   bool ackReceived() const { return ackReceived_; }
@@ -86,6 +97,7 @@ class VectorCommandClient {
   std::optional<arlcore::NumericGuid> sessionId_;
   std::optional<VectorSetpoint> lastSetpoint_;
   bool terminal_ = true;
+  std::optional<std::chrono::steady_clock::time_point> cancelRequestedAt_;
   bool ackReceived_ = false;
   std::optional<ExecType> lastExec_;
   std::chrono::steady_clock::time_point execAt_;

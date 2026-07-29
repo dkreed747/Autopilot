@@ -47,6 +47,7 @@ arlcore::NumericGuid WaypointMissionClient::start(const std::vector<GlobalWaypoi
 
   sessionId_ = sessionId;
   terminal_ = false;
+  cancelRequestedAt_.reset();
   ackReceived_ = false;
   lastStatus_.clear();
   lastReason_.clear();
@@ -61,7 +62,11 @@ bool WaypointMissionClient::cancel() {
   if (!sessionId_.has_value() || terminal_) {
     return false;
   }
-  return cmdSender_->dispose(cmd_) == SendStatus::SUCCESS;
+  const bool ok = cmdSender_->dispose(cmd_) == SendStatus::SUCCESS;
+  if (ok) {
+    cancelRequestedAt_ = std::chrono::steady_clock::now();
+  }
+  return ok;
 }
 
 std::vector<MissionStatusUpdate> WaypointMissionClient::pollStatus() {
@@ -85,6 +90,7 @@ std::vector<MissionStatusUpdate> WaypointMissionClient::pollStatus() {
     lastReason_ = update.reason;
     if (update.terminal) {
       terminal_ = true;
+      cancelRequestedAt_.reset();
       // Dispose the (transient-local) command instance so a restarted autopilot can never
       // re-read and re-execute a finished mission from the retained sample.
       cmdSender_->dispose(cmd_);
