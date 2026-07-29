@@ -17,16 +17,17 @@
 #include "CycloneSender.h"
 #include "NumericGuid.h"
 #include "clients/WaypointMissionClient.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tools {
 
 //! \brief One vector setpoint as the GUI expresses it.
 struct VectorSetpoint {
-  double headingRad = 0.0;
-  double speedMps = 0.0;
-  std::optional<double> elevValueM;
+  flt64_t headingRad = 0.0;
+  flt64_t speedMps = 0.0;
+  std::optional<flt64_t> elevValueM;
   std::string elevFrame = "depth";  // "depth" | "asf"
-  std::optional<double>
+  std::optional<flt64_t>
       timeoutS;  // maps to endTime = now + timeoutS (provider auto-completes)
 };
 
@@ -72,7 +73,7 @@ class VectorCommandClient {
   //! \brief Latest execution-status for the active session, if any (age in
   //! seconds).
   std::optional<ExecType> pollExec();
-  std::optional<double> execAgeS() const;
+  std::optional<flt64_t> execAgeS() const;
 
   bool active() const { return sessionId_.has_value() && !terminal_; }
   const std::optional<arlcore::NumericGuid>& sessionId() const {

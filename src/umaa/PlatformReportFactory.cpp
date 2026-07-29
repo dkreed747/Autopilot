@@ -1,6 +1,7 @@
 #include "autopilot/umaa/PlatformReportFactory.hpp"
 
 #include <optional>
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -11,8 +12,8 @@ using UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType;
 
 //! \brief Copy an optional config value into a generated @optional field.
 static void setIf(
-    std::optional<double>& field,
-    const std::optional<double>& value) {  // NOLINT(runtime/references)
+    std::optional<flt64_t>& field,
+    const std::optional<flt64_t>& value) {  // NOLINT(runtime/references)
   if (value.has_value()) {
     field = value.value();
   }

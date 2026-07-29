@@ -5,11 +5,12 @@
 #include <limits>
 
 #include "Logger.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
-VectorZoneGuidance::VectorZoneGuidance(const VectorAvoidanceConfig& config, double turnRadiusM,
-                                       double safetyMarginM)
+VectorZoneGuidance::VectorZoneGuidance(const VectorAvoidanceConfig& config, flt64_t turnRadiusM,
+                                       flt64_t safetyMarginM)
     : config_(config), turnRadiusM_(std::max(turnRadiusM, 1.0)), safetyMarginM_(safetyMarginM) {}
 
 void VectorZoneGuidance::reset() {
@@ -17,19 +18,19 @@ void VectorZoneGuidance::reset() {
   clearTicks_ = 0;
 }
 
-double VectorZoneGuidance::lookaheadM(double sogMps) const {
+flt64_t VectorZoneGuidance::lookaheadM(flt64_t sogMps) const {
   return std::max(config_.lookaheadRhoFactor * turnRadiusM_,
                   turnRadiusM_ + config_.lookaheadSpeedS * std::max(sogMps, 0.0));
 }
 
-double VectorZoneGuidance::steer(double commandedAz, const Vec2& vehicle, double sogMps,
+flt64_t VectorZoneGuidance::steer(flt64_t commandedAz, const Vec2& vehicle, flt64_t sogMps,
                                  const ZoneSet& zones) {
   if (zones.empty()) {
     reset();
     return commandedAz;
   }
 
-  const double lookahead = lookaheadM(sogMps);
+  const flt64_t lookahead = lookaheadM(sogMps);
   const Vec2 wantDir{std::sin(commandedAz), std::cos(commandedAz)};
   const bool commandedBlocked =
       zones.raycastFirstHit(vehicle, wantDir, safetyMarginM_, lookahead).has_value();
@@ -58,20 +59,20 @@ double VectorZoneGuidance::steer(double commandedAz, const Vec2& vehicle, double
   // Wall-standoff regulation, same shape as the tracker's cross-track law: the error between
   // the clearance and the margin steers toward (error > 0) or away from (error < 0) the wall,
   // scaled against the turn radius so the correction never saturates turn authority.
-  const double sideError = info.clearanceM - safetyMarginM_;
+  const flt64_t sideError = info.clearanceM - safetyMarginM_;
   // Corner anticipation: following the inside of a keep-in, the binding-edge normal flips
   // discretely at corners, so a second ray along the follow tangent detects the wall ahead —
   // the turn must begin roughly one turn radius before it.
-  double aheadError = std::numeric_limits<double>::max();
-  const std::optional<double> aheadHit = zones.raycastFirstHit(vehicle, t, safetyMarginM_, lookahead);
+  flt64_t aheadError = std::numeric_limits<flt64_t>::max();
+  const std::optional<flt64_t> aheadHit = zones.raycastFirstHit(vehicle, t, safetyMarginM_, lookahead);
   if (aheadHit.has_value()) {
     aheadError = aheadHit.value() - turnRadiusM_;
   }
-  const double error = std::min(sideError, aheadError);
-  const double correction = std::clamp(std::atan2(error, turnRadiusM_), -1.2, 1.2);
+  const flt64_t error = std::min(sideError, aheadError);
+  const flt64_t correction = std::clamp(std::atan2(error, turnRadiusM_), -1.2, 1.2);
   const Vec2 dir{t.x * std::cos(correction) - n.x * std::sin(correction),
                  t.y * std::cos(correction) - n.y * std::sin(correction)};
-  const double followAz = std::atan2(dir.x, dir.y);
+  const flt64_t followAz = std::atan2(dir.x, dir.y);
 
   // Leave the episode once the commanded heading has stayed clear (to an extended lookahead)
   // for a streak of ticks, a minimum dwell has passed, and the standoff is honored.
@@ -82,7 +83,7 @@ double VectorZoneGuidance::steer(double commandedAz, const Vec2& vehicle, double
   } else {
     clearTicks_ = 0;
   }
-  const double dwellS = std::chrono::duration<double>(
+  const flt64_t dwellS = std::chrono::duration<flt64_t>(
       std::chrono::steady_clock::now() - followStart_).count();
   if (clearTicks_ >= config_.exitClearTicks && dwellS >= config_.minFollowS) {
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Vector avoidance: commanded heading clear; resuming")

@@ -14,6 +14,7 @@
 #include "autopilot/safety/ZoneMap.hpp"
 #include "LargeListReader.h"
 #include "autopilot/umaa/WaypointControlServiceProviderIo.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -31,7 +32,7 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
   WaypointControlServiceProvider(const arlcore::NumericGuid& source,
                                  std::shared_ptr<WaypointControlServiceProviderIo> io,
                                  IAutopilot* autopilot,
-                                 double maxForwardSpeedMps,
+                                 flt64_t maxForwardSpeedMps,
                                  int32_t maxListWaitCycles,
                                  const ISafetyGate* safetyGate = nullptr,
                                  const ZoneMap* zoneMap = nullptr,
@@ -77,7 +78,7 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
   std::shared_ptr<WaypointControlServiceProviderIo> wpIo_;
   arlcore::umaa::LargeListReader<UMAA::MO::GlobalWaypointControl::GlobalWaypointType,
       GlobalWaypointCommandTypeWaypointsListElement> listReader_;
-  double maxForwardSpeedMps_;
+  flt64_t maxForwardSpeedMps_;
   int32_t maxListWaitCycles_;
   const ISafetyGate* safetyGate_;
   const ZoneMap* zoneMap_;

@@ -6,11 +6,12 @@
 
 #include "autopilot/guidance/AngleMath.hpp"
 #include "autopilot/safety/VectorZoneGuidance.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
-constexpr double kTurnRadiusM = 20.0;
-constexpr double kMarginM = 5.0;
+constexpr flt64_t kTurnRadiusM = 20.0;
+constexpr flt64_t kMarginM = 5.0;
 
 static VectorAvoidanceConfig testConfig() {
   VectorAvoidanceConfig c;
@@ -23,16 +24,16 @@ static VectorAvoidanceConfig testConfig() {
 //! minimum zone clearance seen.
 struct BugSim {
   Vec2 pos{0.0, 0.0};
-  double yawAz = 0.0;
-  double speed = 3.0;
-  double maxTurnRateRps = 0.3;
-  double dtS = 0.25;
+  flt64_t yawAz = 0.0;
+  flt64_t speed = 3.0;
+  flt64_t maxTurnRateRps = 0.3;
+  flt64_t dtS = 0.25;
 
-  double run(VectorZoneGuidance* guidance, const ZoneSet& zones, double commandedAz, int32_t steps) {
-    double minClearance = 1e18;
+  flt64_t run(VectorZoneGuidance* guidance, const ZoneSet& zones, flt64_t commandedAz, int32_t steps) {
+    flt64_t minClearance = 1e18;
     for (int32_t i = 0; i < steps; ++i) {
-      const double heading = guidance->steer(commandedAz, pos, speed, zones);
-      const double err = wrapPi(heading - yawAz);
+      const flt64_t heading = guidance->steer(commandedAz, pos, speed, zones);
+      const flt64_t err = wrapPi(heading - yawAz);
       yawAz = wrapPi(yawAz + std::clamp(err, -maxTurnRateRps * dtS, maxTurnRateRps * dtS));
       pos.x += speed * dtS * std::sin(yawAz);
       pos.y += speed * dtS * std::cos(yawAz);
@@ -61,7 +62,7 @@ TEST(VectorZoneGuidanceTest, EntersBoundaryFollowWhenBlocked) {
   zones.addZone(ZoneKind::KEEP_OUT, LocalPolygon({{-100.0, 30.0}, {100.0, 30.0},
                                                   {100.0, 130.0}, {-100.0, 130.0}}));
   // Heading due north straight at the wall 30 m ahead (< lookahead).
-  const double heading = guidance.steer(0.0, {0.0, 0.0}, 3.0, zones);
+  const flt64_t heading = guidance.steer(0.0, {0.0, 0.0}, 3.0, zones);
   EXPECT_TRUE(guidance.avoidanceActive());
   EXPECT_GT(std::fabs(wrapPi(heading - 0.0)), 0.5);  // deflected well away from due north
 }
@@ -74,7 +75,7 @@ TEST(VectorZoneGuidanceTest, NeverEntersKeepOutWhileCommandedInto) {
   BugSim sim;
   // Commanded due north, straight into a 300 m wide box: the bug must deflect and circulate,
   // never crossing the boundary.
-  const double minClearance = sim.run(&guidance, zones, 0.0, 1200);
+  const flt64_t minClearance = sim.run(&guidance, zones, 0.0, 1200);
   EXPECT_GT(minClearance, 0.0);
   // ... and it must actually have travelled somewhere (following the wall), not parked.
   EXPECT_GT(std::hypot(sim.pos.x, sim.pos.y), 100.0);
@@ -88,7 +89,7 @@ TEST(VectorZoneGuidanceTest, KeepInCirculation) {
   BugSim sim;  // starts at the center
   // Commanded due east forever: the vehicle reaches the east wall and circulates the keep-in
   // boundary instead of exiting.
-  const double minClearance = sim.run(&guidance, zones, M_PI / 2.0, 2000);
+  const flt64_t minClearance = sim.run(&guidance, zones, M_PI / 2.0, 2000);
   EXPECT_GT(minClearance, 0.0);  // never left the keep-in
   EXPECT_LT(std::fabs(sim.pos.x), 150.0);
   EXPECT_LT(std::fabs(sim.pos.y), 150.0);
@@ -101,7 +102,7 @@ TEST(VectorZoneGuidanceTest, ResumesCommandedHeadingPastObstacle) {
   zones.addZone(ZoneKind::KEEP_OUT, LocalPolygon({{-40.0, 60.0}, {40.0, 60.0},
                                                   {40.0, 140.0}, {-40.0, 140.0}}));
   BugSim sim;
-  const double minClearance = sim.run(&guidance, zones, 0.0, 1500);
+  const flt64_t minClearance = sim.run(&guidance, zones, 0.0, 1500);
   EXPECT_GT(minClearance, 0.0);
   // Far past the obstacle and back on the commanded (northbound) course.
   EXPECT_GT(sim.pos.y, 200.0);

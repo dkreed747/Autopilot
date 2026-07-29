@@ -7,6 +7,7 @@
 #include "autopilot/guidance/MissionRoute.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tools {
 
@@ -113,7 +114,7 @@ void ConstraintsClient::sendAdd(const arlcore::NumericGuid& conditionalId, const
 }
 
 //! \brief Fill a UMAA elevation bound in the requested frame ("depth" | "asf").
-static void setElevationBound(UMAA::Common::Measurement::ElevationVariantType* bound, double value,
+static void setElevationBound(UMAA::Common::Measurement::ElevationVariantType* bound, flt64_t value,
                               const std::string& frame) {
   if (frame == "asf") {
     bound->ElevationVariantTypeSubtypes().AltitudeASFVariantVariant(
@@ -128,9 +129,9 @@ static void setElevationBound(UMAA::Common::Measurement::ElevationVariantType* b
 
 std::string ConstraintsClient::upsertZone(const std::string& id, const std::string& name,
                                           bool keepIn,
-                                          const std::vector<std::array<double, 2>>& polygonLatLon,
-                                          double ceilingM, const std::string& ceilingFrame,
-                                          double floorM, const std::string& floorFrame) {
+                                          const std::vector<std::array<flt64_t, 2>>& polygonLatLon,
+                                          flt64_t ceilingM, const std::string& ceilingFrame,
+                                          flt64_t floorM, const std::string& floorFrame) {
   const arlcore::NumericGuid conditionalId = parseOrMint(id);
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const DateTime stamp = arlcore::umaa::getTimestamp();
@@ -156,7 +157,7 @@ std::string ConstraintsClient::upsertZone(const std::string& id, const std::stri
 }
 
 std::string ConstraintsClient::upsertSpeed(const std::string& id, const std::string& name,
-                                           const std::string& op, double valueMps) {
+                                           const std::string& op, flt64_t valueMps) {
   const arlcore::NumericGuid conditionalId = parseOrMint(id);
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const DateTime stamp = arlcore::umaa::getTimestamp();
@@ -169,7 +170,7 @@ std::string ConstraintsClient::upsertSpeed(const std::string& id, const std::str
 }
 
 std::string ConstraintsClient::upsertDepth(const std::string& id, const std::string& name,
-                                           const std::string& op, double valueM) {
+                                           const std::string& op, flt64_t valueM) {
   const arlcore::NumericGuid conditionalId = parseOrMint(id);
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const DateTime stamp = arlcore::umaa::getTimestamp();

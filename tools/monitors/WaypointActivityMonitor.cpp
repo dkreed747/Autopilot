@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "autopilot/guidance/MissionRoute.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tools {
 
@@ -16,7 +17,7 @@ using StatusEnum = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::
 
 static constexpr uint32_t kMaxCommandDrain = 16;
 static constexpr size_t kMaxTrackedMissions = 16;
-static constexpr double kTerminalEvictS = 120.0;
+static constexpr flt64_t kTerminalEvictS = 120.0;
 
 WaypointActivityMonitor::WaypointActivityMonitor(
     const dds::domain::DomainParticipant& participant,
@@ -141,8 +142,8 @@ void WaypointActivityMonitor::poll() {
   // Eviction: terminal missions age out; a hard cap bounds the snapshot (oldest
   // first).
   for (auto it = missions_.begin(); it != missions_.end();) {
-    const double idleS =
-        std::chrono::duration<double>(now - it->second.lastSeen).count();
+    const flt64_t idleS =
+        std::chrono::duration<flt64_t>(now - it->second.lastSeen).count();
     if (it->second.terminal && idleS > kTerminalEvictS) {
       const auto metadataIt = metadataBySession_.find(it->first);
       if (metadataIt != metadataBySession_.end()) {

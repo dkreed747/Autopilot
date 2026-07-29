@@ -4,14 +4,15 @@
 #include <cmath>
 
 #include "Logger.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
-RecoveryGuidance::RecoveryGuidance(const RecoveryConfig& config, double cruiseSpeedMps,
-                                   double safetyMarginM)
+RecoveryGuidance::RecoveryGuidance(const RecoveryConfig& config, flt64_t cruiseSpeedMps,
+                                   flt64_t safetyMarginM)
     : config_(config), cruiseSpeedMps_(cruiseSpeedMps), safetyMarginM_(safetyMarginM) {}
 
-bool RecoveryGuidance::begin(const GeoPoint& position, double depthM, std::optional<double> asfM,
+bool RecoveryGuidance::begin(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM,
                              const ZoneMap& map) {
   end();
   const auto& anchor = map.anchor();
@@ -19,9 +20,9 @@ bool RecoveryGuidance::begin(const GeoPoint& position, double depthM, std::optio
     return false;
   }
   const ZoneSet zones = map.activeSet(anchor.value(), ElevationEnvelope::atPoint(depthM, asfM));
-  double x = 0.0;
-  double y = 0.0;
-  double z = 0.0;
+  flt64_t x = 0.0;
+  flt64_t y = 0.0;
+  flt64_t z = 0.0;
   anchor->Forward(position.latDeg, position.lonDeg, 0.0, x, y, z);
   const std::optional<Vec2> local = zones.nearestCompliantPoint(Vec2{x, y}, safetyMarginM_);
   if (!local.has_value()) {
@@ -29,7 +30,7 @@ bool RecoveryGuidance::begin(const GeoPoint& position, double depthM, std::optio
     return false;
   }
   GeoPoint target;
-  double h = 0.0;
+  flt64_t h = 0.0;
   anchor->Reverse(local->x, local->y, 0.0, target.latDeg, target.lonDeg, h);
   target_ = target;
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Recovery: driving to compliant point "
@@ -37,8 +38,8 @@ bool RecoveryGuidance::begin(const GeoPoint& position, double depthM, std::optio
   return true;
 }
 
-std::optional<ControlVector> RecoveryGuidance::tick(const GeoPoint& position, double depthM,
-                                                    std::optional<double> asfM,
+std::optional<ControlVector> RecoveryGuidance::tick(const GeoPoint& position, flt64_t depthM,
+                                                    std::optional<flt64_t> asfM,
                                                     const ZoneMap& map) {
   if (!target_.has_value()) {
     return std::nullopt;
@@ -54,12 +55,12 @@ std::optional<ControlVector> RecoveryGuidance::tick(const GeoPoint& position, do
   if (!anchor.has_value()) {
     return std::nullopt;
   }
-  double vx = 0.0;
-  double vy = 0.0;
-  double tz = 0.0;
+  flt64_t vx = 0.0;
+  flt64_t vy = 0.0;
+  flt64_t tz = 0.0;
   anchor->Forward(position.latDeg, position.lonDeg, 0.0, vx, vy, tz);
-  double tx = 0.0;
-  double ty = 0.0;
+  flt64_t tx = 0.0;
+  flt64_t ty = 0.0;
   anchor->Forward(target_->latDeg, target_->lonDeg, 0.0, tx, ty, tz);
 
   ControlVector cv;
@@ -68,14 +69,14 @@ std::optional<ControlVector> RecoveryGuidance::tick(const GeoPoint& position, do
   return cv;
 }
 
-bool RecoveryGuidance::complete(const GeoPoint& position, double depthM,
-                                std::optional<double> asfM, const ZoneMap& map) {
+bool RecoveryGuidance::complete(const GeoPoint& position, flt64_t depthM,
+                                std::optional<flt64_t> asfM, const ZoneMap& map) {
   if (map.classify(position, depthM, asfM) == ZoneCompliance::COMPLIANT) {
     const auto now = std::chrono::steady_clock::now();
     if (!compliantSince_.has_value()) {
       compliantSince_ = now;
     }
-    return std::chrono::duration<double>(now - compliantSince_.value()).count() >=
+    return std::chrono::duration<flt64_t>(now - compliantSince_.value()).count() >=
            config_.completeHoldS;
   }
   compliantSince_.reset();

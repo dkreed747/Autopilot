@@ -2,6 +2,7 @@
 #define AUTOPILOT_GUIDANCE_CONTROLVECTOR_HPP_
 
 #include <optional>
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -19,19 +20,19 @@ enum class ElevationFrame {
 //! Global Vector command layout: heading, speed, and an optional elevation/depth.
 struct ControlVector {
   //! \brief Desired heading in radians, true north, in [-pi, pi].
-  double headingRad = 0.0;
+  flt64_t headingRad = 0.0;
 
   //! \brief Desired speed in meters per second (over ground).
-  double speedMps = 0.0;
+  flt64_t speedMps = 0.0;
 
   //! \brief Target elevation/depth. std::nullopt means "hold current / any acceptable".
-  std::optional<double> elevationM = std::nullopt;
+  std::optional<flt64_t> elevationM = std::nullopt;
 
   //! \brief Reference frame for elevationM.
   ElevationFrame elevationFrame = ElevationFrame::DEPTH;
 
   //! \brief Optional desired pitch while changing depth/elevation (radians).
-  std::optional<double> pitchRad = std::nullopt;
+  std::optional<flt64_t> pitchRad = std::nullopt;
 };
 
 }  // namespace arlcore::autopilot

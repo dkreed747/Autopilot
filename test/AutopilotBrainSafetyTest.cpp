@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "autopilot/core/AutopilotBrain.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -43,7 +44,7 @@ static AutopilotConfig testConfig() {
 }
 
 static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType vectorCommand(
-    double headingRad, double speedMps, std::optional<double> depthM = std::nullopt) {
+    flt64_t headingRad, flt64_t speedMps, std::optional<flt64_t> depthM = std::nullopt) {
   UMAA::MO::GlobalVectorControl::GlobalVectorCommandType cmd;
   UMAA::Common::Orientation::DirectionTrueNorthRequirementVariantType dir;
   dir.direction().direction(headingRad);
@@ -62,7 +63,7 @@ static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType vectorCommand(
   return cmd;
 }
 
-static UMAA::SA::GlobalPoseStatus::GlobalPoseReportType poseAt(double yawRad) {
+static UMAA::SA::GlobalPoseStatus::GlobalPoseReportType poseAt(flt64_t yawRad) {
   UMAA::SA::GlobalPoseStatus::GlobalPoseReportType pose;
   pose.position().geodeticLatitude(39.0);
   pose.position().geodeticLongitude(-76.5);

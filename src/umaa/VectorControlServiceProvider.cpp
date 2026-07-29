@@ -5,6 +5,7 @@
 #include "Logger.h"
 #include "autopilot/guidance/ToleranceUtils.hpp"
 #include "UmaaUtils.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -13,7 +14,7 @@ using arlcore::umaa::services::IncomingCommandBehavior;
 
 VectorControlServiceProvider::VectorControlServiceProvider(
     const arlcore::NumericGuid& source, std::shared_ptr<VectorControlServiceProviderIo> io,
-    IAutopilot* autopilot, double maxForwardSpeedMps, const ISafetyGate* safetyGate,
+    IAutopilot* autopilot, flt64_t maxForwardSpeedMps, const ISafetyGate* safetyGate,
     ICommandModeGate* modeGate) :
     CommandProviderBase(source, io),
     sourceId_(source),

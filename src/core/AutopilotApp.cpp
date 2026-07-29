@@ -18,6 +18,7 @@
 #include "autopilot/safety/SafeModeStrategyFactory.hpp"
 #include "autopilot/umaa/PlatformReportFactory.hpp"
 #include "UuidFactory.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -128,7 +129,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
     return false;
   }
 
-  const double maxForwardSpeed = config_.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
+  const flt64_t maxForwardSpeed = config_.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
 
   // --- Vector control provider ---
   auto vectorIo = std::make_shared<VectorControlServiceProviderIo>(

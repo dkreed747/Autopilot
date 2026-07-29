@@ -9,6 +9,7 @@
 #include "autopilot/core/IAutopilot.hpp"
 #include "autopilot/modes/ICommandModeGate.hpp"
 #include "autopilot/umaa/VectorControlServiceProviderIo.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -31,7 +32,7 @@ class VectorControlServiceProvider : public arlcore::umaa::services::CommandProv
   VectorControlServiceProvider(const arlcore::NumericGuid& source,
                                std::shared_ptr<VectorControlServiceProviderIo> io,
                                IAutopilot* autopilot,
-                               double maxForwardSpeedMps,
+                               flt64_t maxForwardSpeedMps,
                                const ISafetyGate* safetyGate = nullptr,
                                ICommandModeGate* modeGate = nullptr);
 
@@ -56,7 +57,7 @@ class VectorControlServiceProvider : public arlcore::umaa::services::CommandProv
 
   arlcore::NumericGuid sourceId_;
   IAutopilot* autopilot_;
-  double maxForwardSpeedMps_;  // <= 0 means no limit
+  flt64_t maxForwardSpeedMps_;  // <= 0 means no limit
   const ISafetyGate* safetyGate_;
   ICommandModeGate* modeGate_;
 

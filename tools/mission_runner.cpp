@@ -39,6 +39,7 @@
 #include "UuidFactory.h"
 #include "clients/WaypointMissionClient.hpp"
 #include "autopilot/config/YamlConfigLoader.hpp"
+#include "InternalTypes.h"
 
 using arlcore::autopilot::MissionWaypoint;
 using arlcore::autopilot::tools::WaypointMissionClient;
@@ -79,10 +80,10 @@ int main(int argc, char** argv) {
     std::cout << "Loaded mission from " << missionPath << " (" << route.size()
               << " waypoints)" << std::endl;
   } else {
-    for (const auto& [e, n] : std::vector<std::pair<double, double>>{
+    for (const auto& [e, n] : std::vector<std::pair<flt64_t, flt64_t>>{
              {0.0, 350.0}, {250.0, 600.0}, {500.0, 350.0}, {250.0, 100.0}, {-50.0, 350.0}}) {
       MissionWaypoint wp;
-      double h = 0.0;
+      flt64_t h = 0.0;
       frame.Reverse(e, n, 0.0, wp.latDeg, wp.lonDeg, h);
       wp.speedMps = 3.0;
       wp.captureRadiusM = 12.0;
@@ -161,12 +162,12 @@ int main(int argc, char** argv) {
 
   const auto start = std::chrono::steady_clock::now();
   const auto deadline = start + std::chrono::minutes(20);
-  double lastSpeed = 0.0;
+  flt64_t lastSpeed = 0.0;
   std::string finalStatus = "TIMEOUT";
 
   while (client.active() && std::chrono::steady_clock::now() < deadline) {
-    const double elapsed =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    const flt64_t elapsed =
+        std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - start).count();
 
     SpeedReportType speed;
     if (speedReader->readLatest(&speed) == ReadStatus::SUCCESS && speed.speedOverGround().has_value()) {

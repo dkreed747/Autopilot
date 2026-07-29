@@ -9,32 +9,33 @@
 
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
 #include "autopilot/guidance/AngleMath.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 
-constexpr double kOriginLat = 39.0;
-constexpr double kOriginLon = -76.5;
+constexpr flt64_t kOriginLat = 39.0;
+constexpr flt64_t kOriginLon = -76.5;
 
 //! \brief Test-local kinematic vehicle: instant speed response, rate-limited turning.
 struct PlannerSimVehicle {
   GeographicLib::LocalCartesian frame{kOriginLat, kOriginLon, 0.0};
-  double xE = 0.0;
-  double yN = 0.0;
-  double yawRad = 0.0;
-  double speedMps = 0.0;
-  double maxTurnRateRps = 0.25;
-  double maxDepthRateMps = 0.5;
-  double floorDepthM = 60.0;
-  std::optional<double> depthM;
+  flt64_t xE = 0.0;
+  flt64_t yN = 0.0;
+  flt64_t yawRad = 0.0;
+  flt64_t speedMps = 0.0;
+  flt64_t maxTurnRateRps = 0.25;
+  flt64_t maxDepthRateMps = 0.5;
+  flt64_t floorDepthM = 60.0;
+  std::optional<flt64_t> depthM;
 
   GlobalPoseReportType pose() const {
     GlobalPoseReportType p;
-    double lat = 0.0;
-    double lon = 0.0;
-    double h = 0.0;
+    flt64_t lat = 0.0;
+    flt64_t lon = 0.0;
+    flt64_t h = 0.0;
     frame.Reverse(xE, yN, 0.0, lat, lon, h);
     p.position().geodeticLatitude(lat);
     p.position().geodeticLongitude(lon);
@@ -46,36 +47,36 @@ struct PlannerSimVehicle {
     return p;
   }
 
-  void step(const ControlVector& cv, double dtS) {
-    const double err = wrapPi(cv.headingRad - yawRad);
-    const double maxDelta = maxTurnRateRps * dtS;
+  void step(const ControlVector& cv, flt64_t dtS) {
+    const flt64_t err = wrapPi(cv.headingRad - yawRad);
+    const flt64_t maxDelta = maxTurnRateRps * dtS;
     yawRad = wrapPi(yawRad + std::clamp(err, -maxDelta, maxDelta));
     speedMps = cv.speedMps;
     xE += speedMps * dtS * std::sin(yawRad);
     yN += speedMps * dtS * std::cos(yawRad);
     if (depthM.has_value() && cv.elevationM.has_value()) {
-      std::optional<double> targetDepth;
+      std::optional<flt64_t> targetDepth;
       if (cv.elevationFrame == ElevationFrame::DEPTH) {
         targetDepth = cv.elevationM.value();
       } else if (cv.elevationFrame == ElevationFrame::ALTITUDE_ASF) {
         targetDepth = floorDepthM - cv.elevationM.value();
       }
       if (targetDepth.has_value()) {
-        const double dErr = std::clamp(targetDepth.value(), 0.0, floorDepthM) - depthM.value();
+        const flt64_t dErr = std::clamp(targetDepth.value(), 0.0, floorDepthM) - depthM.value();
         depthM = depthM.value() + std::clamp(dErr, -maxDepthRateMps * dtS, maxDepthRateMps * dtS);
       }
     }
   }
 };
 
-static GlobalWaypointType makeWaypoint(double xE, double yN, double speedMps,
-                                std::optional<double> arrivalYawRad = std::nullopt,
-                                std::optional<double> depthM = std::nullopt,
-                                std::optional<double> altitudeAsfM = std::nullopt) {
+static GlobalWaypointType makeWaypoint(flt64_t xE, flt64_t yN, flt64_t speedMps,
+                                std::optional<flt64_t> arrivalYawRad = std::nullopt,
+                                std::optional<flt64_t> depthM = std::nullopt,
+                                std::optional<flt64_t> altitudeAsfM = std::nullopt) {
   GeographicLib::LocalCartesian frame(kOriginLat, kOriginLon, 0.0);
-  double lat = 0.0;
-  double lon = 0.0;
-  double h = 0.0;
+  flt64_t lat = 0.0;
+  flt64_t lon = 0.0;
+  flt64_t h = 0.0;
   frame.Reverse(xE, yN, 0.0, lat, lon, h);
 
   GlobalWaypointType wp;
@@ -125,7 +126,7 @@ static PlannerParams testParams() {
 }
 
 //! \brief Drive the vehicle under planner guidance until the route completes/fails.
-static void runMission(DubinsPathPlanner* planner, PlannerSimVehicle* vehicle, int32_t maxSteps, double dtS = 0.5) {
+static void runMission(DubinsPathPlanner* planner, PlannerSimVehicle* vehicle, int32_t maxSteps, flt64_t dtS = 0.5) {
   for (int32_t i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
     const ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
     vehicle->step(cv, dtS);
@@ -166,7 +167,7 @@ TEST(DubinsPathPlannerTest, FollowsMultiWaypointRouteToCompletion) {
 TEST(DubinsPathPlannerTest, HonorsArrivalAttitude) {
   DubinsPathPlanner planner;
   PlannerSimVehicle vehicle;
-  const double arrivalYaw = M_PI_2;  // arrive heading due east
+  const flt64_t arrivalYaw = M_PI_2;  // arrive heading due east
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 400.0, 4.0, arrivalYaw)};
   planner.plan(route, vehicle.pose(), testParams());
 
@@ -278,15 +279,15 @@ TEST(DubinsPathPlannerTest, DenseLawnmowerWithArrivalAttitudes) {
   params.turnRadiusM = 3.0 / 0.2618;
   params.leadDistanceM = 50.0;
   params.posCaptureM = 5.0;
-  const double north = 0.0;
-  const double south = M_PI;
+  const flt64_t north = 0.0;
+  const flt64_t south = M_PI;
   std::vector<GlobalWaypointType> route;
-  const double y0 = 100.0;
-  const double y1 = 300.0;
+  const flt64_t y0 = 100.0;
+  const flt64_t y1 = 300.0;
   for (int32_t lane = 0; lane < 4; lane++) {
-    const double x = 10.0 * lane;
+    const flt64_t x = 10.0 * lane;
     const bool up = (lane % 2 == 0);
-    const double yaw = up ? north : south;
+    const flt64_t yaw = up ? north : south;
     route.push_back(makeWaypoint(x, up ? y0 : y1, 3.0, yaw));
     route.push_back(makeWaypoint(x, up ? y1 : y0, 3.0, yaw));
   }
@@ -306,13 +307,13 @@ TEST(DubinsPathPlannerTest, GateCaptureHappensAtTheWaypointPlane) {
   PlannerSimVehicle vehicle;
   PlannerParams params = testParams();
   params.posCaptureM = 2.5;
-  const double arrivalYaw = 0.0;  // gate plane is the east-west line through the waypoint
+  const flt64_t arrivalYaw = 0.0;  // gate plane is the east-west line through the waypoint
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 300.0, 3.0, arrivalYaw),
                                            makeWaypoint(0.0, 500.0, 3.0, arrivalYaw)};
   planner.plan(route, vehicle.pose(), params);
 
   bool sawFirstCapture = false;
-  double captureNorth = 0.0;
+  flt64_t captureNorth = 0.0;
   for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
     const ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     if (!sawFirstCapture && planner.progress().waypointsRemaining == 1) {
@@ -383,7 +384,7 @@ TEST(DubinsPathPlannerTest, CrossTrackErrorIsJudgedAgainstThePlannedPath) {
   // On-path tracking: the reported cross-track error is measured from the planned Dubins
   // path, so it stays small even while the vehicle is mid-turn, far from any straight line
   // between the waypoints.
-  double maxAbsXte = 0.0;
+  flt64_t maxAbsXte = 0.0;
   for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
     const ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     if (planner.progress().crossTrackErrorM.has_value()) {

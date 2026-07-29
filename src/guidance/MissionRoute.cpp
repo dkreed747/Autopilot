@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "UuidFactory.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -38,7 +39,7 @@ std::vector<MissionWaypoint> loadMissionCsv(const std::string& path,
       continue;
     }
     MissionWaypoint wp;
-    double h = 0.0;
+    flt64_t h = 0.0;
     frame.Reverse(std::stod(fields[0]), std::stod(fields[1]), 0.0, wp.latDeg, wp.lonDeg, h);
     wp.speedMps = std::stod(fields[2]);
     wp.captureRadiusM = std::stod(fields[3]);

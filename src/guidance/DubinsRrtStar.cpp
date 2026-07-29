@@ -8,6 +8,7 @@
 #include <random>
 
 #include "Logger.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -15,14 +16,14 @@ struct Node {
   Dubins2DPose pose;
   int32_t parent = -1;
   DubinsPath edge;  // path from parent to this node (unset for the root)
-  double cost = 0.0;
+  flt64_t cost = 0.0;
 
-  Node(const Dubins2DPose& p, int32_t par, const DubinsPath& e, double c)
+  Node(const Dubins2DPose& p, int32_t par, const DubinsPath& e, flt64_t c)
       : pose(p), parent(par), edge(e), cost(c) {}
   explicit Node(const Dubins2DPose& p) : pose(p), edge(*DubinsPath::solve(p, p, 1.0)) {}
 };
 
-static double euclidean(const Dubins2DPose& a, const Dubins2DPose& b) {
+static flt64_t euclidean(const Dubins2DPose& a, const Dubins2DPose& b) {
   return std::hypot(a.x - b.x, a.y - b.y);
 }
 
@@ -61,12 +62,12 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
       return std::nullopt;
     }
   }
-  std::uniform_real_distribution<double> sampleX(lo.x, hi.x);
-  std::uniform_real_distribution<double> sampleY(lo.y, hi.y);
-  std::uniform_real_distribution<double> sampleTheta(-M_PI, M_PI);
-  std::uniform_real_distribution<double> unit(0.0, 1.0);
+  std::uniform_real_distribution<flt64_t> sampleX(lo.x, hi.x);
+  std::uniform_real_distribution<flt64_t> sampleY(lo.y, hi.y);
+  std::uniform_real_distribution<flt64_t> sampleTheta(-M_PI, M_PI);
+  std::uniform_real_distribution<flt64_t> unit(0.0, 1.0);
 
-  const auto edgeClear = [&](const DubinsPath& path, double stepM) {
+  const auto edgeClear = [&](const DubinsPath& path, flt64_t stepM) {
     return zones.pathClear(path, params.marginM, stepM);
   };
 
@@ -75,7 +76,7 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
 
   // Best goal connections found so far: (cost, tree node index, edge to goal).
   struct GoalLink {
-    double cost;
+    flt64_t cost;
     int32_t from;
     DubinsPath edge;
   };
@@ -109,7 +110,7 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
 
     // Choose parent: cheapest collision-free exact Dubins edge among the near set.
     int32_t bestParent = -1;
-    double bestCost = std::numeric_limits<double>::max();
+    flt64_t bestCost = std::numeric_limits<flt64_t>::max();
     std::optional<DubinsPath> bestEdge;
     int32_t exactChecked = 0;
     for (int32_t candidate : near) {
@@ -121,7 +122,7 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
         continue;
       }
       ++exactChecked;
-      const double cost = nodes[candidate].cost + edge->lengthM();
+      const flt64_t cost = nodes[candidate].cost + edge->lengthM();
       if (cost < bestCost && edgeClear(edge.value(), params.edgeCheckStepM)) {
         bestCost = cost;
         bestParent = candidate;
@@ -146,7 +147,7 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
         continue;
       }
       ++exactChecked;
-      const double cost = nodes[newIndex].cost + edge->lengthM();
+      const flt64_t cost = nodes[newIndex].cost + edge->lengthM();
       if (cost + 1e-9 < nodes[candidate].cost && edgeClear(edge.value(), params.edgeCheckStepM)) {
         nodes[candidate].parent = newIndex;
         nodes[candidate].edge = edge.value();
@@ -168,7 +169,7 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
   std::sort(goalLinks.begin(), goalLinks.end(),
             [](const GoalLink& a, const GoalLink& b) { return a.cost < b.cost; });
   for (const GoalLink& link : goalLinks) {
-    const double chainCost = nodes[link.from].cost + link.edge.lengthM();
+    const flt64_t chainCost = nodes[link.from].cost + link.edge.lengthM();
 
     std::vector<DubinsPath> chain;
     chain.push_back(link.edge);

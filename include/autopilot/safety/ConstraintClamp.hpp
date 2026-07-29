@@ -5,16 +5,17 @@
 
 #include "autopilot/safety/ConstraintTypes.hpp"
 #include "autopilot/guidance/ControlVector.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 //! \brief Static speed/elevation limits merged once at startup from the autopilot's own
 //! constraint settings and the platform capabilities (the non-dynamic side of the clamp).
 struct ClampLimits {
-  std::optional<double> minSpeedMps;
-  std::optional<double> maxSpeedMps;
-  std::optional<double> minDepthM;  // shallowest commanded depth allowed
-  std::optional<double> maxDepthM;  // deepest commanded depth allowed
+  std::optional<flt64_t> minSpeedMps;
+  std::optional<flt64_t> maxSpeedMps;
+  std::optional<flt64_t> minDepthM;  // shallowest commanded depth allowed
+  std::optional<flt64_t> maxDepthM;  // deepest commanded depth allowed
 };
 
 //! \brief Result of clamping one control vector.

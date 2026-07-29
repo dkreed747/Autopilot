@@ -9,18 +9,19 @@
 
 #include <UMAA/Common/MaritimeEnumeration/MaritimeEnumerationSets.hpp>
 #include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 //! \brief One mission waypoint. Position is geodetic; the CSV loader fills it from local
 //! tangent-plane east/north, the console API supplies it directly.
 struct MissionWaypoint {
-  double latDeg = 0.0;
-  double lonDeg = 0.0;
-  double speedMps = 3.0;
-  double captureRadiusM = 2.5;
-  std::optional<double> arrivalYawRad;
-  std::optional<double> elevValueM;
+  flt64_t latDeg = 0.0;
+  flt64_t lonDeg = 0.0;
+  flt64_t speedMps = 3.0;
+  flt64_t captureRadiusM = 2.5;
+  std::optional<flt64_t> arrivalYawRad;
+  std::optional<flt64_t> elevValueM;
   std::string elevFrame;  // "depth" or "asf"
 };
 

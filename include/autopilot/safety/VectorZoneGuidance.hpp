@@ -6,6 +6,7 @@
 
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/safety/ZoneGeometry.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -26,7 +27,7 @@ namespace arlcore::autopilot {
 //! the area keeps hitting the boundary from the inside, so the vehicle circulates it.
 class VectorZoneGuidance {
  public:
-  VectorZoneGuidance(const VectorAvoidanceConfig& config, double turnRadiusM, double safetyMarginM);
+  VectorZoneGuidance(const VectorAvoidanceConfig& config, flt64_t turnRadiusM, flt64_t safetyMarginM);
 
   //! \brief Reset the avoidance episode (call when a new vector setpoint is installed).
   void reset();
@@ -37,7 +38,7 @@ class VectorZoneGuidance {
   //! \param sogMps Current speed over ground
   //! \param zones The active zones (vehicle-depth gated)
   //! \return The commanded heading, or the boundary-follow heading while avoiding
-  double steer(double commandedAz, const Vec2& vehicle, double sogMps, const ZoneSet& zones);
+  flt64_t steer(flt64_t commandedAz, const Vec2& vehicle, flt64_t sogMps, const ZoneSet& zones);
 
   //! \brief Whether an avoidance episode is in progress (callers suspend hard-tolerance
   //! failure timers while true).
@@ -46,11 +47,11 @@ class VectorZoneGuidance {
  private:
   enum class State { MOTION_TO_HEADING, BOUNDARY_FOLLOW };
 
-  double lookaheadM(double sogMps) const;
+  flt64_t lookaheadM(flt64_t sogMps) const;
 
   VectorAvoidanceConfig config_;
-  double turnRadiusM_;
-  double safetyMarginM_;
+  flt64_t turnRadiusM_;
+  flt64_t safetyMarginM_;
 
   State state_ = State::MOTION_TO_HEADING;
   bool followRight_ = false;  // wall kept to port (follow clockwise) when true

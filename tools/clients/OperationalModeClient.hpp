@@ -15,6 +15,7 @@
 #include "CycloneReader.h"
 #include "CycloneSender.h"
 #include "NumericGuid.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tools {
 
@@ -63,7 +64,7 @@ class OperationalModeClient {
 
   //! \brief Seconds since the last mode report; nullopt before the first
   //! report.
-  std::optional<double> reportAgeS() const;
+  std::optional<flt64_t> reportAgeS() const;
 
   //! \brief The mode most recently commanded, until its session reaches a
   //! terminal status.

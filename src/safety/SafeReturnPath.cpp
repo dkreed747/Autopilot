@@ -7,6 +7,7 @@
 #include <GeographicLib/LocalCartesian.hpp>
 
 #include "Logger.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -33,8 +34,8 @@ std::optional<SafeReturnPath> SafeReturnPath::load(const SrpConfig& config, std:
     return fail("srp.csv_path is set but origin_lat_deg/origin_lon_deg are missing (the SRP "
                 "anchor must be explicit)");
   }
-  const double lat = config.originLatDeg.value();
-  const double lon = config.originLonDeg.value();
+  const flt64_t lat = config.originLatDeg.value();
+  const flt64_t lon = config.originLonDeg.value();
   if (!std::isfinite(lat) || !std::isfinite(lon) || std::abs(lat) > 90.0 || std::abs(lon) > 180.0) {
     return fail("srp origin is not a valid lat/lon");
   }

@@ -1,11 +1,12 @@
 #include <gtest/gtest.h>
 
 #include "autopilot/safety/ConstraintClamp.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 
-static ControlVector cvWith(double speedMps, std::optional<double> depthM = std::nullopt) {
+static ControlVector cvWith(flt64_t speedMps, std::optional<flt64_t> depthM = std::nullopt) {
   ControlVector cv;
   cv.headingRad = 1.0;
   cv.speedMps = speedMps;

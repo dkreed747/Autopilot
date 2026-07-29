@@ -4,6 +4,7 @@
 
 #include "autopilot/guidance/AngleMath.hpp"
 #include "Logger.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tolerance {
 
@@ -161,43 +162,43 @@ AttitudeValue extractYaw(const UMAA::Common::Orientation::Orientation3DNEDRequir
   return out;
 }
 
-std::optional<double> extractTrackToleranceM(
+std::optional<flt64_t> extractTrackToleranceM(
     const UMAA::Common::Distance::DistanceRequirementType& trackTolerance) {
   // The track tolerance's distance field is the allowed cross-track distance from the line.
   return trackTolerance.distance();
 }
 
-bool directionAchieved(const DirectionValue& dir, double actualRad, double defaultTolRad) {
-  const double err = wrapPi(actualRad - dir.headingRad);
+bool directionAchieved(const DirectionValue& dir, flt64_t actualRad, flt64_t defaultTolRad) {
+  const flt64_t err = wrapPi(actualRad - dir.headingRad);
   if (dir.ccwToleranceRad.has_value() || dir.cwToleranceRad.has_value()) {
     // err < 0 is counterclockwise of the setpoint, err > 0 clockwise.
-    const double ccw = dir.ccwToleranceRad.value_or(0.0);
-    const double cw = dir.cwToleranceRad.value_or(0.0);
+    const flt64_t ccw = dir.ccwToleranceRad.value_or(0.0);
+    const flt64_t cw = dir.cwToleranceRad.value_or(0.0);
     return err >= -ccw && err <= cw;
   }
   return std::fabs(err) <= defaultTolRad;
 }
 
-bool speedAchieved(const SpeedValue& speed, double actualMps, double defaultTolMps) {
+bool speedAchieved(const SpeedValue& speed, flt64_t actualMps, flt64_t defaultTolMps) {
   if (speed.allowable.has_value()) {
     return actualMps >= speed.allowable->lower && actualMps <= speed.allowable->upper;
   }
   return std::fabs(actualMps - speed.speedMps) <= defaultTolMps;
 }
 
-bool elevationAchieved(const ElevationValue& elevation, double actualM, double defaultTolM) {
+bool elevationAchieved(const ElevationValue& elevation, flt64_t actualM, flt64_t defaultTolM) {
   if (elevation.allowable.has_value()) {
     return actualM >= elevation.allowable->lower && actualM <= elevation.allowable->upper;
   }
   return std::fabs(actualM - elevation.valueM) <= defaultTolM;
 }
 
-bool attitudeAchieved(const AttitudeValue& attitude, double actualYawRad, double defaultTolRad) {
+bool attitudeAchieved(const AttitudeValue& attitude, flt64_t actualYawRad, flt64_t defaultTolRad) {
   if (attitude.allowable.has_value()) {
     // Angular interval [lower, upper] traversed clockwise; membership via offsets from lower.
-    const double span = attitude.allowable->upperRad - attitude.allowable->lowerRad;
-    const double spanNorm = (span >= 0.0) ? span : span + 2.0 * M_PI;
-    double rel = std::fmod(actualYawRad - attitude.allowable->lowerRad, 2.0 * M_PI);
+    const flt64_t span = attitude.allowable->upperRad - attitude.allowable->lowerRad;
+    const flt64_t spanNorm = (span >= 0.0) ? span : span + 2.0 * M_PI;
+    flt64_t rel = std::fmod(actualYawRad - attitude.allowable->lowerRad, 2.0 * M_PI);
     if (rel < 0.0) {
       rel += 2.0 * M_PI;
     }

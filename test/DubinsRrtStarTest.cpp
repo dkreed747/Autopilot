@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "autopilot/guidance/DubinsRrtStar.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -18,8 +19,8 @@ static DubinsRrtParams testParams() {
 }
 
 //! \brief Minimum clearance over every sample of the chain at 1 m resolution.
-static double chainMinClearance(const std::vector<DubinsPath>& chain, const ZoneSet& zones) {
-  double minClearance = 1e18;
+static flt64_t chainMinClearance(const std::vector<DubinsPath>& chain, const ZoneSet& zones) {
+  flt64_t minClearance = 1e18;
   for (const DubinsPath& path : chain) {
     const int32_t steps = std::max(1, static_cast<int32_t>(std::ceil(path.lengthM())));
     for (int32_t i = 0; i <= steps; ++i) {
@@ -31,8 +32,8 @@ static double chainMinClearance(const std::vector<DubinsPath>& chain, const Zone
 }
 
 //! \brief Largest positional discontinuity between consecutive chain segments.
-static double chainMaxGap(const Dubins2DPose& start, const std::vector<DubinsPath>& chain) {
-  double maxGap = 0.0;
+static flt64_t chainMaxGap(const Dubins2DPose& start, const std::vector<DubinsPath>& chain) {
+  flt64_t maxGap = 0.0;
   Dubins2DPose prev = start;
   for (const DubinsPath& path : chain) {
     const Dubins2DPose head = path.sample(0.0);

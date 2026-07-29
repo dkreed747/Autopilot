@@ -7,6 +7,7 @@
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/guidance/ControlVector.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -19,11 +20,11 @@ namespace arlcore::autopilot {
 //! COMPLIANT for the configured hold time.
 class RecoveryGuidance {
  public:
-  RecoveryGuidance(const RecoveryConfig& config, double cruiseSpeedMps, double safetyMarginM);
+  RecoveryGuidance(const RecoveryConfig& config, flt64_t cruiseSpeedMps, flt64_t safetyMarginM);
 
   //! \brief Pick the recovery target for the current violation. Returns false when no
   //! compliant point could be found (the caller keeps the zero-speed hold while grace runs).
-  bool begin(const GeoPoint& position, double depthM, std::optional<double> asfM,
+  bool begin(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM,
              const ZoneMap& map);
 
   //! \brief Whether a recovery target is currently held.
@@ -32,11 +33,11 @@ class RecoveryGuidance {
   //! \brief The control vector for this tick: heading at the carrot, recovery speed,
   //! elevation held. The target is re-validated (and re-picked when constraints changed);
   //! nullopt when there is no reachable target.
-  std::optional<ControlVector> tick(const GeoPoint& position, double depthM,
-                                    std::optional<double> asfM, const ZoneMap& map);
+  std::optional<ControlVector> tick(const GeoPoint& position, flt64_t depthM,
+                                    std::optional<flt64_t> asfM, const ZoneMap& map);
 
   //! \brief Whether the position has classified COMPLIANT for the configured hold time.
-  bool complete(const GeoPoint& position, double depthM, std::optional<double> asfM,
+  bool complete(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM,
                 const ZoneMap& map);
 
   //! \brief Drop the recovery target and timers.
@@ -44,8 +45,8 @@ class RecoveryGuidance {
 
  private:
   RecoveryConfig config_;
-  double cruiseSpeedMps_;
-  double safetyMarginM_;
+  flt64_t cruiseSpeedMps_;
+  flt64_t safetyMarginM_;
 
   std::optional<GeoPoint> target_;
   std::optional<std::chrono::steady_clock::time_point> compliantSince_;

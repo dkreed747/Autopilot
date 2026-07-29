@@ -5,16 +5,17 @@
 #include <GeographicLib/LocalCartesian.hpp>
 
 #include "autopilot/safety/RecoveryGuidance.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
-constexpr double kLat = 39.0;
-constexpr double kLon = -76.5;
+constexpr flt64_t kLat = 39.0;
+constexpr flt64_t kLon = -76.5;
 
-static GeoPoint at(double east, double north) {
+static GeoPoint at(flt64_t east, flt64_t north) {
   static const GeographicLib::LocalCartesian frame(kLat, kLon, 0.0);
   GeoPoint p;
-  double h = 0.0;
+  flt64_t h = 0.0;
   frame.Reverse(east, north, 0.0, p.latDeg, p.lonDeg, h);
   return p;
 }

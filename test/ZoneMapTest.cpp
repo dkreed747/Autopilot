@@ -5,24 +5,25 @@
 #include <GeographicLib/LocalCartesian.hpp>
 
 #include "autopilot/safety/ZoneMap.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 
-constexpr double kLat = 39.0;
-constexpr double kLon = -76.5;
+constexpr flt64_t kLat = 39.0;
+constexpr flt64_t kLon = -76.5;
 
 //! Geodetic point `east`/`north` meters from the test origin.
-static GeoPoint at(double east, double north) {
+static GeoPoint at(flt64_t east, flt64_t north) {
   static const GeographicLib::LocalCartesian frame(kLat, kLon, 0.0);
   GeoPoint p;
-  double h = 0.0;
+  flt64_t h = 0.0;
   frame.Reverse(east, north, 0.0, p.latDeg, p.lonDeg, h);
   return p;
 }
 
 //! A square keep-out/keep-in zone [0,size]x[0,size] in the test frame.
-static ZoneRecord squareZone(ZoneKind kind, double size, ElevationBand band = {}) {
+static ZoneRecord squareZone(ZoneKind kind, flt64_t size, ElevationBand band = {}) {
   ZoneRecord zone;
   zone.kind = kind;
   zone.band = band;

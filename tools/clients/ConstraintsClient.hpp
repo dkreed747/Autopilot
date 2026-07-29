@@ -30,6 +30,7 @@
 #include "LargeSetReader.h"
 #include "NumericGuid.h"
 #include "SpecializationCache.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tools {
 
@@ -42,12 +43,12 @@ struct ConstraintRecord {
   std::string id;    // conditionalID
   std::string name;
   std::string type;  // "keep_in" | "keep_out" | "speed" | "depth" | "other"
-  std::vector<std::array<double, 2>> polygon;  // lat, lon (zones)
-  std::optional<double> ceilingM;              // zone shallow bound, in ceilingFrame
+  std::vector<std::array<flt64_t, 2>> polygon;  // lat, lon (zones)
+  std::optional<flt64_t> ceilingM;              // zone shallow bound, in ceilingFrame
   std::string ceilingFrame = "depth";          // "depth" (positive down) | "asf" (above sea floor)
-  std::optional<double> floorM;                // zone deep bound, in floorFrame
+  std::optional<flt64_t> floorM;                // zone deep bound, in floorFrame
   std::string floorFrame = "depth";
-  std::optional<double> value;                 // speed (m/s) / depth (m)
+  std::optional<flt64_t> value;                 // speed (m/s) / depth (m)
   std::string op;                              // "lte" | "gte"
   bool active = false;
   std::optional<bool> state;  // last ConditionalStateReport (false = violated)
@@ -85,17 +86,17 @@ class ConstraintsClient {
   //! frames are "depth" (meters below the surface) or "asf" (meters above the sea floor) —
   //! mixable, e.g. a ceiling at depth 0 with a floor 5 m above the sea floor. Returns the id.
   std::string upsertZone(const std::string& id, const std::string& name, bool keepIn,
-                         const std::vector<std::array<double, 2>>& polygonLatLon,
-                         double ceilingM, const std::string& ceilingFrame,
-                         double floorM, const std::string& floorFrame);
+                         const std::vector<std::array<flt64_t, 2>>& polygonLatLon,
+                         flt64_t ceilingM, const std::string& ceilingFrame,
+                         flt64_t floorM, const std::string& floorFrame);
 
   //! \brief Create or update a speed constraint ("lte" = max speed, "gte" = min speed).
   std::string upsertSpeed(const std::string& id, const std::string& name, const std::string& op,
-                          double valueMps);
+                          flt64_t valueMps);
 
   //! \brief Create or update a depth constraint ("lte" = max depth, "gte" = min depth).
   std::string upsertDepth(const std::string& id, const std::string& name, const std::string& op,
-                          double valueM);
+                          flt64_t valueM);
 
   //! \brief Delete a constraint (deactivating it first when it is in the applied set).
   bool removeConstraint(const std::string& id);

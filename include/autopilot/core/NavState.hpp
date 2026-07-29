@@ -8,6 +8,7 @@
 #include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
 #include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
 #include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -59,7 +60,7 @@ class NavState {
   }
 
   //! \brief Current ground speed if reported, else 0.
-  double groundSpeedMps() const {
+  flt64_t groundSpeedMps() const {
     std::scoped_lock lock(mtx_);
     if (speed_.has_value() && speed_->speedOverGround().has_value()) {
       return speed_->speedOverGround().value();

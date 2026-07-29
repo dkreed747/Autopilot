@@ -12,6 +12,7 @@
 #include "Logger.h"
 #include "autopilot/guidance/ToleranceUtils.hpp"
 #include "UmaaUtils.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -22,7 +23,7 @@ using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 
 //! \brief A DateTime `secondsAhead` seconds in the future (clamped to now for non-finite or
 //! negative inputs).
-static UMAA::Common::Measurement::DateTime timestampPlus(double secondsAhead) {
+static UMAA::Common::Measurement::DateTime timestampPlus(flt64_t secondsAhead) {
   UMAA::Common::Measurement::DateTime t = arlcore::umaa::getTimestamp();
   if (std::isfinite(secondsAhead) && secondsAhead > 0.0) {
     t.seconds() += static_cast<int64_t>(secondsAhead);
@@ -32,7 +33,7 @@ static UMAA::Common::Measurement::DateTime timestampPlus(double secondsAhead) {
 
 WaypointControlServiceProvider::WaypointControlServiceProvider(
     const arlcore::NumericGuid& source, std::shared_ptr<WaypointControlServiceProviderIo> io,
-    IAutopilot* autopilot, double maxForwardSpeedMps, int32_t maxListWaitCycles,
+    IAutopilot* autopilot, flt64_t maxForwardSpeedMps, int32_t maxListWaitCycles,
     const ISafetyGate* safetyGate, const ZoneMap* zoneMap, ICommandModeGate* modeGate) :
     CommandProviderBase(source, io),
     sourceId_(source),
@@ -181,7 +182,7 @@ bool WaypointControlServiceProvider::waypointsZoneCompliant(
   if (zoneMap_ == nullptr || !zoneMap_->hasZones()) {
     return true;
   }
-  const double marginM = zoneMap_->config().safetyMarginM;
+  const flt64_t marginM = zoneMap_->config().safetyMarginM;
   for (std::size_t i = 0; i < waypoints.size(); ++i) {
     const GlobalWaypointType& wp = waypoints[i];
     const GeoPoint at{wp.position().value().geodeticLatitude(),
@@ -364,7 +365,7 @@ SendStatus WaypointControlServiceProvider::sendExecutionStatus(const GlobalWaypo
   report.waypointsRemaining() = prog.waypointsRemaining;
   report.waypointID() = prog.waypointId.getGuid();
   // ETA estimates from the current ground speed (fall back to "now" when not moving).
-  const double speed = std::max(prog.groundSpeedMps, 0.1);
+  const flt64_t speed = std::max(prog.groundSpeedMps, 0.1);
   report.timeToWaypoint() = timestampPlus(prog.distanceToWaypointM / speed);
   report.arrivalTime() = timestampPlus(prog.distanceRemainingM / speed);
   return io_->cmdExeStatusSender.value()->send(report);

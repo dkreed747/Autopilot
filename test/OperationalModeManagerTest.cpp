@@ -7,10 +7,11 @@
 
 #include "NumericGuid.h"
 #include "autopilot/modes/OperationalModeManager.hpp"
+#include "InternalTypes.h"
 
 static arlcore::autopilot::OperationalModeConfig makeModeConfig(
     bool allowImplicit = true, bool failOutOfMode = true,
-    double idleRevertS = 0.0) {
+    flt64_t idleRevertS = 0.0) {
   arlcore::autopilot::OperationalModeConfig config;
   config.allowImplicitModeTransitions = allowImplicit;
   config.commandsOutOfModeAreFailed = failOutOfMode;

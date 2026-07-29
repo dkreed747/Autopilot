@@ -7,13 +7,14 @@
 
 #include "autopilot/safety/ConstraintTypes.hpp"
 #include "autopilot/guidance/DubinsPath.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 //! \brief A 2D point/vector in a local tangent plane: x = east meters, y = north meters.
 struct Vec2 {
-  double x = 0.0;
-  double y = 0.0;
+  flt64_t x = 0.0;
+  flt64_t y = 0.0;
 };
 
 //! \brief A simple polygon in the local plane, normalized to counter-clockwise winding with a
@@ -29,7 +30,7 @@ class LocalPolygon {
 
   //! \brief Signed distance from `p` to the polygon: positive inside, negative outside, zero on
   //! the boundary. Magnitude is the Euclidean distance to the nearest boundary point.
-  double signedDistance(const Vec2& p) const;
+  flt64_t signedDistance(const Vec2& p) const;
 
   //! \brief The boundary point nearest to `p`.
   Vec2 closestBoundaryPoint(const Vec2& p) const;
@@ -46,7 +47,7 @@ class LocalPolygon {
 
 //! \brief Clearance at a point plus the direction that increases it fastest.
 struct ClearanceInfo {
-  double clearanceM = 0.0;
+  flt64_t clearanceM = 0.0;
   Vec2 improveDir{1.0, 0.0};  // unit vector toward increasing clearance
 };
 
@@ -66,34 +67,34 @@ class ZoneSet {
   std::size_t size() const { return zones_.size(); }
 
   //! \brief Signed compliance clearance at `p` (min over all zones). Positive = compliant.
-  double clearanceM(const Vec2& p) const;
+  flt64_t clearanceM(const Vec2& p) const;
 
   //! \brief Clearance at `p` plus the unit direction that increases the binding zone's clearance.
   ClearanceInfo clearanceInfo(const Vec2& p) const;
 
   //! \brief Whether `p` keeps at least `marginM` clearance from every zone boundary.
-  bool pointCompliant(const Vec2& p, double marginM) const { return clearanceM(p) >= marginM; }
+  bool pointCompliant(const Vec2& p, flt64_t marginM) const { return clearanceM(p) >= marginM; }
 
   //! \brief Whether every sample of segment a->b (step `stepM`, endpoints included) keeps
   //! `marginM` clearance.
-  bool segmentClear(const Vec2& a, const Vec2& b, double marginM, double stepM) const;
+  bool segmentClear(const Vec2& a, const Vec2& b, flt64_t marginM, flt64_t stepM) const;
 
   //! \brief Whether every sample of a Dubins path (planned in this frame, offset by `origin`)
   //! keeps `marginM` clearance. Sampling at step delta with clearance >= m at every sample
   //! guarantees true clearance >= m - delta/2 - delta^2/(8*rho) on curvature-rho arcs; callers
   //! pick stepM (and margin) accordingly.
-  bool pathClear(const DubinsPath& path, double marginM, double stepM) const;
+  bool pathClear(const DubinsPath& path, flt64_t marginM, flt64_t stepM) const;
 
   //! \brief Distance along the ray from `origin` in direction `dir` (unit vector) at which the
   //! clearance first drops below `marginM`, or nullopt if the ray stays clear out to `maxRangeM`.
   //! If the origin itself is below margin, returns 0.
-  std::optional<double> raycastFirstHit(const Vec2& origin, const Vec2& dir, double marginM,
-                                        double maxRangeM) const;
+  std::optional<flt64_t> raycastFirstHit(const Vec2& origin, const Vec2& dir, flt64_t marginM,
+                                        flt64_t maxRangeM) const;
 
   //! \brief The nearest point to `p` with clearance >= `marginM`: iterative projection along the
   //! clearance gradient, with an expanding ring search as fallback for multi-zone corners.
   //! Returns nullopt when no compliant point is found within the search budget.
-  std::optional<Vec2> nearestCompliantPoint(const Vec2& p, double marginM) const;
+  std::optional<Vec2> nearestCompliantPoint(const Vec2& p, flt64_t marginM) const;
 
   //! \brief The intersection AABB of all keep-in zones (a natural sampling domain), or nullopt
   //! when there is no keep-in zone. An empty (inverted) box means the keep-ins are disjoint.
@@ -106,7 +107,7 @@ class ZoneSet {
   };
 
   //! \brief Signed compliance clearance contributed by one zone.
-  static double zoneClearance(const Zone& z, const Vec2& p);
+  static flt64_t zoneClearance(const Zone& z, const Vec2& p);
 
   std::vector<Zone> zones_;
 };

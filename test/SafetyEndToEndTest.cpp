@@ -18,6 +18,7 @@
 #include "autopilot/safety/SafeModeStrategyFactory.hpp"
 #include "UuidFactory.h"
 #include "WaterZoneConditional.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -28,8 +29,8 @@ using UMAA::Common::Measurement::DateTime;
 using UMAA::Common::Measurement::GeoPosition2D;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 
-constexpr double kLat = 39.0;
-constexpr double kLon = -76.5;
+constexpr flt64_t kLat = 39.0;
+constexpr flt64_t kLon = -76.5;
 const char* kSrpCsvPath = "safety_e2e_srp.csv";
 
 static const GeographicLib::LocalCartesian& testFrame() {
@@ -49,9 +50,9 @@ class EndToEndSimVehicle : public IVehicleControl {
 
   GlobalPoseReportType pose() const {
     GlobalPoseReportType p;
-    double lat = 0.0;
-    double lon = 0.0;
-    double h = 0.0;
+    flt64_t lat = 0.0;
+    flt64_t lon = 0.0;
+    flt64_t h = 0.0;
     testFrame().Reverse(xE, yN, 0.0, lat, lon, h);
     p.position().geodeticLatitude(lat);
     p.position().geodeticLongitude(lon);
@@ -60,20 +61,20 @@ class EndToEndSimVehicle : public IVehicleControl {
     return p;
   }
 
-  void integrate(double dtS) {
+  void integrate(flt64_t dtS) {
     if (!last.has_value()) {
       return;
     }
-    const double err = wrapPi(last->headingRad - yawRad);
-    const double maxDelta = 0.5 * dtS;
+    const flt64_t err = wrapPi(last->headingRad - yawRad);
+    const flt64_t maxDelta = 0.5 * dtS;
     yawRad = wrapPi(yawRad + std::clamp(err, -maxDelta, maxDelta));
     xE += last->speedMps * dtS * std::sin(yawRad);
     yN += last->speedMps * dtS * std::cos(yawRad);
   }
 
-  double xE = 0.0;
-  double yN = 0.0;
-  double yawRad = 0.0;
+  flt64_t xE = 0.0;
+  flt64_t yN = 0.0;
+  flt64_t yawRad = 0.0;
   std::optional<ControlVector> last;
   bool manualEngaged = false;
 };
@@ -95,9 +96,9 @@ static std::shared_ptr<WaterZoneConditional> keepInConditional() {
 
   UMAA::MM::BaseType::PolygonVariantType polygon;
   for (const auto& [e, n] : {std::pair{0.0, 0.0}, {200.0, 0.0}, {200.0, 200.0}, {0.0, 200.0}}) {
-    double lat = 0.0;
-    double lon = 0.0;
-    double h = 0.0;
+    flt64_t lat = 0.0;
+    flt64_t lon = 0.0;
+    flt64_t h = 0.0;
     testFrame().Reverse(e, n, 0.0, lat, lon, h);
     polygon.referencePoints().push_back(GeoPosition2D(lat, lon));
   }
@@ -141,7 +142,7 @@ struct Harness {
   }
 
   //! \brief One control tick: pose -> conditional -> brain -> supervisor -> integrate.
-  void step(double dtS = 0.25) {
+  void step(flt64_t dtS = 0.25) {
     const GlobalPoseReportType pose = vehicle.pose();
     nav.setPose(pose);
     zone->update(pose);
@@ -150,7 +151,7 @@ struct Harness {
     vehicle.integrate(dtS);
   }
 
-  void stepFor(int32_t ticks, double dtS = 0.25) {
+  void stepFor(int32_t ticks, flt64_t dtS = 0.25) {
     for (int32_t i = 0; i < ticks; ++i) {
       step(dtS);
     }

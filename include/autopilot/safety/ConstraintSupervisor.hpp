@@ -23,6 +23,7 @@
 #include "autopilot/safety/ISafetyGate.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
 #include "autopilot/umaa/CallbackObserver.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -95,7 +96,7 @@ class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
   void updateSafety();
 
   //! \brief Grace period for a constraint class (per-class override or the global default).
-  double gracePeriodS(ConstraintClass cls) const;
+  flt64_t gracePeriodS(ConstraintClass cls) const;
 
   void enterSafeMode(const char* why);
 

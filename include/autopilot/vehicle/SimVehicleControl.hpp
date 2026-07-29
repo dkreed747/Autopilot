@@ -19,6 +19,7 @@
 #include "NumericGuid.h"
 #include "ReportProvider.h"
 #include "SenderBase.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -58,25 +59,25 @@ class SimVehicleControl : public IVehicleControl {
 
   //! \brief Snapshot of the simulated truth state (for tests/diagnostics).
   struct SimState {
-    double latitudeDeg = 0.0;
-    double longitudeDeg = 0.0;
-    double headingRad = 0.0;
-    double speedMps = 0.0;
-    double depthM = 0.0;
-    double yawRateRps = 0.0;
+    flt64_t latitudeDeg = 0.0;
+    flt64_t longitudeDeg = 0.0;
+    flt64_t headingRad = 0.0;
+    flt64_t speedMps = 0.0;
+    flt64_t depthM = 0.0;
+    flt64_t yawRateRps = 0.0;
   };
   SimState state() const;
 
   //! \brief Advance the simulation by one step and publish the nav reports. Runs on the sim
   //! thread; public so deterministic tests can drive it directly without the thread.
-  void stepOnce(double dtS);
+  void stepOnce(flt64_t dtS);
 
  private:
   void runLoop();
-  double maxTurnRateRps() const;
-  double maxForwardSpeedMps() const;
-  double maxReverseSpeedMps() const;
-  double maxDepthRateMps() const;
+  flt64_t maxTurnRateRps() const;
+  flt64_t maxForwardSpeedMps() const;
+  flt64_t maxReverseSpeedMps() const;
+  flt64_t maxDepthRateMps() const;
   void publishReports();
 
   PlatformCapabilitiesConfig caps_;
@@ -92,12 +93,12 @@ class SimVehicleControl : public IVehicleControl {
 
   // Simulated truth state, integrated in a local tangent plane anchored at the initial fix.
   GeographicLib::LocalCartesian frame_;
-  double xEastM_ = 0.0;
-  double yNorthM_ = 0.0;
-  double headingRad_ = 0.0;
-  double speedMps_ = 0.0;
-  double depthM_ = 0.0;
-  double yawRateRps_ = 0.0;
+  flt64_t xEastM_ = 0.0;
+  flt64_t yNorthM_ = 0.0;
+  flt64_t headingRad_ = 0.0;
+  flt64_t speedMps_ = 0.0;
+  flt64_t depthM_ = 0.0;
+  flt64_t yawRateRps_ = 0.0;
 
   std::thread simThread_;
   std::atomic<bool> running_{false};

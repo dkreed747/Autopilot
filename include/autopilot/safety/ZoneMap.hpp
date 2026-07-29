@@ -9,6 +9,7 @@
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/safety/ConstraintTypes.hpp"
 #include "autopilot/safety/ZoneGeometry.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -46,20 +47,20 @@ class ZoneMap {
 
   //! \brief Classify a geodetic position at vehicle depth `depthM` (and, when known, altitude
   //! above the sea floor `asfM` — required to gate ASF-framed zone bands) against the zones.
-  ZoneCompliance classify(const GeoPoint& position, double depthM,
-                          std::optional<double> asfM = std::nullopt) const;
+  ZoneCompliance classify(const GeoPoint& position, flt64_t depthM,
+                          std::optional<flt64_t> asfM = std::nullopt) const;
 
   //! \brief Compliance clearance (meters, positive = compliant) of a position.
-  double clearanceM(const GeoPoint& position, double depthM,
-                    std::optional<double> asfM = std::nullopt) const;
+  flt64_t clearanceM(const GeoPoint& position, flt64_t depthM,
+                    std::optional<flt64_t> asfM = std::nullopt) const;
 
   //! \brief Whether a commanded point keeps `marginM` clearance (command-time validation).
-  bool pointCompliant(const GeoPoint& position, double depthM, double marginM,
-                      std::optional<double> asfM = std::nullopt) const;
+  bool pointCompliant(const GeoPoint& position, flt64_t depthM, flt64_t marginM,
+                      std::optional<flt64_t> asfM = std::nullopt) const;
 
   //! \brief Clearance of a position over an explicit vertical envelope (for points whose
   //! depth is not known exactly, e.g. waypoints commanded in the ASF frame).
-  double clearanceM(const GeoPoint& position, const ElevationEnvelope& envelope) const;
+  flt64_t clearanceM(const GeoPoint& position, const ElevationEnvelope& envelope) const;
 
   //! \brief The map's own anchor frame (unset until the first zone is ingested). Callers that
   //! need raw ZoneSet queries at the vehicle (vector avoidance, recovery) project through it.

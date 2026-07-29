@@ -11,6 +11,7 @@
 #include "autopilot/guidance/AngleMath.hpp"
 #include "Logger.h"
 #include "autopilot/guidance/ToleranceUtils.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -18,38 +19,38 @@ using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 
 
-static double poseLat(const GlobalPoseReportType& p) { return p.position().geodeticLatitude(); }
-static double poseLon(const GlobalPoseReportType& p) { return p.position().geodeticLongitude(); }
-static double poseYaw(const GlobalPoseReportType& p) { return p.attitude().yaw().yaw(); }
+static flt64_t poseLat(const GlobalPoseReportType& p) { return p.position().geodeticLatitude(); }
+static flt64_t poseLon(const GlobalPoseReportType& p) { return p.position().geodeticLongitude(); }
+static flt64_t poseYaw(const GlobalPoseReportType& p) { return p.attitude().yaw().yaw(); }
 
-static double wpLat(const GlobalWaypointType& w) { return w.position().value().geodeticLatitude(); }
-static double wpLon(const GlobalWaypointType& w) { return w.position().value().geodeticLongitude(); }
+static flt64_t wpLat(const GlobalWaypointType& w) { return w.position().value().geodeticLatitude(); }
+static flt64_t wpLon(const GlobalWaypointType& w) { return w.position().value().geodeticLongitude(); }
 
 //! \brief Azimuth (true north, clockwise) <-> math angle (+x east, counterclockwise).
 //! The mapping is its own inverse.
-static double azToMath(double azRad) { return wrapPi(M_PI_2 - azRad); }
-static double mathToAz(double mathRad) { return wrapPi(M_PI_2 - mathRad); }
+static flt64_t azToMath(flt64_t azRad) { return wrapPi(M_PI_2 - azRad); }
+static flt64_t mathToAz(flt64_t mathRad) { return wrapPi(M_PI_2 - mathRad); }
 
 //! \brief Current pose elevation in the requested frame, if available.
-static std::optional<double> poseElevation(const GlobalPoseReportType& p, ElevationFrame frame) {
+static std::optional<flt64_t> poseElevation(const GlobalPoseReportType& p, ElevationFrame frame) {
   switch (frame) {
     case ElevationFrame::DEPTH:
-      return p.depth().has_value() ? std::optional<double>(p.depth().value()) : std::nullopt;
+      return p.depth().has_value() ? std::optional<flt64_t>(p.depth().value()) : std::nullopt;
     case ElevationFrame::ALTITUDE_MSL:
-      return p.altitude().has_value() ? std::optional<double>(p.altitude().value()) : std::nullopt;
+      return p.altitude().has_value() ? std::optional<flt64_t>(p.altitude().value()) : std::nullopt;
     case ElevationFrame::ALTITUDE_AGL:
-      return p.altitudeAGL().has_value() ? std::optional<double>(p.altitudeAGL().value()) : std::nullopt;
+      return p.altitudeAGL().has_value() ? std::optional<flt64_t>(p.altitudeAGL().value()) : std::nullopt;
     case ElevationFrame::ALTITUDE_ASF:
-      return p.altitudeASF().has_value() ? std::optional<double>(p.altitudeASF().value()) : std::nullopt;
+      return p.altitudeASF().has_value() ? std::optional<flt64_t>(p.altitudeASF().value()) : std::nullopt;
     case ElevationFrame::ALTITUDE_GEODETIC:
-      return p.altitudeGeodetic().has_value() ? std::optional<double>(p.altitudeGeodetic().value()) : std::nullopt;
+      return p.altitudeGeodetic().has_value() ? std::optional<flt64_t>(p.altitudeGeodetic().value()) : std::nullopt;
     default:
       return std::nullopt;
   }
 }
 
 //! \brief Capture-gate half-width for a waypoint (its position tolerance or the default).
-static double gateHalfWidthM(const GlobalWaypointType& wp, const PlannerParams& params) {
+static flt64_t gateHalfWidthM(const GlobalWaypointType& wp, const PlannerParams& params) {
   if (wp.position().tolerance().has_value()) {
     return wp.position().tolerance().value().limit();
   }
@@ -58,12 +59,12 @@ static double gateHalfWidthM(const GlobalWaypointType& wp, const PlannerParams& 
 
 //! \brief The waypoint's commanded speed (0 when the variant is unsupported; validation in
 //! the provider rejects such routes before they reach the planner).
-static double waypointSpeedMps(const GlobalWaypointType& wp) {
+static flt64_t waypointSpeedMps(const GlobalWaypointType& wp) {
   const std::optional<SpeedValue> sp = tolerance::extractSpeed(wp.speed());
   return sp.has_value() ? sp->speedMps : 0.0;
 }
 
-DubinsPathPlanner::Leg::Leg(std::vector<DubinsPath> chain, double runway, double endAz)
+DubinsPathPlanner::Leg::Leg(std::vector<DubinsPath> chain, flt64_t runway, flt64_t endAz)
     : paths(std::move(chain)), runwayM(runway), endAzimuthRad(endAz) {
   pathStartM.reserve(paths.size());
   dubinsLengthM = 0.0;
@@ -74,7 +75,7 @@ DubinsPathPlanner::Leg::Leg(std::vector<DubinsPath> chain, double runway, double
   lengthM = dubinsLengthM + runwayM;
 }
 
-Dubins2DPose DubinsPathPlanner::Leg::sampleChain(double sM) const {
+Dubins2DPose DubinsPathPlanner::Leg::sampleChain(flt64_t sM) const {
   std::size_t i = paths.size() - 1;
   while (i > 0 && sM < pathStartM[i]) {
     --i;
@@ -93,30 +94,30 @@ std::string DubinsPathPlanner::Leg::word() const {
   return out;
 }
 
-void DubinsPathPlanner::toLocal(double latDeg, double lonDeg, double* xE, double* yN) const {
-  double z = 0.0;
+void DubinsPathPlanner::toLocal(flt64_t latDeg, flt64_t lonDeg, flt64_t* xE, flt64_t* yN) const {
+  flt64_t z = 0.0;
   localFrame_.Forward(latDeg, lonDeg, 0.0, *xE, *yN, z);
 }
 
-Dubins2DPose DubinsPathPlanner::sampleExtended(const Leg& leg, double sM) {
+Dubins2DPose DubinsPathPlanner::sampleExtended(const Leg& leg, flt64_t sM) {
   if (sM <= leg.dubinsLengthM) {
     return leg.sampleChain(sM);
   }
   // Straight continuation covers both the final-approach runway (up to lengthM, ending at
   // the waypoint) and the fly-through extension beyond it.
   Dubins2DPose end = leg.sampleChain(leg.dubinsLengthM);
-  const double over = sM - leg.dubinsLengthM;
+  const flt64_t over = sM - leg.dubinsLengthM;
   end.x += over * std::cos(end.theta);
   end.y += over * std::sin(end.theta);
   return end;
 }
 
-bool DubinsPathPlanner::legClear(const Leg& leg, double fromS) const {
+bool DubinsPathPlanner::legClear(const Leg& leg, flt64_t fromS) const {
   if (zoneSet_.empty()) {
     return true;
   }
-  const double step = std::max(0.25, params_.rrt.finalCheckStepM);
-  for (double s = std::max(0.0, fromS); s <= leg.lengthM; s += step) {
+  const flt64_t step = std::max(0.25, params_.rrt.finalCheckStepM);
+  for (flt64_t s = std::max(0.0, fromS); s <= leg.lengthM; s += step) {
     const Dubins2DPose p = sampleExtended(leg, s);
     if (zoneSet_.clearanceM(Vec2{p.x, p.y}) < params_.zoneMarginM) {
       return false;
@@ -125,11 +126,11 @@ bool DubinsPathPlanner::legClear(const Leg& leg, double fromS) const {
   return true;
 }
 
-std::optional<double> DubinsPathPlanner::compliantArrivalAzimuth(std::size_t wpIndex,
-                                                                 double naturalAz,
-                                                                 double runwayM) const {
-  const auto runwayCompliant = [&](double az) {
-    const double theta = azToMath(az);
+std::optional<flt64_t> DubinsPathPlanner::compliantArrivalAzimuth(std::size_t wpIndex,
+                                                                 flt64_t naturalAz,
+                                                                 flt64_t runwayM) const {
+  const auto runwayCompliant = [&](flt64_t az) {
+    const flt64_t theta = azToMath(az);
     const Vec2 wp{wpX_[wpIndex], wpY_[wpIndex]};
     const Vec2 goal{wp.x - runwayM * std::cos(theta), wp.y - runwayM * std::sin(theta)};
     return zoneSet_.segmentClear(goal, wp, params_.zoneMarginM,
@@ -144,10 +145,10 @@ std::optional<double> DubinsPathPlanner::compliantArrivalAzimuth(std::size_t wpI
     return std::nullopt;
   }
   // Scan alternates outward from the natural azimuth in 22.5-degree steps.
-  const double step = M_PI / 8.0;
+  const flt64_t step = M_PI / 8.0;
   for (int32_t k = 1; k <= 8; ++k) {
-    for (const double sign : {1.0, -1.0}) {
-      const double az = wrapPi(naturalAz + sign * step * k);
+    for (const flt64_t sign : {1.0, -1.0}) {
+      const flt64_t az = wrapPi(naturalAz + sign * step * k);
       if (runwayCompliant(az)) {
         return az;
       }
@@ -168,7 +169,7 @@ void DubinsPathPlanner::refreshZoneSet(const GlobalPoseReportType& pose) {
   // waypoint elevation (the spiral machinery can park the vehicle at any intermediate depth).
   // Elevation frames with no depth equivalent make the envelope unbounded — conservative.
   ElevationEnvelope envelope;
-  const double startDepth = pose.depth().has_value() ? pose.depth().value() : 0.0;
+  const flt64_t startDepth = pose.depth().has_value() ? pose.depth().value() : 0.0;
   envelope.minDepthM = startDepth;
   envelope.maxDepthM = startDepth;
   bool unbounded = false;
@@ -191,15 +192,15 @@ void DubinsPathPlanner::refreshZoneSet(const GlobalPoseReportType& pose) {
   zoneSet_ = zoneMap_->activeSet(localFrame_, envelope);
 }
 
-double DubinsPathPlanner::arrivalAzimuth(std::size_t wpIndex, double fromXE, double fromYN) const {
+flt64_t DubinsPathPlanner::arrivalAzimuth(std::size_t wpIndex, flt64_t fromXE, flt64_t fromYN) const {
   const GlobalWaypointType& wp = waypoints_[wpIndex];
   if (wp.attitude().has_value()) {
     return tolerance::extractYaw(wp.attitude().value()).yawRad;
   }
   // Natural fly-through heading: toward the next waypoint, or along the final approach for
   // the last one.
-  double dE = 0.0;
-  double dN = 0.0;
+  flt64_t dE = 0.0;
+  flt64_t dN = 0.0;
   if (wpIndex + 1 < waypoints_.size()) {
     dE = wpX_[wpIndex + 1] - wpX_[wpIndex];
     dN = wpY_[wpIndex + 1] - wpY_[wpIndex];
@@ -215,10 +216,10 @@ double DubinsPathPlanner::arrivalAzimuth(std::size_t wpIndex, double fromXE, dou
 
 std::optional<DubinsPathPlanner::Leg> DubinsPathPlanner::buildLeg(const Dubins2DPose& startPose,
                                                                   std::size_t wpIndex) const {
-  const double runwayM = params_.turnRadiusM;
-  double endAz = arrivalAzimuth(wpIndex, startPose.x, startPose.y);
+  const flt64_t runwayM = params_.turnRadiusM;
+  flt64_t endAz = arrivalAzimuth(wpIndex, startPose.x, startPose.y);
   if (!zoneSet_.empty()) {
-    const std::optional<double> compliantAz = compliantArrivalAzimuth(wpIndex, endAz, runwayM);
+    const std::optional<flt64_t> compliantAz = compliantArrivalAzimuth(wpIndex, endAz, runwayM);
     if (!compliantAz.has_value()) {
       UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "DubinsPathPlanner: no zone-compliant final approach to "
         "waypoint " << wpIndex)
@@ -226,7 +227,7 @@ std::optional<DubinsPathPlanner::Leg> DubinsPathPlanner::buildLeg(const Dubins2D
     }
     endAz = compliantAz.value();
   }
-  const double endTheta = azToMath(endAz);
+  const flt64_t endTheta = azToMath(endAz);
   // Solve the curved portion to a virtual goal one turn radius short of the waypoint along
   // the arrival bearing; the leg then finishes with a straight runway through the waypoint.
   const Dubins2DPose virtualGoal{wpX_[wpIndex] - runwayM * std::cos(endTheta),
@@ -337,8 +338,8 @@ bool DubinsPathPlanner::replanCurrentLegFrom(const GlobalPoseReportType& pose) {
   if (waypoints_.empty() || routeComplete_ || failed_ || targetIndex_ >= waypoints_.size()) {
     return false;
   }
-  double xE = 0.0;
-  double yN = 0.0;
+  flt64_t xE = 0.0;
+  flt64_t yN = 0.0;
   toLocal(poseLat(pose), poseLon(pose), &xE, &yN);
   const Dubins2DPose current{xE, yN, azToMath(poseYaw(pose))};
   currentLeg_ = buildLeg(current, targetIndex_);
@@ -359,12 +360,12 @@ bool DubinsPathPlanner::replanCurrentLegFrom(const GlobalPoseReportType& pose) {
   return true;
 }
 
-std::vector<std::pair<double, double>> DubinsPathPlanner::previewRoute(double stepM) const {
-  std::vector<std::pair<double, double>> out;
+std::vector<std::pair<flt64_t, flt64_t>> DubinsPathPlanner::previewRoute(flt64_t stepM) const {
+  std::vector<std::pair<flt64_t, flt64_t>> out;
   if (waypoints_.empty()) {
     return out;
   }
-  const double step = std::max(0.5, stepM);
+  const flt64_t step = std::max(0.5, stepM);
   Dubins2DPose legStart = planStartPose_;
   for (std::size_t i = 0; i < waypoints_.size(); i++) {
     const std::optional<Leg> built = buildLeg(legStart, i);
@@ -372,11 +373,11 @@ std::vector<std::pair<double, double>> DubinsPathPlanner::previewRoute(double st
       break;  // preview what is plannable; the live planner fails the route at this leg
     }
     const Leg& leg = built.value();
-    for (double s = 0.0; s <= leg.lengthM + step * 0.5; s += step) {
+    for (flt64_t s = 0.0; s <= leg.lengthM + step * 0.5; s += step) {
       const Dubins2DPose p = sampleExtended(leg, std::min(s, leg.lengthM));
-      double lat = 0.0;
-      double lon = 0.0;
-      double h = 0.0;
+      flt64_t lat = 0.0;
+      flt64_t lon = 0.0;
+      flt64_t h = 0.0;
       localFrame_.Reverse(p.x, p.y, 0.0, lat, lon, h);
       out.emplace_back(lat, lon);
     }
@@ -386,7 +387,7 @@ std::vector<std::pair<double, double>> DubinsPathPlanner::previewRoute(double st
 }
 
 CaptureResult DubinsPathPlanner::evaluateCapture(const GlobalPoseReportType& pose,
-                                                 double gateLateralM) const {
+                                                 flt64_t gateLateralM) const {
   CaptureResult result;
   const GlobalWaypointType& wp = waypoints_[targetIndex_];
 
@@ -400,7 +401,7 @@ CaptureResult DubinsPathPlanner::evaluateCapture(const GlobalPoseReportType& pos
   if (wp.elevation().has_value()) {
     const std::optional<ElevationValue> el = tolerance::extractElevation(wp.elevation().value());
     if (el.has_value()) {
-      const std::optional<double> cur = poseElevation(pose, el->frame);
+      const std::optional<flt64_t> cur = poseElevation(pose, el->frame);
       result.elevationAchieved = cur.has_value() &&
           tolerance::elevationAchieved(el.value(), cur.value(), params_.elevCaptureM);
     } else {
@@ -415,9 +416,9 @@ CaptureResult DubinsPathPlanner::evaluateCapture(const GlobalPoseReportType& pos
 }
 
 void DubinsPathPlanner::advanceToNextWaypoint() {
-  const double arrivalAz = currentLeg_->endAzimuthRad;
-  const double fromX = wpX_[targetIndex_];
-  const double fromY = wpY_[targetIndex_];
+  const flt64_t arrivalAz = currentLeg_->endAzimuthRad;
+  const flt64_t fromX = wpX_[targetIndex_];
+  const flt64_t fromY = wpY_[targetIndex_];
   targetIndex_++;
   legProgressS_ = 0.0;
   lastGateAlongM_.reset();
@@ -495,7 +496,7 @@ void DubinsPathPlanner::spiralReplan(const Dubins2DPose& current) {
     << currentLeg_->word() << ")")
 }
 
-std::optional<double> DubinsPathPlanner::elevationErrorM(const GlobalPoseReportType& pose) const {
+std::optional<flt64_t> DubinsPathPlanner::elevationErrorM(const GlobalPoseReportType& pose) const {
   const GlobalWaypointType& wp = waypoints_[targetIndex_];
   if (!wp.elevation().has_value()) {
     return std::nullopt;
@@ -504,7 +505,7 @@ std::optional<double> DubinsPathPlanner::elevationErrorM(const GlobalPoseReportT
   if (!el.has_value()) {
     return std::nullopt;
   }
-  const std::optional<double> cur = poseElevation(pose, el->frame);
+  const std::optional<flt64_t> cur = poseElevation(pose, el->frame);
   if (!cur.has_value()) {
     return std::nullopt;
   }
@@ -512,12 +513,12 @@ std::optional<double> DubinsPathPlanner::elevationErrorM(const GlobalPoseReportT
 }
 
 void DubinsPathPlanner::computeElevationApproachBudget(const GlobalPoseReportType& pose,
-                                                       double groundSpeedMps) {
+                                                       flt64_t groundSpeedMps) {
   elevApproachBudget_ = 0;
   if (params_.maxDepthRateMps <= 0.0 || !currentLeg_.has_value()) {
     return;
   }
-  const std::optional<double> errM = elevationErrorM(pose);
+  const std::optional<flt64_t> errM = elevationErrorM(pose);
   if (!errM.has_value()) {
     return;
   }
@@ -525,9 +526,9 @@ void DubinsPathPlanner::computeElevationApproachBudget(const GlobalPoseReportTyp
   // long this pass of the 2D path provides: the shortfall, in whole passes, is the number of
   // planned spiral loops before gate failures start counting against the miss budget.
   const GlobalWaypointType& wp = waypoints_[targetIndex_];
-  const double speed = std::max({groundSpeedMps, waypointSpeedMps(wp), 0.5});
-  const double neededS = errM.value() / params_.maxDepthRateMps;
-  const double passS = currentLeg_->lengthM / speed;
+  const flt64_t speed = std::max({groundSpeedMps, waypointSpeedMps(wp), 0.5});
+  const flt64_t neededS = errM.value() / params_.maxDepthRateMps;
+  const flt64_t passS = currentLeg_->lengthM / speed;
   if (neededS > passS && passS > 1e-6) {
     elevApproachBudget_ = std::min(100, static_cast<int32_t>(std::ceil(neededS / passS)));
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner waypoint " << targetIndex_
@@ -537,19 +538,19 @@ void DubinsPathPlanner::computeElevationApproachBudget(const GlobalPoseReportTyp
   }
 }
 
-bool DubinsPathPlanner::allowSpiralPass(const GlobalPoseReportType& pose, double groundSpeedMps) {
+bool DubinsPathPlanner::allowSpiralPass(const GlobalPoseReportType& pose, flt64_t groundSpeedMps) {
   if (!elevApproachBudget_.has_value() || elevApproachBudget_.value() <= 0 ||
       params_.maxDepthRateMps <= 0.0 || !currentLeg_.has_value()) {
     return false;
   }
-  const std::optional<double> errM = elevationErrorM(pose);
+  const std::optional<flt64_t> errM = elevationErrorM(pose);
   if (!errM.has_value()) {
     return false;
   }
   const GlobalWaypointType& wp = waypoints_[targetIndex_];
-  const double speed = std::max({groundSpeedMps, waypointSpeedMps(wp), 0.5});
-  const double passS = currentLeg_->lengthM / speed;  // just-flown leg ~ the next loop
-  const double expectedPerPassM = params_.maxDepthRateMps * passS;
+  const flt64_t speed = std::max({groundSpeedMps, waypointSpeedMps(wp), 0.5});
+  const flt64_t passS = currentLeg_->lengthM / speed;  // just-flown leg ~ the next loop
+  const flt64_t expectedPerPassM = params_.maxDepthRateMps * passS;
 
   if (elevApproachesUsed_ < elevApproachBudget_.value()) {
     lastSpiralElevErrM_ = errM;
@@ -576,8 +577,8 @@ bool DubinsPathPlanner::allowSpiralPass(const GlobalPoseReportType& pose, double
   return false;
 }
 
-void DubinsPathPlanner::updateDistanceMetrics(double xE, double yN, double distToWaypointM) {
-  double remaining = currentLeg_.has_value() ? std::max(0.0, currentLeg_->lengthM - legProgressS_)
+void DubinsPathPlanner::updateDistanceMetrics(flt64_t xE, flt64_t yN, flt64_t distToWaypointM) {
+  flt64_t remaining = currentLeg_.has_value() ? std::max(0.0, currentLeg_->lengthM - legProgressS_)
                                              : distToWaypointM;
   for (std::size_t i = targetIndex_; i + 1 < waypoints_.size(); ++i) {
     remaining += std::hypot(wpX_[i + 1] - wpX_[i], wpY_[i + 1] - wpY_[i]);
@@ -588,7 +589,7 @@ void DubinsPathPlanner::updateDistanceMetrics(double xE, double yN, double distT
   }
 }
 
-ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, double groundSpeedMps) {
+ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_t groundSpeedMps) {
   progress_.valid = true;
   if (waypoints_.empty() || routeComplete_ || failed_) {
     progress_.routeComplete = routeComplete_;
@@ -599,13 +600,13 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, double
     return hold;
   }
 
-  double xE = 0.0;
-  double yN = 0.0;
+  flt64_t xE = 0.0;
+  flt64_t yN = 0.0;
   toLocal(poseLat(pose), poseLon(pose), &xE, &yN);
   const Dubins2DPose current{xE, yN, azToMath(poseYaw(pose))};
 
   const GlobalWaypointType& wp = waypoints_[targetIndex_];
-  const double dist = std::hypot(wpX_[targetIndex_] - xE, wpY_[targetIndex_] - yN);
+  const flt64_t dist = std::hypot(wpX_[targetIndex_] - xE, wpY_[targetIndex_] - yN);
 
   if (!currentLeg_.has_value()) {
     currentLeg_ = buildLeg(current, targetIndex_);
@@ -625,28 +626,28 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, double
     computeElevationApproachBudget(pose, groundSpeedMps);
   }
 
-  const double step = params_.sampleStepM;
-  const double searchLead = std::max(params_.leadDistanceM, 4.0 * step);
-  const double gateHalfM = gateHalfWidthM(wp, params_);
-  const double overshootBudget = std::max(searchLead, 4.0 * gateHalfM);
+  const flt64_t step = params_.sampleStepM;
+  const flt64_t searchLead = std::max(params_.leadDistanceM, 4.0 * step);
+  const flt64_t gateHalfM = gateHalfWidthM(wp, params_);
+  const flt64_t overshootBudget = std::max(searchLead, 4.0 * gateHalfM);
 
   // Advance the monotonic arc-length progress pointer: search a bounded window ahead of the
   // previous progress (with a small allowance backward) for the closest path sample. The
   // parametrization extends past the path end so progress keeps flowing through the gate.
-  double pathXteM = 0.0;  // signed cross-track error from the planned path (+ = starboard)
+  flt64_t pathXteM = 0.0;  // signed cross-track error from the planned path (+ = starboard)
   {
-    const double back = std::min(legProgressS_, 2.0 * step);
+    const flt64_t back = std::min(legProgressS_, 2.0 * step);
     // The forward window must stay small relative to the leg: a tight loop leg (a spiral
     // pass confined to a couple of turn radii) brings far-ahead samples spatially close to
     // the vehicle, and a wide window would let the progress pointer leap across the loop.
-    const double windowAheadM = std::max(6.0 * step, 3.0 * std::max(groundSpeedMps, 1.0));
-    const double sMax = leg.lengthM + overshootBudget + step;
-    double bestS = legProgressS_;
-    double bestD = std::numeric_limits<double>::max();
-    for (double s = legProgressS_ - back; s <= std::min(legProgressS_ + windowAheadM, sMax);
+    const flt64_t windowAheadM = std::max(6.0 * step, 3.0 * std::max(groundSpeedMps, 1.0));
+    const flt64_t sMax = leg.lengthM + overshootBudget + step;
+    flt64_t bestS = legProgressS_;
+    flt64_t bestD = std::numeric_limits<flt64_t>::max();
+    for (flt64_t s = legProgressS_ - back; s <= std::min(legProgressS_ + windowAheadM, sMax);
          s += step) {
       const Dubins2DPose p = sampleExtended(leg, s);
-      const double d = std::hypot(p.x - xE, p.y - yN);
+      const flt64_t d = std::hypot(p.x - xE, p.y - yN);
       if (d < bestD) {
         bestD = d;
         bestS = s;
@@ -654,8 +655,8 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, double
     }
     legProgressS_ = bestS;
     const Dubins2DPose closest = sampleExtended(leg, bestS);
-    const double tx = std::cos(closest.theta);
-    const double ty = std::sin(closest.theta);
+    const flt64_t tx = std::cos(closest.theta);
+    const flt64_t ty = std::sin(closest.theta);
     // Starboard-positive lateral offset from the path tangent.
     pathXteM = ty * (xE - closest.x) - tx * (yN - closest.y);
   }
@@ -664,11 +665,11 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, double
   // closest point as phase lead for the rate-limited heading loop) plus a cross-track
   // correction atan(xte / turnRadius) that converges back onto the path within roughly one
   // turn radius without saturating the vehicle's turn authority.
-  const double vMps = std::max(groundSpeedMps, 0.5);
-  const double tangentS = legProgressS_ + std::max(2.0 * step, 1.0 * vMps);
+  const flt64_t vMps = std::max(groundSpeedMps, 0.5);
+  const flt64_t tangentS = legProgressS_ + std::max(2.0 * step, 1.0 * vMps);
   const Dubins2DPose tangentPoint = sampleExtended(leg, tangentS);
-  const double pathAz = mathToAz(tangentPoint.theta);
-  const double correction =
+  const flt64_t pathAz = mathToAz(tangentPoint.theta);
+  const flt64_t correction =
       std::clamp(std::atan2(pathXteM, std::max(params_.turnRadiusM, 1.0)), -1.2, 1.2);
 
   ControlVector cv;
@@ -686,12 +687,12 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, double
   // Capture gate: a segment of half-width gateHalfM through the waypoint, perpendicular to
   // the arrival heading. Signed along-track distance to the gate plane and lateral offset
   // along the gate.
-  const double dirE = std::sin(leg.endAzimuthRad);
-  const double dirN = std::cos(leg.endAzimuthRad);
-  const double relE = xE - wpX_[targetIndex_];
-  const double relN = yN - wpY_[targetIndex_];
-  const double gateAlongM = relE * dirE + relN * dirN;
-  const double gateLateralM = relE * dirN - relN * dirE;  // starboard-positive
+  const flt64_t dirE = std::sin(leg.endAzimuthRad);
+  const flt64_t dirN = std::cos(leg.endAzimuthRad);
+  const flt64_t relE = xE - wpX_[targetIndex_];
+  const flt64_t relN = yN - wpY_[targetIndex_];
+  const flt64_t gateAlongM = relE * dirE + relN * dirN;
+  const flt64_t gateLateralM = relE * dirN - relN * dirE;  // starboard-positive
 
   // Progress reporting.
   const CaptureResult cap = evaluateCapture(pose, gateLateralM);
@@ -705,7 +706,7 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, double
   // between waypoints): report the signed offset and evaluate the UMAA track tolerance on it.
   progress_.crossTrackErrorM = pathXteM;
   if (wp.trackTolerance().has_value()) {
-    const std::optional<double> tol = tolerance::extractTrackToleranceM(wp.trackTolerance().value());
+    const std::optional<flt64_t> tol = tolerance::extractTrackToleranceM(wp.trackTolerance().value());
     progress_.trackLineAchieved = !tol.has_value() || std::fabs(pathXteM) <= tol.value();
   } else {
     progress_.trackLineAchieved = true;
@@ -749,7 +750,7 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, double
     legStateChanged = true;
   }
   if (!legStateChanged) {
-    lastGateAlongM_ = onFinalApproach ? std::optional<double>(gateAlongM) : std::nullopt;
+    lastGateAlongM_ = onFinalApproach ? std::optional<flt64_t>(gateAlongM) : std::nullopt;
   }
   progress_.failed = failed_;
   progress_.routeComplete = routeComplete_;

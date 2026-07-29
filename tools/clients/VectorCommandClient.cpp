@@ -5,6 +5,7 @@
 #include "autopilot/guidance/MissionRoute.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tools {
 
@@ -190,11 +191,11 @@ std::optional<VectorCommandClient::ExecType> VectorCommandClient::pollExec() {
   return lastExec_;
 }
 
-std::optional<double> VectorCommandClient::execAgeS() const {
+std::optional<flt64_t> VectorCommandClient::execAgeS() const {
   if (!lastExec_.has_value()) {
     return std::nullopt;
   }
-  return std::chrono::duration<double>(std::chrono::steady_clock::now() -
+  return std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() -
                                        execAt_)
       .count();
 }

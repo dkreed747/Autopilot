@@ -9,6 +9,7 @@
 #include "autopilot/core/AutopilotBrain.hpp"
 #include "Logger.h"
 #include "autopilot/guidance/MissionRoute.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -78,9 +79,9 @@ class SrpMissionStrategy : public ISafeModeStrategy {
         }
         const GeographicLib::LocalCartesian center(srp_.lastWaypoint().latDeg,
                                                    srp_.lastWaypoint().lonDeg, 0.0);
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
+        flt64_t x = 0.0;
+        flt64_t y = 0.0;
+        flt64_t z = 0.0;
         center.Forward(pose->position().geodeticLatitude(), pose->position().geodeticLongitude(),
                        0.0, x, y, z);
         if (std::hypot(x, y) > srp_.config().holdRadiusM) {

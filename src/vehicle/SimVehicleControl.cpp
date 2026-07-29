@@ -9,6 +9,7 @@
 
 #include "autopilot/guidance/AngleMath.hpp"
 #include "Logger.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -34,19 +35,19 @@ SimVehicleControl::~SimVehicleControl() {
   shutdown();
 }
 
-double SimVehicleControl::maxTurnRateRps() const {
+flt64_t SimVehicleControl::maxTurnRateRps() const {
   return caps_.surface.maxTurnRateRps.value_or(0.25);
 }
 
-double SimVehicleControl::maxForwardSpeedMps() const {
+flt64_t SimVehicleControl::maxForwardSpeedMps() const {
   return caps_.surface.maxForwardSpeedMps.value_or(5.0);
 }
 
-double SimVehicleControl::maxReverseSpeedMps() const {
+flt64_t SimVehicleControl::maxReverseSpeedMps() const {
   return caps_.surface.maxReverseSpeedMps.value_or(0.0);
 }
 
-double SimVehicleControl::maxDepthRateMps() const {
+flt64_t SimVehicleControl::maxDepthRateMps() const {
   return caps_.underwater.maxDepthChangeRateMps.value_or(0.5);
 }
 
@@ -85,14 +86,14 @@ void SimVehicleControl::shutdown() {
 void SimVehicleControl::runLoop() {
   using clock = std::chrono::steady_clock;
   const auto period = std::chrono::duration_cast<clock::duration>(
-      std::chrono::duration<double>(1.0 / simConfig_.cycleRateHz));
+      std::chrono::duration<flt64_t>(1.0 / simConfig_.cycleRateHz));
   auto last = clock::now();
   auto next = last + period;
   while (running_) {
     std::this_thread::sleep_until(next);
     next += period;
     const auto now = clock::now();
-    const double dtS = std::chrono::duration<double>(now - last).count();
+    const flt64_t dtS = std::chrono::duration<flt64_t>(now - last).count();
     last = now;
     stepOnce(dtS);
   }
@@ -108,7 +109,7 @@ bool SimVehicleControl::sendControlVector(const ControlVector& cv) {
   return true;
 }
 
-void SimVehicleControl::stepOnce(double dtS) {
+void SimVehicleControl::stepOnce(flt64_t dtS) {
   if (dtS <= 0.0) {
     return;
   }
@@ -116,27 +117,27 @@ void SimVehicleControl::stepOnce(double dtS) {
     std::scoped_lock lock(mtx_);
 
     // Act on the latest setpoint (hold current heading at zero speed when none arrived yet).
-    const double targetHeading = setpoint_.has_value() ? setpoint_->headingRad : headingRad_;
-    double targetSpeed = setpoint_.has_value() ? setpoint_->speedMps : 0.0;
+    const flt64_t targetHeading = setpoint_.has_value() ? setpoint_->headingRad : headingRad_;
+    flt64_t targetSpeed = setpoint_.has_value() ? setpoint_->speedMps : 0.0;
     targetSpeed = std::clamp(targetSpeed, -maxReverseSpeedMps(), maxForwardSpeedMps());
 
     // Turn toward the commanded heading, limited by the platform's max turn rate.
-    const double headingErr = wrapPi(targetHeading - headingRad_);
-    const double maxDelta = maxTurnRateRps() * dtS;
-    const double applied = std::clamp(headingErr, -maxDelta, maxDelta);
+    const flt64_t headingErr = wrapPi(targetHeading - headingRad_);
+    const flt64_t maxDelta = maxTurnRateRps() * dtS;
+    const flt64_t applied = std::clamp(headingErr, -maxDelta, maxDelta);
     headingRad_ = wrapPi(headingRad_ + applied);
     yawRateRps_ = applied / dtS;
 
     // Accelerate toward the commanded speed, limited by the surge acceleration.
-    const double speedErr = targetSpeed - speedMps_;
-    const double maxDv = std::max(0.0, simConfig_.accelMps2) * dtS;
+    const flt64_t speedErr = targetSpeed - speedMps_;
+    const flt64_t maxDv = std::max(0.0, simConfig_.accelMps2) * dtS;
     speedMps_ += std::clamp(speedErr, -maxDv, maxDv);
 
     // Drive depth toward a commanded DEPTH or ALTITUDE_ASF (above sea floor) setpoint when
     // the platform supports it; both are converted to a target depth against the configured
     // floor depth. Other elevation frames are not modeled by the sim.
     if (caps_.underwaterEnabled && setpoint_.has_value() && setpoint_->elevationM.has_value()) {
-      std::optional<double> targetDepth;
+      std::optional<flt64_t> targetDepth;
       if (setpoint_->elevationFrame == ElevationFrame::DEPTH) {
         targetDepth = setpoint_->elevationM.value();
       } else if (setpoint_->elevationFrame == ElevationFrame::ALTITUDE_ASF ||
@@ -144,9 +145,9 @@ void SimVehicleControl::stepOnce(double dtS) {
         targetDepth = simConfig_.floorDepthM - setpoint_->elevationM.value();
       }
       if (targetDepth.has_value()) {
-        const double clamped = std::clamp(targetDepth.value(), 0.0, simConfig_.floorDepthM);
-        const double depthErr = clamped - depthM_;
-        const double maxDd = maxDepthRateMps() * dtS;
+        const flt64_t clamped = std::clamp(targetDepth.value(), 0.0, simConfig_.floorDepthM);
+        const flt64_t depthErr = clamped - depthM_;
+        const flt64_t maxDd = maxDepthRateMps() * dtS;
         depthM_ += std::clamp(depthErr, -maxDd, maxDd);
         depthM_ = std::clamp(depthM_, 0.0, simConfig_.floorDepthM);
       }
@@ -160,13 +161,13 @@ void SimVehicleControl::stepOnce(double dtS) {
 }
 
 void SimVehicleControl::publishReports() {
-  double lat = 0.0;
-  double lon = 0.0;
-  double h = 0.0;
-  double heading = 0.0;
-  double speed = 0.0;
-  double depth = 0.0;
-  double yawRate = 0.0;
+  flt64_t lat = 0.0;
+  flt64_t lon = 0.0;
+  flt64_t h = 0.0;
+  flt64_t heading = 0.0;
+  flt64_t speed = 0.0;
+  flt64_t depth = 0.0;
+  flt64_t yawRate = 0.0;
   {
     std::scoped_lock lock(mtx_);
     frame_.Reverse(xEastM_, yNorthM_, 0.0, lat, lon, h);
@@ -213,7 +214,7 @@ uint64_t SimVehicleControl::controlVectorCount() const {
 SimVehicleControl::SimState SimVehicleControl::state() const {
   std::scoped_lock lock(mtx_);
   SimState s;
-  double h = 0.0;
+  flt64_t h = 0.0;
   frame_.Reverse(xEastM_, yNorthM_, 0.0, s.latitudeDeg, s.longitudeDeg, h);
   s.headingRad = headingRad_;
   s.speedMps = speedMps_;

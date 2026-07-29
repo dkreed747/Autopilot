@@ -11,48 +11,49 @@
 #include <UMAA/Common/Speed/VariableSpeedVariantType.hpp>
 
 #include "autopilot/guidance/ControlVector.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 //! \brief An absolute allowable range [lower, upper] for a scalar quantity (UMAA speed,
 //! depth, and altitude tolerances specify "limits of allowable values", not offsets).
 struct ValueRange {
-  double lower = 0.0;
-  double upper = 0.0;
+  flt64_t lower = 0.0;
+  flt64_t upper = 0.0;
 };
 
 //! \brief An absolute allowable angular interval, clockwise from lower to upper (UMAA yaw
 //! tolerances specify absolute bounds).
 struct AngleRange {
-  double lowerRad = 0.0;
-  double upperRad = 0.0;
+  flt64_t lowerRad = 0.0;
+  flt64_t upperRad = 0.0;
 };
 
 //! \brief A heading requirement (radians, true north). Per the UMAA DirectionToleranceType
 //! IDL, the tolerance limits are deviations from the setpoint: lowerlimit counterclockwise
 //! and upperlimit clockwise (magnitudes).
 struct DirectionValue {
-  double headingRad = 0.0;
-  std::optional<double> ccwToleranceRad;
-  std::optional<double> cwToleranceRad;
+  flt64_t headingRad = 0.0;
+  std::optional<flt64_t> ccwToleranceRad;
+  std::optional<flt64_t> cwToleranceRad;
 };
 
 //! \brief A speed requirement: setpoint (m/s) with an optional absolute allowable range.
 struct SpeedValue {
-  double speedMps = 0.0;
+  flt64_t speedMps = 0.0;
   std::optional<ValueRange> allowable;
 };
 
 //! \brief An elevation/depth requirement: setpoint, frame, and optional allowable range.
 struct ElevationValue {
-  double valueM = 0.0;
+  flt64_t valueM = 0.0;
   ElevationFrame frame = ElevationFrame::DEPTH;
   std::optional<ValueRange> allowable;
 };
 
 //! \brief An arrival-yaw requirement: setpoint (radians, NED) and optional absolute bounds.
 struct AttitudeValue {
-  double yawRad = 0.0;
+  flt64_t yawRad = 0.0;
   std::optional<AngleRange> allowable;
 };
 
@@ -84,21 +85,21 @@ std::optional<ElevationValue> extractElevation(
 AttitudeValue extractYaw(const UMAA::Common::Orientation::Orientation3DNEDRequirement& attitude);
 
 //! \brief Extract the cross-track distance tolerance (meters) from a track tolerance, if set.
-std::optional<double> extractTrackToleranceM(
+std::optional<flt64_t> extractTrackToleranceM(
     const UMAA::Common::Distance::DistanceRequirementType& trackTolerance);
 
 //! \brief Whether an actual heading satisfies the direction requirement (falls back to a
 //! symmetric half-width of defaultTolRad when the command carries no tolerance).
-bool directionAchieved(const DirectionValue& dir, double actualRad, double defaultTolRad);
+bool directionAchieved(const DirectionValue& dir, flt64_t actualRad, flt64_t defaultTolRad);
 
 //! \brief Whether an actual speed satisfies the speed requirement.
-bool speedAchieved(const SpeedValue& speed, double actualMps, double defaultTolMps);
+bool speedAchieved(const SpeedValue& speed, flt64_t actualMps, flt64_t defaultTolMps);
 
 //! \brief Whether an actual elevation satisfies the elevation requirement.
-bool elevationAchieved(const ElevationValue& elevation, double actualM, double defaultTolM);
+bool elevationAchieved(const ElevationValue& elevation, flt64_t actualM, flt64_t defaultTolM);
 
 //! \brief Whether an actual yaw satisfies the arrival-attitude requirement.
-bool attitudeAchieved(const AttitudeValue& attitude, double actualYawRad, double defaultTolRad);
+bool attitudeAchieved(const AttitudeValue& attitude, flt64_t actualYawRad, flt64_t defaultTolRad);
 
 }  // namespace arlcore::autopilot::tolerance
 #endif  // AUTOPILOT_GUIDANCE_TOLERANCEUTILS_HPP_

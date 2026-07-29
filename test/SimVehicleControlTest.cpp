@@ -8,6 +8,7 @@
 #include "LocalReaderSender.h"
 #include "autopilot/vehicle/SimVehicleControl.hpp"
 #include "UuidFactory.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -45,7 +46,7 @@ struct SimFixture {
   }
 };
 
-static ControlVector makeCv(double headingRad, double speedMps) {
+static ControlVector makeCv(flt64_t headingRad, flt64_t speedMps) {
   ControlVector cv;
   cv.headingRad = headingRad;
   cv.speedMps = speedMps;

@@ -1,11 +1,12 @@
 #include "autopilot/safety/ConstraintClamp.hpp"
 
 #include <algorithm>
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 //! \brief The smaller of two optional upper bounds (nullopt = unbounded).
-static std::optional<double> mergeMax(const std::optional<double>& a, const std::optional<double>& b) {
+static std::optional<flt64_t> mergeMax(const std::optional<flt64_t>& a, const std::optional<flt64_t>& b) {
   if (a.has_value() && b.has_value()) {
     return std::min(a.value(), b.value());
   }
@@ -13,7 +14,7 @@ static std::optional<double> mergeMax(const std::optional<double>& a, const std:
 }
 
 //! \brief The larger of two optional lower bounds (nullopt = unbounded).
-static std::optional<double> mergeMin(const std::optional<double>& a, const std::optional<double>& b) {
+static std::optional<flt64_t> mergeMin(const std::optional<flt64_t>& a, const std::optional<flt64_t>& b) {
   if (a.has_value() && b.has_value()) {
     return std::max(a.value(), b.value());
   }
@@ -25,8 +26,8 @@ ClampResult applyConstraintClamps(const ControlVector& cv, const ConstraintSnaps
   ClampResult result;
   result.cv = cv;
 
-  std::optional<double> maxSpeed = mergeMax(snapshot.maxSpeedMps, staticLimits.maxSpeedMps);
-  std::optional<double> minSpeed = mergeMin(snapshot.minSpeedMps, staticLimits.minSpeedMps);
+  std::optional<flt64_t> maxSpeed = mergeMax(snapshot.maxSpeedMps, staticLimits.maxSpeedMps);
+  std::optional<flt64_t> minSpeed = mergeMin(snapshot.minSpeedMps, staticLimits.minSpeedMps);
   if (minSpeed.has_value() && maxSpeed.has_value() && minSpeed.value() > maxSpeed.value()) {
     result.conflict = true;
     minSpeed = maxSpeed;
@@ -47,8 +48,8 @@ ClampResult applyConstraintClamps(const ControlVector& cv, const ConstraintSnaps
   }
 
   if (result.cv.elevationM.has_value() && result.cv.elevationFrame == ElevationFrame::DEPTH) {
-    std::optional<double> maxDepth = mergeMax(snapshot.maxDepthM, staticLimits.maxDepthM);
-    std::optional<double> minDepth = mergeMin(snapshot.minDepthM, staticLimits.minDepthM);
+    std::optional<flt64_t> maxDepth = mergeMax(snapshot.maxDepthM, staticLimits.maxDepthM);
+    std::optional<flt64_t> minDepth = mergeMin(snapshot.minDepthM, staticLimits.minDepthM);
     if (minDepth.has_value() && maxDepth.has_value() && minDepth.value() > maxDepth.value()) {
       result.conflict = true;
       minDepth = maxDepth;

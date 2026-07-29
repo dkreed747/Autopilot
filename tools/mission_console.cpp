@@ -61,6 +61,7 @@
 // ReadStatus enumerators — keep it (and anything after it) below the project headers.
 #include <httplib.h>          // NOLINT(build/include_order) vendored third-party/httplib
 #include <nlohmann/json.hpp>  // NOLINT(build/include_order) vendored third-party/nlohmann
+#include "InternalTypes.h"
 // clang-format on
 
 using arlcore::autopilot::AutopilotConfig;
@@ -188,7 +189,7 @@ class ConsoleState {
       if (p.depth().has_value()) t["depth_m"] = p.depth().value();
       if (p.altitudeASF().has_value()) t["alt_asf_m"] = p.altitudeASF().value();
       if (p.altitude().has_value()) t["alt_msl_m"] = p.altitude().value();
-      const double ageS = std::chrono::duration<double>(
+      const flt64_t ageS = std::chrono::duration<flt64_t>(
           std::chrono::steady_clock::now() - lastPoseAt_).count();
       t["age_s"] = ageS;
       if (speed_.has_value() && speed_->speedOverGround().has_value()) {
@@ -227,7 +228,7 @@ class ConsoleState {
       ex["elevation_achieved"] = e.elevationAchieved();
       ex["speed_achieved"] = e.speedAchieved();
       ex["track_line_achieved"] = e.trackLineAchieved();
-      const double ageS = std::chrono::duration<double>(
+      const flt64_t ageS = std::chrono::duration<flt64_t>(
           std::chrono::steady_clock::now() - lastExecAt_).count();
       ex["age_s"] = ageS;
       j["exec_status"] = ex;
@@ -289,15 +290,15 @@ static std::vector<MissionWaypoint> parseMission(const json& body) {
   std::vector<MissionWaypoint> route;
   for (const auto& w : body.at("waypoints")) {
     MissionWaypoint wp;
-    wp.latDeg = w.at("lat_deg").get<double>();
-    wp.lonDeg = w.at("lon_deg").get<double>();
+    wp.latDeg = w.at("lat_deg").get<flt64_t>();
+    wp.lonDeg = w.at("lon_deg").get<flt64_t>();
     wp.speedMps = w.value("speed_mps", 3.0);
     wp.captureRadiusM = w.value("capture_radius_m", 2.5);
     if (w.contains("arrival_yaw_rad") && !w["arrival_yaw_rad"].is_null()) {
-      wp.arrivalYawRad = w["arrival_yaw_rad"].get<double>();
+      wp.arrivalYawRad = w["arrival_yaw_rad"].get<flt64_t>();
     }
     if (w.contains("elev_value_m") && !w["elev_value_m"].is_null()) {
-      wp.elevValueM = w["elev_value_m"].get<double>();
+      wp.elevValueM = w["elev_value_m"].get<flt64_t>();
       wp.elevFrame = w.value("elev_frame", "depth");
     }
     route.push_back(wp);
@@ -394,13 +395,13 @@ static void validateConstraintBody(const json& body) {
       throw std::runtime_error("zone polygon needs 3..128 vertices");
     }
     for (const auto& v : polygon) {
-      if (!v.is_array() || v.size() != 2 || !std::isfinite(v[0].get<double>()) ||
-          !std::isfinite(v[1].get<double>())) {
+      if (!v.is_array() || v.size() != 2 || !std::isfinite(v[0].get<flt64_t>()) ||
+          !std::isfinite(v[1].get<flt64_t>())) {
         throw std::runtime_error("zone polygon vertices must be [lat, lon] pairs");
       }
     }
-    const double ceiling = body.value("ceiling_m", 0.0);
-    const double floor = body.value("floor_m", 100.0);
+    const flt64_t ceiling = body.value("ceiling_m", 0.0);
+    const flt64_t floor = body.value("floor_m", 100.0);
     const std::string ceilingFrame = body.value("ceiling_frame", "depth");
     const std::string floorFrame = body.value("floor_frame", "depth");
     for (const std::string& frame : {ceilingFrame, floorFrame}) {
@@ -420,7 +421,7 @@ static void validateConstraintBody(const json& body) {
       }
     }
   } else if (type == "speed" || type == "depth") {
-    const double value = body.at("value").get<double>();
+    const flt64_t value = body.at("value").get<flt64_t>();
     if (!std::isfinite(value) || value < 0.0) {
       throw std::runtime_error(type + " value must be a non-negative number");
     }
@@ -441,10 +442,10 @@ static GlobalPoseReportType fallbackStartPose(const AutopilotConfig& config) {
   return pose;
 }
 
-constexpr double kRadToDeg = 180.0 / M_PI;
-constexpr double kDegToRad = M_PI / 180.0;
-constexpr double kRcDeadmanS = 2.0;         // rolling DDS endTime while RC is engaged
-constexpr double kRcServerWatchdogS = 1.0;  // browser-silence threshold before auto-stop
+constexpr flt64_t kRadToDeg = 180.0 / M_PI;
+constexpr flt64_t kDegToRad = M_PI / 180.0;
+constexpr flt64_t kRcDeadmanS = 2.0;         // rolling DDS endTime while RC is engaged
+constexpr flt64_t kRcServerWatchdogS = 1.0;  // browser-silence threshold before auto-stop
 
 //! \brief Classify a bus command's origin: the console itself, this platform's onboard
 //! autonomy, or any other (remote) commander. A nil autopilot platform id can never match.
@@ -516,10 +517,10 @@ static json vectorJson(VectorCommandClient& client, bool rcEngaged) {
 }
 
 //! \brief Seconds until a UMAA end time passes (negative = already past).
-static double secondsUntil(const UMAA::Common::Measurement::DateTime& endTime) {
+static flt64_t secondsUntil(const UMAA::Common::Measurement::DateTime& endTime) {
   const UMAA::Common::Measurement::DateTime now = arlcore::umaa::getTimestamp();
-  return static_cast<double>(endTime.seconds() - now.seconds()) +
-         (static_cast<double>(endTime.nanoseconds()) - static_cast<double>(now.nanoseconds())) * 1e-9;
+  return static_cast<flt64_t>(endTime.seconds() - now.seconds()) +
+         (static_cast<flt64_t>(endTime.nanoseconds()) - static_cast<flt64_t>(now.nanoseconds())) * 1e-9;
 }
 
 //! \brief Every waypoint mission and vector command observed on the bus, classified per
@@ -562,7 +563,7 @@ static json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorAc
     if (mission.execStatus.has_value()) {
       m["waypoints_remaining"] = mission.execStatus->waypointsRemaining();
     }
-    m["age_s"] = std::chrono::duration<double>(now - mission.lastSeen).count();
+    m["age_s"] = std::chrono::duration<flt64_t>(now - mission.lastSeen).count();
     traffic["missions"].push_back(m);
   }
   traffic["vectors"] = json::array();
@@ -594,7 +595,7 @@ static json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorAc
       v["speed_achieved"] = vec.execStatus->speedAchieved();
       v["elevation_achieved"] = vec.execStatus->elevationAchieved();
     }
-    v["age_s"] = std::chrono::duration<double>(now - vec.lastSeen).count();
+    v["age_s"] = std::chrono::duration<flt64_t>(now - vec.lastSeen).count();
     traffic["vectors"].push_back(v);
   }
   return traffic;
@@ -614,8 +615,8 @@ static json platformJson(const AutopilotConfig& config) {
 
 //! \brief The speed ceiling for console-issued vector commands: the surface limit, tightened
 //! by the underwater limit when a submerged elevation is commanded.
-static double vectorSpeedLimit(const AutopilotConfig& config, bool submerged) {
-  double limit = config.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
+static flt64_t vectorSpeedLimit(const AutopilotConfig& config, bool submerged) {
+  flt64_t limit = config.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
   if (submerged && config.platformCapabilities.underwaterEnabled &&
       config.platformCapabilities.underwater.maxForwardSpeedMps.has_value()) {
     limit = std::min(limit, config.platformCapabilities.underwater.maxForwardSpeedMps.value());
@@ -626,14 +627,14 @@ static double vectorSpeedLimit(const AutopilotConfig& config, bool submerged) {
 //! \brief Parse + validate the GUI's vector JSON; throws std::runtime_error on bad input.
 static VectorSetpoint parseVectorBody(const json& body, const AutopilotConfig& config) {
   VectorSetpoint sp;
-  const double headingDeg = body.at("heading_deg").get<double>();
-  const double speedMps = body.at("speed_mps").get<double>();
+  const flt64_t headingDeg = body.at("heading_deg").get<flt64_t>();
+  const flt64_t speedMps = body.at("speed_mps").get<flt64_t>();
   if (!std::isfinite(headingDeg) || !std::isfinite(speedMps)) {
     throw std::runtime_error("heading_deg and speed_mps must be finite numbers");
   }
   sp.headingRad = headingDeg * kDegToRad;
   if (body.contains("elev_value_m") && !body["elev_value_m"].is_null()) {
-    const double elev = body["elev_value_m"].get<double>();
+    const flt64_t elev = body["elev_value_m"].get<flt64_t>();
     if (!std::isfinite(elev) || elev < 0.0) {
       throw std::runtime_error("elev_value_m must be a non-negative number");
     }
@@ -644,13 +645,13 @@ static VectorSetpoint parseVectorBody(const json& body, const AutopilotConfig& c
     }
   }
   if (body.contains("timeout_s") && !body["timeout_s"].is_null()) {
-    const double timeout = body["timeout_s"].get<double>();
+    const flt64_t timeout = body["timeout_s"].get<flt64_t>();
     if (!std::isfinite(timeout) || timeout <= 0.0) {
       throw std::runtime_error("timeout_s must be a positive number");
     }
     sp.timeoutS = timeout;
   }
-  const double limit = vectorSpeedLimit(config, sp.elevValueM.has_value());
+  const flt64_t limit = vectorSpeedLimit(config, sp.elevValueM.has_value());
   if (speedMps < 0.0) {
     throw std::runtime_error("speed_mps must be non-negative");
   }
@@ -781,7 +782,7 @@ int main(int argc, char** argv) {
         vectorClient.pollAck();
         // Server-side RC deadman: the browser's heartbeats stopped, so stop the vehicle. The
         // DDS endTime (2 s) still covers a dead console process.
-        if (rcEngaged && std::chrono::duration<double>(std::chrono::steady_clock::now() -
+        if (rcEngaged && std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() -
                                                        rcLastBeat).count() > kRcServerWatchdogS) {
           if (vectorClient.active() && vectorClient.lastSetpoint().has_value()) {
             VectorSetpoint stop = vectorClient.lastSetpoint().value();
@@ -1011,9 +1012,9 @@ int main(int argc, char** argv) {
       std::scoped_lock lock(clientMutex);
       std::string newId;
       if (type == "keep_in" || type == "keep_out") {
-        std::vector<std::array<double, 2>> polygon;
+        std::vector<std::array<flt64_t, 2>> polygon;
         for (const auto& v : body.at("polygon")) {
-          polygon.push_back({v[0].get<double>(), v[1].get<double>()});
+          polygon.push_back({v[0].get<flt64_t>(), v[1].get<flt64_t>()});
         }
         newId = constraintsClient->upsertZone(id, name, type == "keep_in", polygon,
                                               body.value("ceiling_m", 0.0),
@@ -1022,10 +1023,10 @@ int main(int argc, char** argv) {
                                               body.value("floor_frame", "depth"));
       } else if (type == "speed") {
         newId = constraintsClient->upsertSpeed(id, name, body.value("op", "lte"),
-                                               body.at("value").get<double>());
+                                               body.at("value").get<flt64_t>());
       } else {
         newId = constraintsClient->upsertDepth(id, name, body.value("op", "lte"),
-                                               body.at("value").get<double>());
+                                               body.at("value").get<flt64_t>());
       }
       res.set_content(json{{"id", newId}}.dump(), "application/json");
     } catch (const std::exception& e) {

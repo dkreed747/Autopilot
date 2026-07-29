@@ -6,31 +6,32 @@
 #include <limits>
 #include <stdexcept>
 #include <utility>
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
-constexpr double EPS = 1e-9;
+constexpr flt64_t EPS = 1e-9;
 
-static double dot(const Vec2& a, const Vec2& b) { return a.x * b.x + a.y * b.y; }
-static double norm(const Vec2& a) { return std::sqrt(dot(a, a)); }
+static flt64_t dot(const Vec2& a, const Vec2& b) { return a.x * b.x + a.y * b.y; }
+static flt64_t norm(const Vec2& a) { return std::sqrt(dot(a, a)); }
 static Vec2 sub(const Vec2& a, const Vec2& b) { return {a.x - b.x, a.y - b.y}; }
 static Vec2 add(const Vec2& a, const Vec2& b) { return {a.x + b.x, a.y + b.y}; }
-static Vec2 scale(const Vec2& a, double s) { return {a.x * s, a.y * s}; }
+static Vec2 scale(const Vec2& a, flt64_t s) { return {a.x * s, a.y * s}; }
 
 //! \brief Nearest point to `p` on segment a->b.
 static Vec2 closestOnSegment(const Vec2& p, const Vec2& a, const Vec2& b) {
   const Vec2 ab = sub(b, a);
-  const double len2 = dot(ab, ab);
+  const flt64_t len2 = dot(ab, ab);
   if (len2 < EPS) {
     return a;
   }
-  const double t = std::clamp(dot(sub(p, a), ab) / len2, 0.0, 1.0);
+  const flt64_t t = std::clamp(dot(sub(p, a), ab) / len2, 0.0, 1.0);
   return add(a, scale(ab, t));
 }
 
 //! \brief Twice the signed area of the polygon (positive when counter-clockwise).
-static double signedArea2(const std::vector<Vec2>& v) {
-  double area2 = 0.0;
+static flt64_t signedArea2(const std::vector<Vec2>& v) {
+  flt64_t area2 = 0.0;
   for (std::size_t i = 0, j = v.size() - 1; i < v.size(); j = i++) {
     area2 += (v[j].x * v[i].y - v[i].x * v[j].y);
   }
@@ -68,7 +69,7 @@ bool LocalPolygon::contains(const Vec2& p) const {
     }
     const bool crosses = (b.y > p.y) != (a.y > p.y);
     if (crosses) {
-      const double xCross = b.x + (p.y - b.y) * (a.x - b.x) / (a.y - b.y);
+      const flt64_t xCross = b.x + (p.y - b.y) * (a.x - b.x) / (a.y - b.y);
       if (p.x < xCross) {
         inside = !inside;
       }
@@ -79,10 +80,10 @@ bool LocalPolygon::contains(const Vec2& p) const {
 
 Vec2 LocalPolygon::closestBoundaryPoint(const Vec2& p) const {
   Vec2 best = vertices_.front();
-  double bestDist = std::numeric_limits<double>::max();
+  flt64_t bestDist = std::numeric_limits<flt64_t>::max();
   for (std::size_t i = 0, j = vertices_.size() - 1; i < vertices_.size(); j = i++) {
     const Vec2 c = closestOnSegment(p, vertices_[j], vertices_[i]);
-    const double d = norm(sub(p, c));
+    const flt64_t d = norm(sub(p, c));
     if (d < bestDist) {
       bestDist = d;
       best = c;
@@ -91,8 +92,8 @@ Vec2 LocalPolygon::closestBoundaryPoint(const Vec2& p) const {
   return best;
 }
 
-double LocalPolygon::signedDistance(const Vec2& p) const {
-  const double d = norm(sub(p, closestBoundaryPoint(p)));
+flt64_t LocalPolygon::signedDistance(const Vec2& p) const {
+  const flt64_t d = norm(sub(p, closestBoundaryPoint(p)));
   return contains(p) ? d : -d;
 }
 
@@ -100,14 +101,14 @@ void ZoneSet::addZone(ZoneKind kind, LocalPolygon polygon) {
   zones_.push_back(Zone{kind, std::move(polygon)});
 }
 
-double ZoneSet::zoneClearance(const Zone& z, const Vec2& p) {
-  const double sd = z.polygon.signedDistance(p);
+flt64_t ZoneSet::zoneClearance(const Zone& z, const Vec2& p) {
+  const flt64_t sd = z.polygon.signedDistance(p);
   // KEEP_OUT is compliant outside the polygon, KEEP_IN inside it.
   return z.kind == ZoneKind::KEEP_OUT ? -sd : sd;
 }
 
-double ZoneSet::clearanceM(const Vec2& p) const {
-  double clearance = std::numeric_limits<double>::max();
+flt64_t ZoneSet::clearanceM(const Vec2& p) const {
+  flt64_t clearance = std::numeric_limits<flt64_t>::max();
   for (const Zone& z : zones_) {
     clearance = std::min(clearance, zoneClearance(z, p));
   }
@@ -116,10 +117,10 @@ double ZoneSet::clearanceM(const Vec2& p) const {
 
 ClearanceInfo ZoneSet::clearanceInfo(const Vec2& p) const {
   ClearanceInfo info;
-  info.clearanceM = std::numeric_limits<double>::max();
+  info.clearanceM = std::numeric_limits<flt64_t>::max();
   const Zone* binding = nullptr;
   for (const Zone& z : zones_) {
-    const double c = zoneClearance(z, p);
+    const flt64_t c = zoneClearance(z, p);
     if (c < info.clearanceM) {
       info.clearanceM = c;
       binding = &z;
@@ -130,16 +131,16 @@ ClearanceInfo ZoneSet::clearanceInfo(const Vec2& p) const {
   }
   const Vec2 boundary = binding->polygon.closestBoundaryPoint(p);
   Vec2 dir = sub(p, boundary);
-  const double len = norm(dir);
+  const flt64_t len = norm(dir);
   if (len < EPS) {
     // On the boundary: fall back to probing which side improves the clearance.
-    const double probe = 0.5;
+    const flt64_t probe = 0.5;
     Vec2 bestDir{1.0, 0.0};
-    double bestClearance = -std::numeric_limits<double>::max();
+    flt64_t bestClearance = -std::numeric_limits<flt64_t>::max();
     for (int32_t k = 0; k < 8; ++k) {
-      const double a = 2.0 * M_PI * k / 8.0;
+      const flt64_t a = 2.0 * M_PI * k / 8.0;
       const Vec2 d{std::cos(a), std::sin(a)};
-      const double c = clearanceM(add(p, scale(d, probe)));
+      const flt64_t c = clearanceM(add(p, scale(d, probe)));
       if (c > bestClearance) {
         bestClearance = c;
         bestDir = d;
@@ -156,14 +157,14 @@ ClearanceInfo ZoneSet::clearanceInfo(const Vec2& p) const {
   return info;
 }
 
-bool ZoneSet::segmentClear(const Vec2& a, const Vec2& b, double marginM, double stepM) const {
+bool ZoneSet::segmentClear(const Vec2& a, const Vec2& b, flt64_t marginM, flt64_t stepM) const {
   if (zones_.empty()) {
     return true;
   }
-  const double length = norm(sub(b, a));
+  const flt64_t length = norm(sub(b, a));
   const int32_t steps = std::max(1, static_cast<int32_t>(std::ceil(length / std::max(stepM, 0.01))));
   for (int32_t i = 0; i <= steps; ++i) {
-    const double t = static_cast<double>(i) / steps;
+    const flt64_t t = static_cast<flt64_t>(i) / steps;
     const Vec2 p = add(a, scale(sub(b, a), t));
     if (clearanceM(p) < marginM) {
       return false;
@@ -172,14 +173,14 @@ bool ZoneSet::segmentClear(const Vec2& a, const Vec2& b, double marginM, double 
   return true;
 }
 
-bool ZoneSet::pathClear(const DubinsPath& path, double marginM, double stepM) const {
+bool ZoneSet::pathClear(const DubinsPath& path, flt64_t marginM, flt64_t stepM) const {
   if (zones_.empty()) {
     return true;
   }
-  const double length = path.lengthM();
+  const flt64_t length = path.lengthM();
   const int32_t steps = std::max(1, static_cast<int32_t>(std::ceil(length / std::max(stepM, 0.01))));
   for (int32_t i = 0; i <= steps; ++i) {
-    const double s = length * i / steps;
+    const flt64_t s = length * i / steps;
     const Dubins2DPose pose = path.sample(s);
     if (clearanceM(Vec2{pose.x, pose.y}) < marginM) {
       return false;
@@ -188,18 +189,18 @@ bool ZoneSet::pathClear(const DubinsPath& path, double marginM, double stepM) co
   return true;
 }
 
-std::optional<double> ZoneSet::raycastFirstHit(const Vec2& origin, const Vec2& dir, double marginM,
-                                               double maxRangeM) const {
+std::optional<flt64_t> ZoneSet::raycastFirstHit(const Vec2& origin, const Vec2& dir, flt64_t marginM,
+                                               flt64_t maxRangeM) const {
   if (zones_.empty()) {
     return std::nullopt;
   }
   // Sphere tracing: clearanceM is 1-Lipschitz, so from a point with clearance c the nearest
   // sub-margin point is at least (c - marginM) away — the march can safely jump that far.
-  constexpr double MIN_STEP = 0.05;
-  double s = 0.0;
+  constexpr flt64_t MIN_STEP = 0.05;
+  flt64_t s = 0.0;
   while (s <= maxRangeM) {
     const Vec2 p = add(origin, scale(dir, s));
-    const double c = clearanceM(p) - marginM;
+    const flt64_t c = clearanceM(p) - marginM;
     if (c <= EPS) {
       return s;
     }
@@ -208,14 +209,14 @@ std::optional<double> ZoneSet::raycastFirstHit(const Vec2& origin, const Vec2& d
   return std::nullopt;
 }
 
-std::optional<Vec2> ZoneSet::nearestCompliantPoint(const Vec2& p, double marginM) const {
+std::optional<Vec2> ZoneSet::nearestCompliantPoint(const Vec2& p, flt64_t marginM) const {
   if (zones_.empty()) {
     return p;
   }
   // Iterative projection along the binding zone's clearance gradient. Converges immediately for
   // a single binding constraint; a few iterations handle points binding several zones.
   constexpr int32_t MAX_PROJECTIONS = 12;
-  constexpr double OVERSHOOT = 1e-3;
+  constexpr flt64_t OVERSHOOT = 1e-3;
   Vec2 q = p;
   for (int32_t i = 0; i < MAX_PROJECTIONS; ++i) {
     const ClearanceInfo info = clearanceInfo(q);
@@ -225,12 +226,12 @@ std::optional<Vec2> ZoneSet::nearestCompliantPoint(const Vec2& p, double marginM
     q = add(q, scale(info.improveDir, marginM - info.clearanceM + OVERSHOOT));
   }
   // Fallback: expanding ring search around p (handles disjoint or wedge-shaped compliant space).
-  const double startClearance = clearanceM(p);
-  const double deficit = std::max(marginM - startClearance, 1.0);
-  for (double radius = deficit; radius <= 64.0 * deficit; radius *= 1.5) {
+  const flt64_t startClearance = clearanceM(p);
+  const flt64_t deficit = std::max(marginM - startClearance, 1.0);
+  for (flt64_t radius = deficit; radius <= 64.0 * deficit; radius *= 1.5) {
     constexpr int32_t DIRECTIONS = 32;
     for (int32_t k = 0; k < DIRECTIONS; ++k) {
-      const double a = 2.0 * M_PI * k / DIRECTIONS;
+      const flt64_t a = 2.0 * M_PI * k / DIRECTIONS;
       const Vec2 candidate = add(p, Vec2{radius * std::cos(a), radius * std::sin(a)});
       if (clearanceM(candidate) >= marginM) {
         return candidate;
@@ -242,8 +243,8 @@ std::optional<Vec2> ZoneSet::nearestCompliantPoint(const Vec2& p, double marginM
 
 std::optional<std::pair<Vec2, Vec2>> ZoneSet::keepInBounds() const {
   bool found = false;
-  Vec2 lo{-std::numeric_limits<double>::max(), -std::numeric_limits<double>::max()};
-  Vec2 hi{std::numeric_limits<double>::max(), std::numeric_limits<double>::max()};
+  Vec2 lo{-std::numeric_limits<flt64_t>::max(), -std::numeric_limits<flt64_t>::max()};
+  Vec2 hi{std::numeric_limits<flt64_t>::max(), std::numeric_limits<flt64_t>::max()};
   for (const Zone& z : zones_) {
     if (z.kind != ZoneKind::KEEP_IN) {
       continue;

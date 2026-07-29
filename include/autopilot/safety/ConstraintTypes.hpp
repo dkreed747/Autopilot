@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "NumericGuid.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -18,17 +19,17 @@ enum class ZoneKind {
 
 //! \brief A geodetic position in degrees.
 struct GeoPoint {
-  double latDeg = 0.0;
-  double lonDeg = 0.0;
+  flt64_t latDeg = 0.0;
+  flt64_t lonDeg = 0.0;
 };
 
 //! \brief Ellipse parameters as carried by a UMAA EllipseVariant (converted to a conservative
 //! polygon when the zone is ingested into the ZoneMap).
 struct ZoneEllipse {
   GeoPoint center;
-  double semiMajorM = 0.0;
-  double semiMinorM = 0.0;
-  double orientationRad = 0.0;  // rotation of the semi-major axis from true north, clockwise
+  flt64_t semiMajorM = 0.0;
+  flt64_t semiMinorM = 0.0;
+  flt64_t orientationRad = 0.0;  // rotation of the semi-major axis from true north, clockwise
 };
 
 //! \brief One shape of a water zone: a geodetic polygon, or an ellipse when `ellipse` is set.
@@ -44,19 +45,19 @@ struct ZoneShape {
 struct ElevationBound {
   enum class Frame { DEPTH, ASF };
   Frame frame = Frame::DEPTH;
-  double value = 0.0;
+  flt64_t value = 0.0;
 };
 
 //! \brief The vertical extent a query applies to: a depth interval plus, when known, an
 //! above-sea-floor interval (from the vehicle's altitudeASF). An absent ASF interval is
 //! conservative: ASF-framed zone bounds cannot exonerate the zone without it.
 struct ElevationEnvelope {
-  double minDepthM = 0.0;
-  double maxDepthM = 0.0;
-  std::optional<double> minAsfM;
-  std::optional<double> maxAsfM;
+  flt64_t minDepthM = 0.0;
+  flt64_t maxDepthM = 0.0;
+  std::optional<flt64_t> minAsfM;
+  std::optional<flt64_t> maxAsfM;
 
-  static ElevationEnvelope atPoint(double depthM, std::optional<double> asfM = std::nullopt) {
+  static ElevationEnvelope atPoint(flt64_t depthM, std::optional<flt64_t> asfM = std::nullopt) {
     ElevationEnvelope env;
     env.minDepthM = depthM;
     env.maxDepthM = depthM;
@@ -121,10 +122,10 @@ struct ZoneRecord {
 struct ConstraintSnapshot {
   uint64_t revision = 0;
   std::vector<ZoneRecord> zones;
-  std::optional<double> minSpeedMps;
-  std::optional<double> maxSpeedMps;
-  std::optional<double> minDepthM;  // shallowest commanded depth allowed (dynamic ceiling)
-  std::optional<double> maxDepthM;  // deepest commanded depth allowed (dynamic floor)
+  std::optional<flt64_t> minSpeedMps;
+  std::optional<flt64_t> maxSpeedMps;
+  std::optional<flt64_t> minDepthM;  // shallowest commanded depth allowed (dynamic ceiling)
+  std::optional<flt64_t> maxDepthM;  // deepest commanded depth allowed (dynamic floor)
 };
 
 }  // namespace arlcore::autopilot

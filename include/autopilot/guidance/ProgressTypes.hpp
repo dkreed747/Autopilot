@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "NumericGuid.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -36,11 +37,11 @@ struct WaypointProgress {
   bool elevationAchieved = true;
   bool speedAchieved = false;
   bool trackLineAchieved = true;          // true when no trackTolerance requested
-  std::optional<double> crossTrackErrorM;  // set only when trackTolerance is defined
-  double groundSpeedMps = 0.0;            // current ground speed (for ETA estimation)
-  double distanceToWaypointM = 0.0;
-  double distanceRemainingM = 0.0;
-  double cumulativeDistanceM = 0.0;
+  std::optional<flt64_t> crossTrackErrorM;  // set only when trackTolerance is defined
+  flt64_t groundSpeedMps = 0.0;            // current ground speed (for ETA estimation)
+  flt64_t distanceToWaypointM = 0.0;
+  flt64_t distanceRemainingM = 0.0;
+  flt64_t cumulativeDistanceM = 0.0;
   int32_t waypointsRemaining = 0;
   arlcore::NumericGuid waypointId;
   bool routeComplete = false;

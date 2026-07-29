@@ -13,6 +13,7 @@
 
 #include "CycloneReader.h"
 #include "NumericGuid.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tools {
 
@@ -22,9 +23,9 @@ struct ObservedVector {
   arlcore::NumericGuid sessionId;
   arlcore::NumericGuid sourceId;
   arlcore::NumericGuid sourceParentId;
-  std::optional<double> headingRad;
-  std::optional<double> speedMps;
-  std::optional<double> elevValueM;
+  std::optional<flt64_t> headingRad;
+  std::optional<flt64_t> speedMps;
+  std::optional<flt64_t> elevValueM;
   std::string elevFrame;  // "depth" | "asf" | "" when unset/unsupported
   std::optional<UMAA::Common::Measurement::DateTime> endTime;
   std::string lastStatus;

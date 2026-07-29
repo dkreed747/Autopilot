@@ -10,6 +10,7 @@
 #include "SpeedConditional.h"
 #include "UmaaUtils.h"
 #include "WaterZoneConditional.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -113,8 +114,8 @@ static bool isUpperBoundOp(ConditionalOperatorEnumType op) {
 }
 
 //! \brief Fold a bound conditional (speed/depth) into the snapshot's min/max fields.
-static void foldBound(ConditionalOperatorEnumType op, double value,
-               std::optional<double>* minOut, std::optional<double>* maxOut) {
+static void foldBound(ConditionalOperatorEnumType op, flt64_t value,
+               std::optional<flt64_t>* minOut, std::optional<flt64_t>* maxOut) {
   if (isUpperBoundOp(op)) {
     *maxOut = maxOut->has_value() ? std::min(maxOut->value(), value) : value;
   } else {
@@ -182,7 +183,7 @@ void ConstraintSupervisor::update() {
   }
 }
 
-double ConstraintSupervisor::gracePeriodS(ConstraintClass cls) const {
+flt64_t ConstraintSupervisor::gracePeriodS(ConstraintClass cls) const {
   switch (cls) {
     case ConstraintClass::ZONE:
       return config_.safety.graceZoneS.value_or(config_.safety.gracePeriodS);
@@ -255,9 +256,9 @@ void ConstraintSupervisor::updateSafety() {
   const std::optional<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType> pose = nav_->pose();
   const GeoPoint at{pose.has_value() ? pose->position().geodeticLatitude() : 0.0,
                     pose.has_value() ? pose->position().geodeticLongitude() : 0.0};
-  const double depthM = (pose.has_value() && pose->depth().has_value()) ? pose->depth().value() : 0.0;
-  const std::optional<double> asfM = (pose.has_value() && pose->altitudeASF().has_value())
-      ? std::optional<double>(pose->altitudeASF().value()) : std::nullopt;
+  const flt64_t depthM = (pose.has_value() && pose->depth().has_value()) ? pose->depth().value() : 0.0;
+  const std::optional<flt64_t> asfM = (pose.has_value() && pose->altitudeASF().has_value())
+      ? std::optional<flt64_t>(pose->altitudeASF().value()) : std::nullopt;
 
   bool anyConfirmed = false;
   bool anyConfirmedZone = false;
@@ -306,7 +307,7 @@ void ConstraintSupervisor::updateSafety() {
           if (!tracker.compliantSince.has_value()) {
             tracker.compliantSince = now;
           }
-          if (std::chrono::duration<double>(now - tracker.compliantSince.value()).count() >=
+          if (std::chrono::duration<flt64_t>(now - tracker.compliantSince.value()).count() >=
               config_.safety.clearHoldS) {
             tracker.confirmed = false;
             UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Constraint violation cleared: "
@@ -322,7 +323,7 @@ void ConstraintSupervisor::updateSafety() {
       anyConfirmed = true;
       anyConfirmedZone = anyConfirmedZone || tracker.cls == ConstraintClass::ZONE;
       const auto deadline = tracker.confirmedAt + std::chrono::duration_cast<
-          std::chrono::steady_clock::duration>(std::chrono::duration<double>(gracePeriodS(tracker.cls)));
+          std::chrono::steady_clock::duration>(std::chrono::duration<flt64_t>(gracePeriodS(tracker.cls)));
       if (!earliestDeadline.has_value() || deadline < earliestDeadline.value()) {
         earliestDeadline = deadline;
       }
@@ -345,13 +346,13 @@ void ConstraintSupervisor::updateSafety() {
   // brain/strategy calls happen unlocked (they take their own locks).
   const bool graceExpired = anyConfirmed && earliestDeadline.has_value() &&
                             now >= earliestDeadline.value();
-  double allClearS = 0.0;
+  flt64_t allClearS = 0.0;
   SafetyState state = SafetyState::MONITORING;
   {
     std::scoped_lock lock(mtx_);
     state = state_;
     if (allCompliantSince_.has_value()) {
-      allClearS = std::chrono::duration<double>(now - allCompliantSince_.value()).count();
+      allClearS = std::chrono::duration<flt64_t>(now - allCompliantSince_.value()).count();
     }
   }
   const auto setState = [this](SafetyState next) {

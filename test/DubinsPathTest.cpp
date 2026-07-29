@@ -5,15 +5,16 @@
 #include <random>
 
 #include "autopilot/guidance/DubinsPath.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
-constexpr double kPi = M_PI;
+constexpr flt64_t kPi = M_PI;
 
-static double angleErr(double a, double b) { return std::fabs(std::remainder(a - b, 2.0 * kPi)); }
+static flt64_t angleErr(flt64_t a, flt64_t b) { return std::fabs(std::remainder(a - b, 2.0 * kPi)); }
 
 //! \brief Endpoint check: sampling the full path length must land on the goal pose.
-static void expectReachesGoal(const Dubins2DPose& start, const Dubins2DPose& goal, double rho) {
+static void expectReachesGoal(const Dubins2DPose& start, const Dubins2DPose& goal, flt64_t rho) {
   const auto path = DubinsPath::solve(start, goal, rho);
   ASSERT_TRUE(path.has_value());
   const Dubins2DPose end = path->sample(path->lengthM());
@@ -39,7 +40,7 @@ TEST(DubinsPathTest, CoincidentPoseIsZeroLength) {
 
 TEST(DubinsPathTest, UTurnIsTwoRadiiApartCircles) {
   // Goal directly to the left at 2*rho with reversed heading: pure half-circle (length pi*rho).
-  const double rho = 20.0;
+  const flt64_t rho = 20.0;
   const auto path = DubinsPath::solve({0.0, 0.0, 0.0}, {0.0, 2.0 * rho, kPi}, rho);
   ASSERT_TRUE(path.has_value());
   EXPECT_NEAR(path->lengthM(), kPi * rho, 1e-6);
@@ -67,7 +68,7 @@ TEST(DubinsPathTest, DegenerateRadiusFallsBackToStraight) {
 
 TEST(DubinsPathTest, NonFiniteInputRejected) {
   EXPECT_FALSE(DubinsPath::solve({std::nan(""), 0.0, 0.0}, {1.0, 1.0, 0.0}, 10.0).has_value());
-  EXPECT_FALSE(DubinsPath::solve({0.0, 0.0, 0.0}, {1.0, std::numeric_limits<double>::infinity(), 0.0}, 10.0)
+  EXPECT_FALSE(DubinsPath::solve({0.0, 0.0, 0.0}, {1.0, std::numeric_limits<flt64_t>::infinity(), 0.0}, 10.0)
                    .has_value());
 }
 
@@ -75,9 +76,9 @@ TEST(DubinsPathTest, RandomizedEndpointCorrectness) {
   // The definitive solver check: for many random configurations the chosen shortest word,
   // integrated over its full length, must land exactly on the goal pose.
   std::mt19937 rng(42);
-  std::uniform_real_distribution<double> pos(-500.0, 500.0);
-  std::uniform_real_distribution<double> ang(-kPi, kPi);
-  std::uniform_real_distribution<double> radius(1.0, 80.0);
+  std::uniform_real_distribution<flt64_t> pos(-500.0, 500.0);
+  std::uniform_real_distribution<flt64_t> ang(-kPi, kPi);
+  std::uniform_real_distribution<flt64_t> radius(1.0, 80.0);
   for (int32_t i = 0; i < 2000; i++) {
     const Dubins2DPose start{pos(rng), pos(rng), ang(rng)};
     const Dubins2DPose goal{pos(rng), pos(rng), ang(rng)};
@@ -87,14 +88,14 @@ TEST(DubinsPathTest, RandomizedEndpointCorrectness) {
 
 TEST(DubinsPathTest, RandomizedShortestIsLowerBoundedByEuclidean) {
   std::mt19937 rng(7);
-  std::uniform_real_distribution<double> pos(-300.0, 300.0);
-  std::uniform_real_distribution<double> ang(-kPi, kPi);
+  std::uniform_real_distribution<flt64_t> pos(-300.0, 300.0);
+  std::uniform_real_distribution<flt64_t> ang(-kPi, kPi);
   for (int32_t i = 0; i < 500; i++) {
     const Dubins2DPose start{pos(rng), pos(rng), ang(rng)};
     const Dubins2DPose goal{pos(rng), pos(rng), ang(rng)};
     const auto path = DubinsPath::solve(start, goal, 25.0);
     ASSERT_TRUE(path.has_value());
-    const double euclid = std::hypot(goal.x - start.x, goal.y - start.y);
+    const flt64_t euclid = std::hypot(goal.x - start.x, goal.y - start.y);
     EXPECT_GE(path->lengthM(), euclid - 1e-6);
   }
 }
@@ -103,9 +104,9 @@ TEST(DubinsPathTest, SamplingIsMonotonicAndContinuous) {
   const auto path = DubinsPath::solve({0.0, 0.0, 0.5}, {120.0, -60.0, -2.5}, 30.0);
   ASSERT_TRUE(path.has_value());
   Dubins2DPose prev = path->sample(0.0);
-  for (double s = 1.0; s <= path->lengthM(); s += 1.0) {
+  for (flt64_t s = 1.0; s <= path->lengthM(); s += 1.0) {
     const Dubins2DPose cur = path->sample(s);
-    const double step = std::hypot(cur.x - prev.x, cur.y - prev.y);
+    const flt64_t step = std::hypot(cur.x - prev.x, cur.y - prev.y);
     EXPECT_LE(step, 1.0 + 1e-6);   // never jumps further than the arc step
     EXPECT_GT(step, 0.5);          // and always makes progress
     prev = cur;

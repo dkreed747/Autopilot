@@ -10,6 +10,7 @@
 #include "WaterZoneConditional.h"
 
 #include "autopilot/safety/ConstraintSupervisor.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -28,8 +29,8 @@ using UMAA::MM::ConditionalStateReport::ConditionalStateReportType;
 
 const DateTime kStamp(1, 100);
 
-static std::shared_ptr<WaterZoneConditional> makeZone(WaterZoneKindEnumType kind, double ceilingDepthM,
-                                               double floorDepthM, bool floorAsAsf = false) {
+static std::shared_ptr<WaterZoneConditional> makeZone(WaterZoneKindEnumType kind, flt64_t ceilingDepthM,
+                                               flt64_t floorDepthM, bool floorAsAsf = false) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
 
@@ -62,7 +63,7 @@ static std::shared_ptr<WaterZoneConditional> makeZone(WaterZoneKindEnumType kind
   return std::make_shared<WaterZoneConditional>(base, spec);
 }
 
-static std::shared_ptr<SpeedConditional> makeSpeed(ConditionalOperatorEnumType op, double valueMps) {
+static std::shared_ptr<SpeedConditional> makeSpeed(ConditionalOperatorEnumType op, flt64_t valueMps) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const UMAA::MM::Conditional::SpeedConditionalType spec(op, valueMps, kStamp, specId.getGuid());
@@ -71,7 +72,7 @@ static std::shared_ptr<SpeedConditional> makeSpeed(ConditionalOperatorEnumType o
   return std::make_shared<SpeedConditional>(base, spec);
 }
 
-static std::shared_ptr<DepthConditional> makeDepth(ConditionalOperatorEnumType op, double valueM) {
+static std::shared_ptr<DepthConditional> makeDepth(ConditionalOperatorEnumType op, flt64_t valueM) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const UMAA::MM::Conditional::DepthConditionalType spec(op, valueM, kStamp, specId.getGuid());

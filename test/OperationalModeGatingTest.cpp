@@ -14,6 +14,7 @@
 #include "UuidFactory.h"
 #include "autopilot/umaa/VectorControlServiceProvider.hpp"
 #include "autopilot/umaa/WaypointControlServiceProvider.hpp"
+#include "InternalTypes.h"
 
 using GatingStatus = UMAA::Common::MaritimeEnumeration::
     CommandStatusEnumModule::CommandStatusEnumType;
@@ -51,7 +52,7 @@ static arlcore::NumericGuid gatingForeignGuid() {
 static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType
 gatingVectorCommand(const arlcore::NumericGuid& sessionId,
                     const arlcore::NumericGuid& parentId,
-                    double speedMps = 2.0) {
+                    flt64_t speedMps = 2.0) {
   UMAA::MO::GlobalVectorControl::GlobalVectorCommandType cmd;
   UMAA::Common::Orientation::DirectionTrueNorthRequirementVariantType dir;
   dir.direction().direction(1.0);
@@ -110,7 +111,7 @@ class OperationalModeGatingTest : public ::testing::Test {
   //! \brief Build the manager (booted into STANDBY), brain, and both gated
   //! providers.
   void init(bool allowImplicit, bool failOutOfMode,
-            double idleRevertS = 3600.0) {
+            flt64_t idleRevertS = 3600.0) {
     arlcore::autopilot::OperationalModeConfig modeConfig;
     modeConfig.allowImplicitModeTransitions = allowImplicit;
     modeConfig.commandsOutOfModeAreFailed = failOutOfMode;

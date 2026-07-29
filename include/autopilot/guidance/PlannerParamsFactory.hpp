@@ -6,6 +6,7 @@
 
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -26,7 +27,7 @@ inline PlannerParams derivePlannerParams(const AutopilotConfig& config) {
   p.maxReplans = config.planner.maxReplans;
 
   const CapabilityLimits& surf = config.platformCapabilities.surface;
-  const std::optional<double> speed = surf.cruisingSpeedMps.has_value() ? surf.cruisingSpeedMps
+  const std::optional<flt64_t> speed = surf.cruisingSpeedMps.has_value() ? surf.cruisingSpeedMps
                                                                         : surf.maxForwardSpeedMps;
   if (speed.has_value() && surf.maxTurnRateRps.has_value() && surf.maxTurnRateRps.value() > 0.0) {
     p.turnRadiusM = std::max(1.0, config.planner.turnRadiusMargin) * speed.value() /

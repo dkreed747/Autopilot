@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "Logger.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -86,8 +87,8 @@ void OperationalModeManager::endStep(bool localCommandActive,
         if (!idleSince_.has_value()) {
           idleSince_ = now;
         }
-        const double idleS =
-            std::chrono::duration<double>(now - idleSince_.value()).count();
+        const flt64_t idleS =
+            std::chrono::duration<flt64_t>(now - idleSince_.value()).count();
         if (idleS >= config_.idleRevertS) {
           UMAA_LOG_INFO(util::SYSTEM_LOGGER,
                         "Implicit " << modeName(mode_) << " idle for " << idleS

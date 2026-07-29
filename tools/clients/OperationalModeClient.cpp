@@ -3,6 +3,7 @@
 #include "autopilot/guidance/MissionRoute.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tools {
 
@@ -131,11 +132,11 @@ void OperationalModeClient::poll() {
   }
 }
 
-std::optional<double> OperationalModeClient::reportAgeS() const {
+std::optional<flt64_t> OperationalModeClient::reportAgeS() const {
   if (!reportedMode_.has_value()) {
     return std::nullopt;
   }
-  return std::chrono::duration<double>(std::chrono::steady_clock::now() -
+  return std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() -
                                        reportAt_)
       .count();
 }

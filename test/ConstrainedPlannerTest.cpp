@@ -11,40 +11,41 @@
 #include "autopilot/guidance/AngleMath.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 
-constexpr double kOriginLat = 39.0;
-constexpr double kOriginLon = -76.5;
+constexpr flt64_t kOriginLat = 39.0;
+constexpr flt64_t kOriginLon = -76.5;
 
 static const GeographicLib::LocalCartesian& testFrame() {
   static const GeographicLib::LocalCartesian frame(kOriginLat, kOriginLon, 0.0);
   return frame;
 }
 
-static GeoPoint at(double east, double north) {
+static GeoPoint at(flt64_t east, flt64_t north) {
   GeoPoint p;
-  double h = 0.0;
+  flt64_t h = 0.0;
   testFrame().Reverse(east, north, 0.0, p.latDeg, p.lonDeg, h);
   return p;
 }
 
 //! \brief Same kinematic vehicle as DubinsPathPlannerTest.
 struct ConstrainedSimVehicle {
-  double xE = 0.0;
-  double yN = 0.0;
-  double yawRad = 0.0;
-  double speedMps = 0.0;
-  double maxTurnRateRps = 0.25;
+  flt64_t xE = 0.0;
+  flt64_t yN = 0.0;
+  flt64_t yawRad = 0.0;
+  flt64_t speedMps = 0.0;
+  flt64_t maxTurnRateRps = 0.25;
 
   GlobalPoseReportType pose() const {
     GlobalPoseReportType p;
-    double lat = 0.0;
-    double lon = 0.0;
-    double h = 0.0;
+    flt64_t lat = 0.0;
+    flt64_t lon = 0.0;
+    flt64_t h = 0.0;
     testFrame().Reverse(xE, yN, 0.0, lat, lon, h);
     p.position().geodeticLatitude(lat);
     p.position().geodeticLongitude(lon);
@@ -52,9 +53,9 @@ struct ConstrainedSimVehicle {
     return p;
   }
 
-  void step(const ControlVector& cv, double dtS) {
-    const double err = wrapPi(cv.headingRad - yawRad);
-    const double maxDelta = maxTurnRateRps * dtS;
+  void step(const ControlVector& cv, flt64_t dtS) {
+    const flt64_t err = wrapPi(cv.headingRad - yawRad);
+    const flt64_t maxDelta = maxTurnRateRps * dtS;
     yawRad = wrapPi(yawRad + std::clamp(err, -maxDelta, maxDelta));
     speedMps = cv.speedMps;
     xE += speedMps * dtS * std::sin(yawRad);
@@ -62,7 +63,7 @@ struct ConstrainedSimVehicle {
   }
 };
 
-static GlobalWaypointType makeWaypoint(double xE, double yN, double speedMps) {
+static GlobalWaypointType makeWaypoint(flt64_t xE, flt64_t yN, flt64_t speedMps) {
   const GeoPoint p = at(xE, yN);
   GlobalWaypointType wp;
   wp.position().value().geodeticLatitude(p.latDeg);
@@ -91,7 +92,7 @@ static PlannerParams testParams() {
 }
 
 //! \brief A keep-out square in the test frame.
-static ZoneRecord keepOut(double x0, double y0, double x1, double y1) {
+static ZoneRecord keepOut(flt64_t x0, flt64_t y0, flt64_t x1, flt64_t y1) {
   ZoneRecord zone;
   zone.kind = ZoneKind::KEEP_OUT;
   ZoneShape shape;
@@ -110,15 +111,15 @@ static ZoneMap makeMap(std::vector<ZoneRecord> zones, uint64_t revision = 1) {
 }
 
 //! \brief Minimum keep-out clearance over a geodetic preview polyline.
-static double previewMinClearance(const std::vector<std::pair<double, double>>& preview, const ZoneMap& map) {
-  double minClearance = 1e18;
+static flt64_t previewMinClearance(const std::vector<std::pair<flt64_t, flt64_t>>& preview, const ZoneMap& map) {
+  flt64_t minClearance = 1e18;
   for (const auto& [lat, lon] : preview) {
     minClearance = std::min(minClearance, map.clearanceM(GeoPoint{lat, lon}, 0.0));
   }
   return minClearance;
 }
 
-static void runMission(DubinsPathPlanner* planner, ConstrainedSimVehicle* vehicle, int32_t maxSteps, double dtS = 0.5) {
+static void runMission(DubinsPathPlanner* planner, ConstrainedSimVehicle* vehicle, int32_t maxSteps, flt64_t dtS = 0.5) {
   for (int32_t i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
     const ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
     vehicle->step(cv, dtS);
@@ -162,7 +163,7 @@ TEST(ConstrainedPlannerTest, DirectLegDetoursAroundKeepOut) {
   EXPECT_GE(previewMinClearance(planner.previewRoute(2.0), map), testParams().zoneMarginM - 0.5);
 
   // ... and the flown track never violates the zone.
-  double minFlownClearance = 1e18;
+  flt64_t minFlownClearance = 1e18;
   for (int32_t i = 0; i < 3000 && !planner.routeComplete() && !planner.failed(); ++i) {
     const ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     vehicle.step(cv, 0.5);
@@ -204,7 +205,7 @@ TEST(ConstrainedPlannerTest, MidRouteConstraintChangeReplansCurrentLeg) {
   ASSERT_FALSE(planner.failed());
 
   // The replanned remainder respects the new zone and the mission still completes.
-  double minFlownClearance = 1e18;
+  flt64_t minFlownClearance = 1e18;
   for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); ++i) {
     const ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     vehicle.step(cv, 0.5);

@@ -3,6 +3,7 @@
 #include "autopilot/guidance/ControlVector.hpp"
 #include "autopilot/guidance/MissionRoute.hpp"
 #include "autopilot/guidance/ToleranceUtils.hpp"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot::tools {
 
@@ -14,7 +15,7 @@ using StatusEnum = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::
 
 static constexpr uint32_t kMaxCommandDrain = 32;
 static constexpr size_t kMaxTrackedVectors = 16;
-static constexpr double kTerminalEvictS = 60.0;
+static constexpr flt64_t kTerminalEvictS = 60.0;
 
 static void decodeVector(
     const UMAA::MO::GlobalVectorControl::GlobalVectorCommandType& cmd,
@@ -22,10 +23,10 @@ static void decodeVector(
   const std::optional<DirectionValue> dir =
       tolerance::extractDirection(cmd.direction());
   out->headingRad =
-      dir.has_value() ? std::optional<double>(dir->headingRad) : std::nullopt;
+      dir.has_value() ? std::optional<flt64_t>(dir->headingRad) : std::nullopt;
   const std::optional<SpeedValue> speed = tolerance::extractSpeed(cmd.speed());
   out->speedMps =
-      speed.has_value() ? std::optional<double>(speed->speedMps) : std::nullopt;
+      speed.has_value() ? std::optional<flt64_t>(speed->speedMps) : std::nullopt;
   out->elevValueM.reset();
   out->elevFrame.clear();
   if (cmd.elevation().has_value()) {
@@ -109,8 +110,8 @@ void VectorActivityMonitor::poll() {
   }
 
   for (auto it = vectors_.begin(); it != vectors_.end();) {
-    const double idleS =
-        std::chrono::duration<double>(now - it->second.lastSeen).count();
+    const flt64_t idleS =
+        std::chrono::duration<flt64_t>(now - it->second.lastSeen).count();
     if (it->second.terminal && idleS > kTerminalEvictS) {
       it = vectors_.erase(it);
     } else {

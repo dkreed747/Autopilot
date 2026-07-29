@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "Logger.h"
+#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -35,26 +36,26 @@ std::vector<GeoPoint> ZoneMap::ellipseToRing(const ZoneEllipse& ellipse, ZoneKin
   const int32_t n = std::max(config_.ellipseSegments, 8);
   // Circumscribing a keep-out grows the forbidden region; inscribing a keep-in shrinks the
   // allowed one. Both directions are conservative.
-  const double scale = kind == ZoneKind::KEEP_OUT ? 1.0 / std::cos(M_PI / n) : 1.0;
-  const double a = ellipse.semiMajorM * scale;
-  const double b = ellipse.semiMinorM * scale;
+  const flt64_t scale = kind == ZoneKind::KEEP_OUT ? 1.0 / std::cos(M_PI / n) : 1.0;
+  const flt64_t a = ellipse.semiMajorM * scale;
+  const flt64_t b = ellipse.semiMinorM * scale;
   // Semi-major axis orientation is a bearing (clockwise from true north) in an east/north plane.
   const Vec2 uMajor{std::sin(ellipse.orientationRad), std::cos(ellipse.orientationRad)};
   const Vec2 uMinor{std::cos(ellipse.orientationRad), -std::sin(ellipse.orientationRad)};
 
-  double cx = 0.0;
-  double cy = 0.0;
-  double cz = 0.0;
+  flt64_t cx = 0.0;
+  flt64_t cy = 0.0;
+  flt64_t cz = 0.0;
   anchor_->Forward(ellipse.center.latDeg, ellipse.center.lonDeg, 0.0, cx, cy, cz);
 
   std::vector<GeoPoint> ring;
   ring.reserve(n);
   for (int32_t k = 0; k < n; ++k) {
-    const double t = 2.0 * M_PI * k / n;
-    const double ex = cx + a * std::cos(t) * uMajor.x + b * std::sin(t) * uMinor.x;
-    const double ny = cy + a * std::cos(t) * uMajor.y + b * std::sin(t) * uMinor.y;
+    const flt64_t t = 2.0 * M_PI * k / n;
+    const flt64_t ex = cx + a * std::cos(t) * uMajor.x + b * std::sin(t) * uMinor.x;
+    const flt64_t ny = cy + a * std::cos(t) * uMajor.y + b * std::sin(t) * uMinor.y;
     GeoPoint p;
-    double h = 0.0;
+    flt64_t h = 0.0;
     anchor_->Reverse(ex, ny, 0.0, p.latDeg, p.lonDeg, h);
     ring.push_back(p);
   }
@@ -104,9 +105,9 @@ ZoneSet ZoneMap::activeSet(const GeographicLib::LocalCartesian& frame,
       std::vector<Vec2> vertices;
       vertices.reserve(ring.size());
       for (const GeoPoint& gp : ring) {
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
+        flt64_t x = 0.0;
+        flt64_t y = 0.0;
+        flt64_t z = 0.0;
         frame.Forward(gp.latDeg, gp.lonDeg, 0.0, x, y, z);
         vertices.push_back(Vec2{x, y});
       }
@@ -116,29 +117,29 @@ ZoneSet ZoneMap::activeSet(const GeographicLib::LocalCartesian& frame,
   return set;
 }
 
-double ZoneMap::clearanceM(const GeoPoint& position, const ElevationEnvelope& envelope) const {
+flt64_t ZoneMap::clearanceM(const GeoPoint& position, const ElevationEnvelope& envelope) const {
   if (!anchor_.has_value() || zones_.empty()) {
-    return std::numeric_limits<double>::max();
+    return std::numeric_limits<flt64_t>::max();
   }
   const ZoneSet set = activeSet(anchor_.value(), envelope);
   if (set.empty()) {
-    return std::numeric_limits<double>::max();
+    return std::numeric_limits<flt64_t>::max();
   }
-  double x = 0.0;
-  double y = 0.0;
-  double z = 0.0;
+  flt64_t x = 0.0;
+  flt64_t y = 0.0;
+  flt64_t z = 0.0;
   anchor_->Forward(position.latDeg, position.lonDeg, 0.0, x, y, z);
   return set.clearanceM(Vec2{x, y});
 }
 
-double ZoneMap::clearanceM(const GeoPoint& position, double depthM,
-                           std::optional<double> asfM) const {
+flt64_t ZoneMap::clearanceM(const GeoPoint& position, flt64_t depthM,
+                           std::optional<flt64_t> asfM) const {
   return clearanceM(position, ElevationEnvelope::atPoint(depthM, asfM));
 }
 
-ZoneCompliance ZoneMap::classify(const GeoPoint& position, double depthM,
-                                 std::optional<double> asfM) const {
-  const double clearance = clearanceM(position, depthM, asfM);
+ZoneCompliance ZoneMap::classify(const GeoPoint& position, flt64_t depthM,
+                                 std::optional<flt64_t> asfM) const {
+  const flt64_t clearance = clearanceM(position, depthM, asfM);
   if (clearance < 0.0) {
     return ZoneCompliance::VIOLATION;
   }
@@ -148,8 +149,8 @@ ZoneCompliance ZoneMap::classify(const GeoPoint& position, double depthM,
   return ZoneCompliance::COMPLIANT;
 }
 
-bool ZoneMap::pointCompliant(const GeoPoint& position, double depthM, double marginM,
-                             std::optional<double> asfM) const {
+bool ZoneMap::pointCompliant(const GeoPoint& position, flt64_t depthM, flt64_t marginM,
+                             std::optional<flt64_t> asfM) const {
   return clearanceM(position, depthM, asfM) >= marginM;
 }
 
