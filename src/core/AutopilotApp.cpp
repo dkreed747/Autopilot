@@ -141,6 +141,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
   vectorProvider_ =
       std::make_unique<VectorControlServiceProvider>(parseId(config_.identity.vectorSourceId), vectorIo, brain_.get(),
                                                      maxForwardSpeed, supervisor_.get(), modeManager_.get());
+  vectorProvider_->setStaticDepthLimit(config_.constraints.maxDepthM);
 
   // Waypoint control provider (with large-list element reader)
   auto waypointIo = std::make_shared<WaypointControlServiceProviderIo>(
@@ -158,6 +159,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
   waypointProvider_ = std::make_unique<WaypointControlServiceProvider>(
       parseId(config_.identity.waypointSourceId), waypointIo, brain_.get(), maxForwardSpeed,
       config_.planner.maxListWaitCycles, supervisor_.get(), zoneMap_.get(), modeManager_.get());
+  waypointProvider_->setStaticDepthLimit(config_.constraints.maxDepthM);
 
   // Platform report providers: publish specs + capabilities once on startup
   specsReportProvider_ = std::make_unique<ReportProvider<UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>>(

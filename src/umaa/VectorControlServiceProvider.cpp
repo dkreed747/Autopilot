@@ -77,6 +77,16 @@ bool VectorControlServiceProvider::isCommandValid(const GlobalVectorCommandType&
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command endTime is already in the past")
     return false;
   }
+  if (staticMaxDepthM_.has_value() && cmd.elevation().has_value()) {
+    const std::optional<ElevationValue> el = tolerance::extractElevation(cmd.elevation().value());
+    if (el.has_value() && el->frame == ElevationFrame::DEPTH && el->valueM > staticMaxDepthM_.value()) {
+      UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command depth " << el->valueM
+                                                                  << " m exceeds the configured "
+                                                                     "constraints.max_depth_m of "
+                                                                  << staticMaxDepthM_.value() << " m")
+      return false;
+    }
+  }
   return true;
 }
 

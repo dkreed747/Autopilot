@@ -120,6 +120,16 @@ bool WaypointControlServiceProvider::validateWaypoints(const std::vector<GlobalW
                      "Waypoint speed " << sp->speedMps << " exceeds platform max forward speed " << maxForwardSpeedMps_)
       return false;
     }
+    if (staticMaxDepthM_.has_value() && wp.elevation().has_value()) {
+      const std::optional<ElevationValue> el = tolerance::extractElevation(wp.elevation().value());
+      if (el.has_value() && el->frame == ElevationFrame::DEPTH && el->valueM > staticMaxDepthM_.value()) {
+        UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Waypoint depth " << el->valueM
+                                                              << " m exceeds the configured "
+                                                                 "constraints.max_depth_m of "
+                                                              << staticMaxDepthM_.value() << " m")
+        return false;
+      }
+    }
   }
   return true;
 }

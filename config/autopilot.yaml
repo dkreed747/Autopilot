@@ -97,7 +97,7 @@ planner:
 constraints:
   max_speed_mps: 5.0
   min_speed_mps:
-  max_depth_m: 30.0
+  max_depth_m: 50.0                # must exceed the deepest mission depth (demo spiral: 40 m)
   min_depth_m:
 
 # Water-zone geometry margins.

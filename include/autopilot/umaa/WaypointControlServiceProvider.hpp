@@ -34,6 +34,10 @@ class WaypointControlServiceProvider
                                  const ISafetyGate* safetyGate = nullptr, const ZoneMap* zoneMap = nullptr,
                                  ICommandModeGate* modeGate = nullptr);
 
+  //! \brief Static (config-time) depth ceiling: commands deeper than this are rejected at
+  //! validation instead of spiraling forever against the output clamp.
+  void setStaticDepthLimit(std::optional<flt64_t> maxDepthM) { staticMaxDepthM_ = maxDepthM; }
+
  protected:
   bool isCommandValid(const GlobalWaypointCommandType& cmd) override;
   bool onCycle() override;
@@ -75,6 +79,7 @@ class WaypointControlServiceProvider
                                  GlobalWaypointCommandTypeWaypointsListElement>
       listReader_;
   flt64_t maxForwardSpeedMps_;
+  std::optional<flt64_t> staticMaxDepthM_;
   // TODO(@user): audit long-run growth of the shared large-list reader's table when
   // foreign commanders publish lists that never bind to a session here.
   int32_t maxListWaitCycles_;

@@ -27,6 +27,10 @@ class VectorControlServiceProvider
                                IAutopilot* autopilot, flt64_t maxForwardSpeedMps,
                                const ISafetyGate* safetyGate = nullptr, ICommandModeGate* modeGate = nullptr);
 
+  //! \brief Static (config-time) depth ceiling: commands deeper than this are rejected at
+  //! validation instead of driving against the output clamp forever.
+  void setStaticDepthLimit(std::optional<flt64_t> maxDepthM) { staticMaxDepthM_ = maxDepthM; }
+
  protected:
   bool isCommandValid(const GlobalVectorCommandType& cmd) override;
   arlcore::umaa::services::CommandStateResult onIssued(const std::weak_ptr<CmdSession> session) override;
@@ -49,6 +53,7 @@ class VectorControlServiceProvider
   arlcore::NumericGuid sourceId_;
   IAutopilot* autopilot_;
   flt64_t maxForwardSpeedMps_;  // <= 0 means no limit
+  std::optional<flt64_t> staticMaxDepthM_;
   const ISafetyGate* safetyGate_;
   ICommandModeGate* modeGate_;
 
