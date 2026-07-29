@@ -1,16 +1,3 @@
-/*
- * Copyright 2025 Pennsylvania State University
- * Applied Research Laboratory, Pennsylvania State University
- *
- * DISTRIBUTION STATEMENT A. Approved for public release. Distribution is unlimited.
- * This software was developed by the Department of the Navy, NAVSEA Unmanned and
- * Small Combatants. It is provided under the terms of use found in the LICENSE
- * file at the source code root directory.
- *
- * UMAA mission console front end. Consumes the mission_console REST + SSE API and
- * renders a live local-tangent-plane chart (SVG, immediate mode), vehicle readouts,
- * mission builder, and command status.
- */
 'use strict';
 
 /* ------------------------------------------------- state */

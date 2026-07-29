@@ -1,17 +1,3 @@
-/*
- * Copyright 2025 Pennsylvania State University
- * Applied Research Laboratory, Pennsylvania State University
- *
- * DISTRIBUTION STATEMENT A. Approved for public release. Distribution is unlimited.
- * This software was developed by the Department of the Navy, NAVSEA Unmanned and
- * Small Combatants. It is provided under the terms of use found in the LICENSE
- * file at the source code root directory.
- *
- * Dark ops-console theme. Chart palette (validated, dark surface):
- *   vehicle/track #3987e5 · planned route #199e70 · active leg #c98500 · draft #9085e9
- * Status: good #0ca30c · warning #fab219 · serious #ec835a · critical #d03b3b
- */
-
 :root {
   --page: #0d0d0d;
   --surface: #1a1a19;
