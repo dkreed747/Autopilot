@@ -1,23 +1,17 @@
-#ifndef AUTOPILOT_SAFETY_SAFEMODESTRATEGY_HPP_
-#define AUTOPILOT_SAFETY_SAFEMODESTRATEGY_HPP_
+#ifndef AUTOPILOT_SAFETY_ISAFEMODESTRATEGY_HPP_
+#define AUTOPILOT_SAFETY_ISAFEMODESTRATEGY_HPP_
 
-#include <memory>
-#include <optional>
-
-#include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/core/NavState.hpp"
-#include "autopilot/safety/SafeReturnPath.hpp"
 
 namespace arlcore::autopilot {
 
 class AutopilotBrain;
 
 //! \brief What the vehicle does once the safety supervisor escalates to safe mode. Selected in
-//! the yaml (safety.safe_mode.strategy) so different missions can carry different responses;
-//! new strategies plug in through makeSafeModeStrategy.
-class SafeModeStrategy {
+//! the yaml (safety.safe_mode.strategy); new strategies plug in through makeSafeModeStrategy.
+class ISafeModeStrategy {
  public:
-  virtual ~SafeModeStrategy() = default;
+  virtual ~ISafeModeStrategy() = default;
 
   //! \brief Safe mode engaged: take the vehicle (via the brain's SAFE-mode entry points).
   virtual void onEnter(AutopilotBrain* brain, NavState* nav) = 0;
@@ -35,10 +29,5 @@ class SafeModeStrategy {
   virtual const char* name() const = 0;
 };
 
-//! \brief Build the configured strategy: "srp" runs the Safe Return Path (falling back to a
-//! zero-speed hold when no SRP is loaded), "zero_speed_hold" holds position.
-std::unique_ptr<SafeModeStrategy> makeSafeModeStrategy(const SafetyConfig& config,
-                                                       const std::optional<SafeReturnPath>& srp);
-
 }  // namespace arlcore::autopilot
-#endif  // AUTOPILOT_SAFETY_SAFEMODESTRATEGY_HPP_
+#endif  // AUTOPILOT_SAFETY_ISAFEMODESTRATEGY_HPP_

@@ -127,25 +127,5 @@ struct ConstraintSnapshot {
   std::optional<double> maxDepthM;  // deepest commanded depth allowed (dynamic floor)
 };
 
-//! \brief Read-side interface the supervisor exposes to the brain/planner.
-class IConstraintSource {
- public:
-  virtual ~IConstraintSource() = default;
-
-  //! \brief The current constraint snapshot (copied; safe to hold across ticks).
-  virtual ConstraintSnapshot snapshot() const = 0;
-
-  //! \brief The revision of the current snapshot, for cheap change detection.
-  virtual uint64_t revision() const = 0;
-};
-
-//! \brief Gate the command providers consult before accepting new commands (false while the
-//! autopilot is in safe mode).
-class ISafetyGate {
- public:
-  virtual ~ISafetyGate() = default;
-  virtual bool commandsAllowed() const = 0;
-};
-
 }  // namespace arlcore::autopilot
 #endif  // AUTOPILOT_SAFETY_CONSTRAINTTYPES_HPP_

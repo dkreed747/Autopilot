@@ -13,30 +13,19 @@
 #include <UMAA/MM/ConditionalStateReport/ConditionalStateReportType.hpp>
 
 #include "ConditionalBase.h"
-#include "Observer.h"
 #include "SenderBase.h"
 
 #include "autopilot/config/AutopilotConfig.hpp"
-#include "autopilot/safety/ConstraintTypes.hpp"
 #include "autopilot/core/NavState.hpp"
-#include "autopilot/safety/SafeModeStrategy.hpp"
+#include "autopilot/safety/IConstraintSource.hpp"
+#include "autopilot/safety/ISafeModeStrategy.hpp"
+#include "autopilot/safety/ISafetyGate.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
+#include "autopilot/umaa/CallbackObserver.hpp"
 
 namespace arlcore::autopilot {
 
 class AutopilotBrain;
-
-//! \brief Observer adapter forwarding a Subject's notifications to a std::function, so one class
-//! can observe several subjects of the same payload type.
-template <class T>
-class CallbackObserver : public arlcore::Observer<T> {
- public:
-  explicit CallbackObserver(std::function<void(const T&)> fn) : fn_(std::move(fn)) {}
-  void update(const T& data) override { fn_(data); }
-
- private:
-  std::function<void(const T&)> fn_;
-};
 
 using ConditionalList = std::vector<std::shared_ptr<arlcore::umaa::conditional::ConditionalBase>>;
 
@@ -65,7 +54,7 @@ class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
   //! \brief Arm the violation FSM: violations confirmed against the active conditionals drive
   //! the brain's recovery hooks and, past their grace deadline, the safe-mode strategy.
   //! Without this the supervisor only monitors and reports.
-  void attachSafety(AutopilotBrain* brain, std::unique_ptr<SafeModeStrategy> strategy);
+  void attachSafety(AutopilotBrain* brain, std::unique_ptr<ISafeModeStrategy> strategy);
 
   SafetyState safetyState() const;
 
@@ -138,7 +127,7 @@ class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
 
   // Violation FSM (armed by attachSafety).
   AutopilotBrain* brain_ = nullptr;
-  std::unique_ptr<SafeModeStrategy> strategy_;
+  std::unique_ptr<ISafeModeStrategy> strategy_;
   SafetyState state_ = SafetyState::MONITORING;
   std::map<arlcore::NumericGuid, ViolationTracker> trackers_;
   std::optional<std::chrono::steady_clock::time_point> lastSafetyTick_;

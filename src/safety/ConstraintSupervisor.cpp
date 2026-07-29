@@ -151,7 +151,7 @@ void ConstraintSupervisor::onActiveSetChanged(const ConditionalList& active) {
 }
 
 void ConstraintSupervisor::attachSafety(AutopilotBrain* brain,
-                                        std::unique_ptr<SafeModeStrategy> strategy) {
+                                        std::unique_ptr<ISafeModeStrategy> strategy) {
   brain_ = brain;
   strategy_ = std::move(strategy);
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Safety supervisor armed (safe-mode strategy: "

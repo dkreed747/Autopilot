@@ -1,4 +1,4 @@
-#include "autopilot/safety/SafeModeStrategy.hpp"
+#include "autopilot/safety/SafeModeStrategyFactory.hpp"
 
 #include <cmath>
 #include <utility>
@@ -17,7 +17,7 @@ namespace {
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 
 //! \brief Hold position at zero speed until the supervisor releases safe mode (all-clear).
-class ZeroSpeedHoldStrategy : public SafeModeStrategy {
+class ZeroSpeedHoldStrategy : public ISafeModeStrategy {
  public:
   void onEnter(AutopilotBrain* brain, NavState* nav) override { brain->activateSafeHold(); }
   void onTick(AutopilotBrain* brain, NavState* nav) override {}
@@ -29,7 +29,7 @@ class ZeroSpeedHoldStrategy : public SafeModeStrategy {
 //! \brief Run the Safe Return Path mission; afterwards either release (configurable) or hold
 //! the last SRP waypoint within the hold radius, repositioning back to its center (arriving
 //! headed opposite the drift direction) whenever the vehicle drifts out.
-class SrpMissionStrategy : public SafeModeStrategy {
+class SrpMissionStrategy : public ISafeModeStrategy {
  public:
   explicit SrpMissionStrategy(SafeReturnPath srp) : srp_(std::move(srp)) {}
 
@@ -127,7 +127,7 @@ class SrpMissionStrategy : public SafeModeStrategy {
 
 }  // namespace
 
-std::unique_ptr<SafeModeStrategy> makeSafeModeStrategy(const SafetyConfig& config,
+std::unique_ptr<ISafeModeStrategy> makeSafeModeStrategy(const SafetyConfig& config,
                                                        const std::optional<SafeReturnPath>& srp) {
   if (config.safeMode.strategy == "srp") {
     if (srp.has_value()) {

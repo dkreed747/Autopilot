@@ -14,7 +14,7 @@
 #include "autopilot/guidance/AngleMath.hpp"
 #include "autopilot/core/AutopilotBrain.hpp"
 #include "autopilot/safety/ConstraintSupervisor.hpp"
-#include "autopilot/safety/SafeModeStrategy.hpp"
+#include "autopilot/safety/SafeModeStrategyFactory.hpp"
 #include "UuidFactory.h"
 #include "WaterZoneConditional.h"
 
@@ -127,7 +127,7 @@ AutopilotConfig safetyConfig() {
 
 //! \brief Full safety stack minus DDS: vehicle, brain, zone map, supervisor, conditionals.
 struct Harness {
-  explicit Harness(AutopilotConfig cfg, std::unique_ptr<SafeModeStrategy> strategy)
+  explicit Harness(AutopilotConfig cfg, std::unique_ptr<ISafeModeStrategy> strategy)
       : config(std::move(cfg)), zoneMap(config.zones) {
     brain = std::make_unique<AutopilotBrain>(&nav, &vehicle, config);
     brain->setZoneMap(&zoneMap);

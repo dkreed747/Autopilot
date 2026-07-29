@@ -56,10 +56,12 @@ struct AttitudeValue {
   std::optional<AngleRange> allowable;
 };
 
+}  // namespace arlcore::autopilot
+
 //! \brief Helpers to pull plain scalar values + tolerances out of UMAA requirement-variant
 //! unions, and to evaluate achievement against them. Centralizing this keeps the
 //! union-discriminator handling and the per-type tolerance semantics in one place.
-namespace tolerance {
+namespace arlcore::autopilot::tolerance {
 
 //! \brief Extract the commanded heading + tolerance from a direction requirement. Supports
 //! true-north / magnetic-north reference frames; returns nullopt for unsupported variants.
@@ -98,6 +100,5 @@ bool elevationAchieved(const ElevationValue& elevation, double actualM, double d
 //! \brief Whether an actual yaw satisfies the arrival-attitude requirement.
 bool attitudeAchieved(const AttitudeValue& attitude, double actualYawRad, double defaultTolRad);
 
-}  // namespace tolerance
-}  // namespace arlcore::autopilot
+}  // namespace arlcore::autopilot::tolerance
 #endif  // AUTOPILOT_GUIDANCE_TOLERANCEUTILS_HPP_

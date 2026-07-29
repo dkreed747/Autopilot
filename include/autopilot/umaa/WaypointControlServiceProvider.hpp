@@ -7,6 +7,7 @@
 
 #include "CommandProviderBase.h"
 #include "autopilot/safety/ConstraintTypes.hpp"
+#include "autopilot/safety/ISafetyGate.hpp"
 #include "autopilot/core/IAutopilot.hpp"
 #include "autopilot/modes/ICommandModeGate.hpp"
 #include "autopilot/safety/ZoneMap.hpp"

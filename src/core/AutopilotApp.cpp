@@ -15,6 +15,7 @@
 #include "CycloneSender.h"
 #include "CycloneUtilities.h"
 #include "Logger.h"
+#include "autopilot/safety/SafeModeStrategyFactory.hpp"
 #include "autopilot/umaa/PlatformReportFactory.hpp"
 #include "UuidFactory.h"
 

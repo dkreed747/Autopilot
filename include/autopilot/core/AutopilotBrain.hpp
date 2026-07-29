@@ -10,7 +10,7 @@
 
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/safety/ConstraintClamp.hpp"
-#include "autopilot/safety/ConstraintTypes.hpp"
+#include "autopilot/safety/IConstraintSource.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
 #include "autopilot/core/IAutopilot.hpp"
 #include "autopilot/vehicle/IVehicleControl.hpp"
