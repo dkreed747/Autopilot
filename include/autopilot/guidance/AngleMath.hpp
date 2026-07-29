@@ -2,6 +2,7 @@
 #define AUTOPILOT_GUIDANCE_ANGLEMATH_HPP_
 
 #include <cmath>
+
 #include "InternalTypes.h"
 
 namespace arlcore::autopilot {

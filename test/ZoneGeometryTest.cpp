@@ -4,13 +4,10 @@
 
 #include "autopilot/safety/ZoneGeometry.hpp"
 
-
 //! An axis-aligned square [0,100]x[0,100], given clockwise to exercise re-winding.
 static arlcore::autopilot::LocalPolygon square100() {
-  return arlcore::autopilot::LocalPolygon(
-      {{0.0, 0.0}, {0.0, 100.0}, {100.0, 100.0}, {100.0, 0.0}});
+  return arlcore::autopilot::LocalPolygon({{0.0, 0.0}, {0.0, 100.0}, {100.0, 100.0}, {100.0, 0.0}});
 }
-
 
 TEST(LocalPolygonTest, ContainsAndSignedDistance) {
   // GIVEN: a 100 m axis-aligned square polygon
@@ -65,10 +62,10 @@ TEST(ZoneSetTest, KeepOutClearance) {
 
   // WHEN: evaluating clearance and margin compliance around the zone
   // THEN: outside is positive and compliant, inside negative, under-margin fails
-  EXPECT_NEAR(set.clearanceM({-20.0, 50.0}), 20.0, 1e-9);   // outside = compliant
-  EXPECT_NEAR(set.clearanceM({10.0, 50.0}), -10.0, 1e-9);   // inside = violating
+  EXPECT_NEAR(set.clearanceM({-20.0, 50.0}), 20.0, 1e-9);  // outside = compliant
+  EXPECT_NEAR(set.clearanceM({10.0, 50.0}), -10.0, 1e-9);  // inside = violating
   EXPECT_TRUE(set.pointCompliant({-20.0, 50.0}, 5.0));
-  EXPECT_FALSE(set.pointCompliant({-3.0, 50.0}, 5.0));      // compliant but under margin
+  EXPECT_FALSE(set.pointCompliant({-3.0, 50.0}, 5.0));  // compliant but under margin
 }
 
 TEST(ZoneSetTest, KeepInClearance) {
@@ -86,8 +83,7 @@ TEST(ZoneSetTest, ClearanceIsMinOverZones) {
   // GIVEN: a large keep-in containing a 100 m square keep-out
   arlcore::autopilot::ZoneSet set;
   set.addZone(arlcore::autopilot::ZoneKind::KEEP_IN,
-              arlcore::autopilot::LocalPolygon({{-200.0, -200.0}, {200.0, -200.0},
-                                                {200.0, 200.0}, {-200.0, 200.0}}));
+              arlcore::autopilot::LocalPolygon({{-200.0, -200.0}, {200.0, -200.0}, {200.0, 200.0}, {-200.0, 200.0}}));
   set.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT, square100());
 
   // WHEN: evaluating clearance where different zones are binding
@@ -125,9 +121,9 @@ TEST(ZoneSetTest, SegmentClear) {
 
   // WHEN: checking segments west of, through, and just beside the zone
   // THEN: only segments that keep the margin along their length are clear
-  EXPECT_TRUE(set.segmentClear({-50.0, -50.0}, {-50.0, 150.0}, 5.0, 1.0));   // passes west of it
-  EXPECT_FALSE(set.segmentClear({-50.0, 50.0}, {150.0, 50.0}, 5.0, 1.0));    // straight through
-  EXPECT_FALSE(set.segmentClear({-4.0, -50.0}, {-4.0, 150.0}, 5.0, 1.0));    // clear but < margin
+  EXPECT_TRUE(set.segmentClear({-50.0, -50.0}, {-50.0, 150.0}, 5.0, 1.0));     // passes west of it
+  EXPECT_FALSE(set.segmentClear({-50.0, 50.0}, {150.0, 50.0}, 5.0, 1.0));      // straight through
+  EXPECT_FALSE(set.segmentClear({-4.0, -50.0}, {-4.0, 150.0}, 5.0, 1.0));      // clear but < margin
   EXPECT_TRUE(set.segmentClear({-50.0, -50.0}, {-50.0, 150.0}, 5.0, 1000.0));  // endpoint-only fallback
 }
 
@@ -137,15 +133,13 @@ TEST(ZoneSetTest, PathClear) {
   set.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT, square100());
 
   // WHEN: solving a straight Dubins "path" west of the zone
-  auto clearPath = arlcore::autopilot::DubinsPath::solve(
-      {-50.0, -50.0, M_PI / 2.0}, {-50.0, 150.0, M_PI / 2.0}, 10.0);
+  auto clearPath = arlcore::autopilot::DubinsPath::solve({-50.0, -50.0, M_PI / 2.0}, {-50.0, 150.0, M_PI / 2.0}, 10.0);
   ASSERT_TRUE(clearPath.has_value());
   // THEN: the path is clear
   EXPECT_TRUE(set.pathClear(clearPath.value(), 5.0, 1.0));
 
   // WHEN: solving one straight through the zone
-  auto blockedPath = arlcore::autopilot::DubinsPath::solve(
-      {-50.0, 50.0, 0.0}, {150.0, 50.0, 0.0}, 10.0);
+  auto blockedPath = arlcore::autopilot::DubinsPath::solve({-50.0, 50.0, 0.0}, {150.0, 50.0, 0.0}, 10.0);
   ASSERT_TRUE(blockedPath.has_value());
   // THEN: the path is not clear
   EXPECT_FALSE(set.pathClear(blockedPath.value(), 5.0, 1.0));
@@ -208,11 +202,9 @@ TEST(ZoneSetTest, NearestCompliantPointMultiZoneCorner) {
   // ring search must save it
   arlcore::autopilot::ZoneSet set;
   set.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-              arlcore::autopilot::LocalPolygon(
-                  {{0.0, 0.0}, {100.0, 0.0}, {100.0, 60.0}, {0.0, 60.0}}));
+              arlcore::autopilot::LocalPolygon({{0.0, 0.0}, {100.0, 0.0}, {100.0, 60.0}, {0.0, 60.0}}));
   set.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-              arlcore::autopilot::LocalPolygon(
-                  {{0.0, 40.0}, {100.0, 40.0}, {100.0, 100.0}, {0.0, 100.0}}));
+              arlcore::autopilot::LocalPolygon({{0.0, 40.0}, {100.0, 40.0}, {100.0, 100.0}, {0.0, 100.0}}));
 
   // WHEN: searching for the nearest compliant point from inside the overlap
   const auto q = set.nearestCompliantPoint({50.0, 50.0}, 5.0);
@@ -234,11 +226,9 @@ TEST(ZoneSetTest, KeepInBounds) {
 
   // WHEN: adding two overlapping keep-ins
   set.addZone(arlcore::autopilot::ZoneKind::KEEP_IN,
-              arlcore::autopilot::LocalPolygon({{-200.0, -100.0}, {300.0, -100.0},
-                                                {300.0, 400.0}, {-200.0, 400.0}}));
+              arlcore::autopilot::LocalPolygon({{-200.0, -100.0}, {300.0, -100.0}, {300.0, 400.0}, {-200.0, 400.0}}));
   set.addZone(arlcore::autopilot::ZoneKind::KEEP_IN,
-              arlcore::autopilot::LocalPolygon({{-100.0, -200.0}, {250.0, -200.0},
-                                                {250.0, 300.0}, {-100.0, 300.0}}));
+              arlcore::autopilot::LocalPolygon({{-100.0, -200.0}, {250.0, -200.0}, {250.0, 300.0}, {-100.0, 300.0}}));
   const auto bounds = set.keepInBounds();
 
   // THEN: the bounds are the intersection of the keep-in boxes

@@ -2,26 +2,26 @@
 
 #include <memory>
 
-#include "Logger.h"
-#include "autopilot/guidance/ToleranceUtils.hpp"
-#include "UmaaUtils.h"
 #include "InternalTypes.h"
+#include "Logger.h"
+#include "UmaaUtils.h"
+#include "autopilot/guidance/ToleranceUtils.hpp"
 
 namespace arlcore::autopilot {
 
 using arlcore::umaa::services::CommandStateResult;
 using arlcore::umaa::services::IncomingCommandBehavior;
 
-VectorControlServiceProvider::VectorControlServiceProvider(
-    const arlcore::NumericGuid& source, std::shared_ptr<VectorControlServiceProviderIo> io,
-    IAutopilot* autopilot, flt64_t maxForwardSpeedMps, const ISafetyGate* safetyGate,
-    ICommandModeGate* modeGate) :
-    CommandProviderBase(source, io),
-    sourceId_(source),
-    autopilot_(autopilot),
-    maxForwardSpeedMps_(maxForwardSpeedMps),
-    safetyGate_(safetyGate),
-    modeGate_(modeGate) {
+VectorControlServiceProvider::VectorControlServiceProvider(const arlcore::NumericGuid& source,
+                                                           std::shared_ptr<VectorControlServiceProviderIo> io,
+                                                           IAutopilot* autopilot, flt64_t maxForwardSpeedMps,
+                                                           const ISafetyGate* safetyGate, ICommandModeGate* modeGate)
+    : CommandProviderBase(source, io),
+      sourceId_(source),
+      autopilot_(autopilot),
+      maxForwardSpeedMps_(maxForwardSpeedMps),
+      safetyGate_(safetyGate),
+      modeGate_(modeGate) {
   // A new vector command replaces an in-flight vector command (same driving resource).
   setBehavior(IncomingCommandBehavior::CANCEL_EXISTING);
 }
@@ -38,8 +38,9 @@ CommandClass VectorControlServiceProvider::classOf(const GlobalVectorCommandType
 
 bool VectorControlServiceProvider::isCommandValid(const GlobalVectorCommandType& cmd) {
   if (safetyGate_ != nullptr && !safetyGate_->commandsAllowed()) {
-    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Vector command rejected: the safety supervisor holds "
-      "the vehicle (recovery/safe mode)")
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "Vector command rejected: the safety supervisor holds "
+                  "the vehicle (recovery/safe mode)")
     return false;
   }
   if (modeGate_ != nullptr) {
@@ -47,8 +48,7 @@ bool VectorControlServiceProvider::isCommandValid(const GlobalVectorCommandType&
     // them with INTERRUPTED (in onIssued), never VALIDATION_FAILED.
     const bool heldSession = held_ && heldSessionId_ == arlcore::NumericGuid(cmd.sessionID());
     if (!heldSession && modeGate_->rejectedAtValidation(classOf(cmd))) {
-      UMAA_LOG_WARN(util::SYSTEM_LOGGER,
-                    "Vector command rejected: not permitted in the current operational mode")
+      UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Vector command rejected: not permitted in the current operational mode")
       return false;
     }
   }
@@ -64,7 +64,8 @@ bool VectorControlServiceProvider::isCommandValid(const GlobalVectorCommandType&
   }
   if (maxForwardSpeedMps_ > 0.0 && speed->speedMps > maxForwardSpeedMps_) {
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command speed " << speed->speedMps
-      << " exceeds platform max forward speed " << maxForwardSpeedMps_)
+                                                                << " exceeds platform max forward speed "
+                                                                << maxForwardSpeedMps_)
     return false;
   }
   if (cmd.endTime().has_value() && arlcore::umaa::getTimestamp() > cmd.endTime().value()) {
@@ -104,8 +105,7 @@ CommandStateResult VectorControlServiceProvider::onIssued(const std::weak_ptr<Cm
       held_ = true;
       heldSessionId_ = arlcore::NumericGuid(cmd.sessionID());
       heldEpoch_ = modeGate_->authoritativeEpoch();
-      UMAA_LOG_INFO(util::SYSTEM_LOGGER,
-                    "Vector command held at ISSUED until the operational mode permits it")
+      UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Vector command held at ISSUED until the operational mode permits it")
     }
     return CommandStateResult::OK;
   }
@@ -139,7 +139,8 @@ CommandStateResult VectorControlServiceProvider::onExecuting(const std::weak_ptr
 }
 
 bool VectorControlServiceProvider::onUpdated(const std::weak_ptr<CmdSession> session,
-    const GlobalVectorCommandType& previousCmd, const GlobalVectorCommandType& updatedCmd) {
+                                             const GlobalVectorCommandType& previousCmd,
+                                             const GlobalVectorCommandType& updatedCmd) {
   // The base re-runs handleIssued right after this, so validation/mode admission apply to the
   // updated command; returning false here would fail EVERY active session with
   // SERVICE_FAILED, so rejection must flow through that re-validation instead.
@@ -159,8 +160,7 @@ bool VectorControlServiceProvider::isCommandCompleted(const std::weak_ptr<CmdSes
   return false;
 }
 
-CommandStatusReasonEnumType VectorControlServiceProvider::isCommandFailed(
-    const std::weak_ptr<CmdSession> session) {
+CommandStatusReasonEnumType VectorControlServiceProvider::isCommandFailed(const std::weak_ptr<CmdSession> session) {
   if (modeGate_ != nullptr) {
     auto cmdSession = session.lock();
     if (cmdSession && !modeGate_->classAllowed(classOf(cmdSession->getCommand()))) {

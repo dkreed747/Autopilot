@@ -1,29 +1,27 @@
 #ifndef AUTOPILOT_TOOLS_CLIENTS_WAYPOINTMISSIONCLIENT_HPP_
 #define AUTOPILOT_TOOLS_CLIENTS_WAYPOINTMISSIONCLIENT_HPP_
 
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandAckReportType.hpp>
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandStatusType.hpp>
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandType.hpp>
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
+#include <dds/dds.hpp>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include <dds/dds.hpp>
-
-#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandAckReportType.hpp>
-#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandStatusType.hpp>
-#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandType.hpp>
-#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
-
-#include "clients/ClientIdentity.hpp"
 #include "CycloneReader.h"
 #include "CycloneSender.h"
 #include "LargeListWriter.h"
 #include "NumericGuid.h"
+#include "clients/ClientIdentity.hpp"
 
 namespace arlcore::autopilot::tools {
 
 //! \brief One command-status transition observed for the active session.
 struct MissionStatusUpdate {
-  std::string status;   // ISSUED / COMMANDED / EXECUTING / COMPLETED / CANCELED / FAILED
+  std::string status;  // ISSUED / COMMANDED / EXECUTING / COMPLETED / CANCELED / FAILED
   std::string reason;
   std::string logMessage;
   bool terminal = false;
@@ -44,10 +42,8 @@ class WaypointMissionClient {
 
   //! \brief `destinationId` is the waypoint provider's source ID (identity.waypoint_source_id);
   //! `identity` stamps the outgoing command's source id/parentID.
-  WaypointMissionClient(const dds::domain::DomainParticipant& participant,
-                        const dds::pub::qos::DataWriterQos& wqos,
-                        const dds::sub::qos::DataReaderQos& rqos,
-                        const arlcore::NumericGuid& destinationId,
+  WaypointMissionClient(const dds::domain::DomainParticipant& participant, const dds::pub::qos::DataWriterQos& wqos,
+                        const dds::sub::qos::DataReaderQos& rqos, const arlcore::NumericGuid& destinationId,
                         const ClientIdentity& identity);
 
   //! \brief Publish the route and command. Returns the new session ID.

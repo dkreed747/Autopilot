@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+
 #include "InternalTypes.h"
 
 namespace arlcore::autopilot {
@@ -24,8 +25,8 @@ struct IdentityConfig {
   std::string waypointSourceId;
   std::string specsSourceId;
   std::string capabilitiesSourceId;
-  std::string navSourceId;  // source for the sim vehicle's SA navigation reports
-  std::string constraintsSourceId;  // MM conditional/constraint services source
+  std::string navSourceId;                     // source for the sim vehicle's SA navigation reports
+  std::string constraintsSourceId;             // MM conditional/constraint services source
   std::string operationalModeControlSourceId;  // MM operational mode control provider (empty = disabled)
   std::string operationalModeStatusSourceId;
 };
@@ -36,8 +37,8 @@ struct OperationalModeConfig {
                                              // STANDBY->REMOTE/AUTONOMOUS and AUTONOMOUS->REMOTE
   bool commandsOutOfModeAreFailed = true;    // true = UMAA-strict fail; false = hold at ISSUED
                                              // until the mode becomes compatible
-  flt64_t idleRevertS = 5.0;  // implicitly-entered REMOTE/AUTONOMOUS revert to STANDBY after
-                             // this long with no active command of the mode's class
+  flt64_t idleRevertS = 5.0;                 // implicitly-entered REMOTE/AUTONOMOUS revert to STANDBY after
+                                             // this long with no active command of the mode's class
 };
 
 //! \brief Driving-resource arbitration priorities for one command class. Higher wins.
@@ -74,7 +75,7 @@ struct VectorToleranceConfig {
   flt64_t directionRad = 0.0873;
   flt64_t speedMps = 0.25;
   flt64_t elevationM = 1.0;
-  bool hard = false;           // if true, persistent violation fails the command
+  bool hard = false;            // if true, persistent violation fails the command
   flt64_t failureDelayS = 5.0;  // how long a violation must persist before failing (hard only)
 };
 
@@ -87,7 +88,7 @@ struct WaypointToleranceConfig {
 
 //! \brief RRT* fallback planner settings (used only when the direct Dubins leg clips a zone).
 struct RrtConfig {
-  uint32_t seed = 12345;       // deterministic sampling; salted per waypoint index
+  uint32_t seed = 12345;  // deterministic sampling; salted per waypoint index
   int32_t maxIterations = 2000;
   int32_t timeBudgetMs = 150;
   flt64_t goalBias = 0.10;
@@ -120,7 +121,7 @@ struct ZonesConfig {
   flt64_t safetyMarginM = 5.0;          // planning/steering standoff from zone boundaries
   flt64_t complianceHysteresisM = 2.0;  // clearance needed to count as recovered (anti-flap)
   flt64_t elevationMarginM = 2.0;       // pad on the vertical envelope used for band gating
-  int32_t ellipseSegments = 32;            // vertices of the conservative ellipse polygon
+  int32_t ellipseSegments = 32;         // vertices of the conservative ellipse polygon
 };
 
 //! \brief Tangent-bug style vector-mode avoidance tuning.
@@ -128,13 +129,13 @@ struct VectorAvoidanceConfig {
   flt64_t lookaheadRhoFactor = 1.5;  // lookahead >= factor * turn radius
   flt64_t lookaheadSpeedS = 2.0;     // plus this many seconds at current speed
   flt64_t exitClearFactor = 1.3;     // leave boundary-follow when clear to factor * lookahead
-  int32_t exitClearTicks = 10;          // ... for this many consecutive ticks
+  int32_t exitClearTicks = 10;       // ... for this many consecutive ticks
   flt64_t minFollowS = 2.0;          // minimum boundary-follow dwell (hysteresis)
 };
 
 //! \brief Zone-violation recovery maneuver tuning.
 struct RecoveryConfig {
-  flt64_t speedMps = 0.0;      // recovery transit speed; 0 = platform cruising speed
+  flt64_t speedMps = 0.0;       // recovery transit speed; 0 = platform cruising speed
   flt64_t completeHoldS = 1.0;  // how long COMPLIANT must hold before recovery completes
 };
 
@@ -145,8 +146,8 @@ struct SrpConfig {
   std::optional<flt64_t> originLatDeg;  // required when csvPath is set
   std::optional<flt64_t> originLonDeg;
   bool acceptCommandsAfterSrp = true;
-  flt64_t holdRadiusM = 10.0;           // hold circle around the last SRP waypoint
-  flt64_t repositionSpeedMps = 1.5;     // speed for drift-out repositioning
+  flt64_t holdRadiusM = 10.0;             // hold circle around the last SRP waypoint
+  flt64_t repositionSpeedMps = 1.5;       // speed for drift-out repositioning
   std::optional<flt64_t> safeElevationM;  // depth to hold during the SRP (nullopt = per-waypoint)
 };
 
@@ -157,13 +158,13 @@ struct SafeModeConfig {
 
 //! \brief Violation-response policy: grace timing, debounce, and the safe-mode strategy.
 struct SafetyConfig {
-  flt64_t gracePeriodS = 10.0;   // 0 = instant safe mode on a confirmed violation
-  std::optional<flt64_t> graceZoneS;       // per-class overrides of grace_period_s
+  flt64_t gracePeriodS = 10.0;        // 0 = instant safe mode on a confirmed violation
+  std::optional<flt64_t> graceZoneS;  // per-class overrides of grace_period_s
   std::optional<flt64_t> graceSpeedS;
   std::optional<flt64_t> graceElevationS;
   int32_t violationConfirmTicks = 2;   // consecutive violating ticks before a violation is confirmed
-  flt64_t clearHoldS = 2.0;         // how long compliant must hold before a violation clears
-  bool exitOnAllClear = true;      // leave safe mode when violations clear (else strategy decides)
+  flt64_t clearHoldS = 2.0;            // how long compliant must hold before a violation clears
+  bool exitOnAllClear = true;          // leave safe mode when violations clear (else strategy decides)
   int32_t stateReportPeriodMs = 1000;  // ConditionalStateReport publish period
   SafeModeConfig safeMode;
 };
@@ -173,7 +174,7 @@ struct CapabilityLimits {
   std::optional<flt64_t> maxForwardSpeedMps;
   std::optional<flt64_t> maxReverseSpeedMps;
   std::optional<flt64_t> cruisingSpeedMps;
-  std::optional<flt64_t> maxTurnRateRps;        // radians/second
+  std::optional<flt64_t> maxTurnRateRps;  // radians/second
   std::optional<flt64_t> minSpeedInMediumMps;
   std::optional<flt64_t> maxDepthChangeRateMps;  // underwater only
 };
@@ -211,7 +212,7 @@ struct SimVehicleConfig {
   flt64_t initialLatitudeDeg = 39.0;
   flt64_t initialLongitudeDeg = -76.5;
   flt64_t initialHeadingRad = 0.0;
-  flt64_t accelMps2 = 1.0;    // surge acceleration/deceleration limit
+  flt64_t accelMps2 = 1.0;     // surge acceleration/deceleration limit
   flt64_t floorDepthM = 60.0;  // sea-floor depth below the surface (for depth/ASF simulation)
 };
 

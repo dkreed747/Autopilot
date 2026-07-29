@@ -12,12 +12,12 @@
 #include <string>
 #include <vector>
 
-#include "clients/ClientIdentity.hpp"
 #include "CycloneReader.h"
 #include "CycloneSender.h"
-#include "NumericGuid.h"
-#include "clients/WaypointMissionClient.hpp"
 #include "InternalTypes.h"
+#include "NumericGuid.h"
+#include "clients/ClientIdentity.hpp"
+#include "clients/WaypointMissionClient.hpp"
 
 namespace arlcore::autopilot::tools {
 
@@ -27,8 +27,7 @@ struct VectorSetpoint {
   flt64_t speedMps = 0.0;
   std::optional<flt64_t> elevValueM;
   std::string elevFrame = "depth";  // "depth" | "asf"
-  std::optional<flt64_t>
-      timeoutS;  // maps to endTime = now + timeoutS (provider auto-completes)
+  std::optional<flt64_t> timeoutS;  // maps to endTime = now + timeoutS (provider auto-completes)
 };
 
 //! \brief The UMAA consumer side of the Global Vector control service:
@@ -38,19 +37,14 @@ struct VectorSetpoint {
 class VectorCommandClient {
  public:
   using CommandType = UMAA::MO::GlobalVectorControl::GlobalVectorCommandType;
-  using AckType =
-      UMAA::MO::GlobalVectorControl::GlobalVectorCommandAckReportType;
-  using StatusType =
-      UMAA::MO::GlobalVectorControl::GlobalVectorCommandStatusType;
-  using ExecType =
-      UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportType;
+  using AckType = UMAA::MO::GlobalVectorControl::GlobalVectorCommandAckReportType;
+  using StatusType = UMAA::MO::GlobalVectorControl::GlobalVectorCommandStatusType;
+  using ExecType = UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportType;
 
   //! \brief `destinationId` is the vector provider's source ID
   //! (identity.vector_source_id).
-  VectorCommandClient(const dds::domain::DomainParticipant& participant,
-                      const dds::pub::qos::DataWriterQos& wqos,
-                      const dds::sub::qos::DataReaderQos& rqos,
-                      const arlcore::NumericGuid& destinationId,
+  VectorCommandClient(const dds::domain::DomainParticipant& participant, const dds::pub::qos::DataWriterQos& wqos,
+                      const dds::sub::qos::DataReaderQos& rqos, const arlcore::NumericGuid& destinationId,
                       const ClientIdentity& identity);
 
   //! \brief Publish a new command session for this setpoint (the provider
@@ -76,12 +70,8 @@ class VectorCommandClient {
   std::optional<flt64_t> execAgeS() const;
 
   bool active() const { return sessionId_.has_value() && !terminal_; }
-  const std::optional<arlcore::NumericGuid>& sessionId() const {
-    return sessionId_;
-  }
-  const std::optional<VectorSetpoint>& lastSetpoint() const {
-    return lastSetpoint_;
-  }
+  const std::optional<arlcore::NumericGuid>& sessionId() const { return sessionId_; }
+  const std::optional<VectorSetpoint>& lastSetpoint() const { return lastSetpoint_; }
   bool ackReceived() const { return ackReceived_; }
 
  private:

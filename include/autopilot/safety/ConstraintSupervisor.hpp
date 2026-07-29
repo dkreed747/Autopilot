@@ -1,6 +1,7 @@
 #ifndef AUTOPILOT_SAFETY_CONSTRAINTSUPERVISOR_HPP_
 #define AUTOPILOT_SAFETY_CONSTRAINTSUPERVISOR_HPP_
 
+#include <UMAA/MM/ConditionalStateReport/ConditionalStateReportType.hpp>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -11,11 +12,9 @@
 #include <utility>
 #include <vector>
 
-#include <UMAA/MM/ConditionalStateReport/ConditionalStateReportType.hpp>
-
 #include "ConditionalBase.h"
+#include "InternalTypes.h"
 #include "SenderBase.h"
-
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/core/NavState.hpp"
 #include "autopilot/safety/IConstraintSource.hpp"
@@ -23,7 +22,6 @@
 #include "autopilot/safety/ISafetyGate.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
 #include "autopilot/umaa/CallbackObserver.hpp"
-#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -37,10 +35,11 @@ using ConditionalList = std::vector<std::shared_ptr<arlcore::umaa::conditional::
 //! providers as ISafetyGate.
 class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
  public:
-  ConstraintSupervisor(const AutopilotConfig& config, NavState* nav, ZoneMap* zoneMap,
-    std::shared_ptr<arlcore::io::SenderBase<UMAA::MM::ConditionalStateReport::ConditionalStateReportType>>
-      stateReportSender,
-    const arlcore::NumericGuid& sourceId);
+  ConstraintSupervisor(
+      const AutopilotConfig& config, NavState* nav, ZoneMap* zoneMap,
+      std::shared_ptr<arlcore::io::SenderBase<UMAA::MM::ConditionalStateReport::ConditionalStateReportType>>
+          stateReportSender,
+      const arlcore::NumericGuid& sourceId);
 
   //! \brief The observers to register on the conditional report consumer and the standing
   //! ActiveConstraints provider (both subjects share the same payload type).

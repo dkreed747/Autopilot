@@ -1,15 +1,14 @@
 #ifndef AUTOPILOT_SAFETY_ZONEMAP_HPP_
 #define AUTOPILOT_SAFETY_ZONEMAP_HPP_
 
+#include <GeographicLib/LocalCartesian.hpp>
 #include <optional>
 #include <vector>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
+#include "InternalTypes.h"
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/safety/ConstraintTypes.hpp"
 #include "autopilot/safety/ZoneGeometry.hpp"
-#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -44,12 +43,10 @@ class ZoneMap {
 
   //! \brief Classify a geodetic position at vehicle depth `depthM` (and, when known, altitude
   //! above the sea floor `asfM` — required to gate ASF-framed zone bands) against the zones.
-  ZoneCompliance classify(const GeoPoint& position, flt64_t depthM,
-                          std::optional<flt64_t> asfM = std::nullopt) const;
+  ZoneCompliance classify(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM = std::nullopt) const;
 
   //! \brief Compliance clearance (meters, positive = compliant) of a position.
-  flt64_t clearanceM(const GeoPoint& position, flt64_t depthM,
-                    std::optional<flt64_t> asfM = std::nullopt) const;
+  flt64_t clearanceM(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM = std::nullopt) const;
 
   //! \brief Whether a commanded point keeps `marginM` clearance (command-time validation).
   bool pointCompliant(const GeoPoint& position, flt64_t depthM, flt64_t marginM,

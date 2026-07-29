@@ -1,24 +1,22 @@
 #ifndef AUTOPILOT_GUIDANCE_DUBINSPATHPLANNER_HPP_
 #define AUTOPILOT_GUIDANCE_DUBINSPATHPLANNER_HPP_
 
+#include <GeographicLib/LocalCartesian.hpp>
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
+#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
-#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
-#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
-
+#include "InternalTypes.h"
 #include "autopilot/guidance/ControlVector.hpp"
 #include "autopilot/guidance/DubinsPath.hpp"
 #include "autopilot/guidance/DubinsRrtStar.hpp"
 #include "autopilot/guidance/ProgressTypes.hpp"
 #include "autopilot/safety/ZoneGeometry.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
-#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -31,13 +29,13 @@ struct PlannerParams {
   flt64_t posCaptureM = 2.5;         // default capture-gate half-width
   flt64_t yawCaptureRad = 0.1745;    // default arrival-attitude capture half-width
   flt64_t elevCaptureM = 1.0;        // default elevation capture tolerance
-  int32_t maxMissesPerWaypoint = 3;     // misses before the route fails
+  int32_t maxMissesPerWaypoint = 3;  // misses before the route fails
   bool elevationCountsAsMiss = true;
-  int32_t maxReplans = 10;              // guard against endless replanning (spirals excluded)
-  flt64_t sampleStepM = 2.0;         // path polyline sampling resolution
-  flt64_t maxDepthRateMps = 0.0;     // platform depth-change limit (0 = unknown/surface-only)
-  flt64_t zoneMarginM = 5.0;         // required clearance from active zone boundaries
-  DubinsRrtParams rrt;              // fallback planner tuning (rho/margin filled per leg)
+  int32_t maxReplans = 10;        // guard against endless replanning (spirals excluded)
+  flt64_t sampleStepM = 2.0;      // path polyline sampling resolution
+  flt64_t maxDepthRateMps = 0.0;  // platform depth-change limit (0 = unknown/surface-only)
+  flt64_t zoneMarginM = 5.0;      // required clearance from active zone boundaries
+  DubinsRrtParams rrt;            // fallback planner tuning (rho/margin filled per leg)
 };
 
 //! \brief Drives a vehicle through a series of 3D waypoints along true Dubins paths, each leg
@@ -67,14 +65,12 @@ class DubinsPathPlanner {
 
   //! \brief Plan a route up front from the current pose through the given waypoints.
   void plan(const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints,
-            const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& start,
-            const PlannerParams& params);
+            const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& start, const PlannerParams& params);
 
   //! \brief Produce a control vector for the current pose and advance capture/miss/replan
   //! state. Call once per navigation packet with the latest ground speed (feeds the
   //! cross-track correction and the spiral approach budget).
-  ControlVector update(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose,
-                       flt64_t groundSpeedMps);
+  ControlVector update(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose, flt64_t groundSpeedMps);
 
   //! \brief Latest progress snapshot (mapped into the UMAA waypoint execution status report).
   const WaypointProgress& progress() const { return progress_; }
@@ -95,12 +91,12 @@ class DubinsPathPlanner {
   //! tail of an arc) lets the tracker settle position and attitude before the gate.
   struct Leg {
     Leg(std::vector<DubinsPath> chain, flt64_t runway, flt64_t endAz);
-    std::vector<DubinsPath> paths;   // in the local tangent plane (math convention)
+    std::vector<DubinsPath> paths;    // in the local tangent plane (math convention)
     std::vector<flt64_t> pathStartM;  // arc length at the start of each chained path
-    flt64_t dubinsLengthM;  // curved portion (ends at the virtual goal)
-    flt64_t runwayM;        // straight final approach ending at the waypoint
-    flt64_t lengthM;        // dubinsLengthM + runwayM
-    flt64_t endAzimuthRad;  // arrival azimuth at the waypoint (true-north, [-pi, pi])
+    flt64_t dubinsLengthM;            // curved portion (ends at the virtual goal)
+    flt64_t runwayM;                  // straight final approach ending at the waypoint
+    flt64_t lengthM;                  // dubinsLengthM + runwayM
+    flt64_t endAzimuthRad;            // arrival azimuth at the waypoint (true-north, [-pi, pi])
 
     //! \brief The pose at arc length s along the chained curved portion (clamped).
     Dubins2DPose sampleChain(flt64_t sM) const;
@@ -125,8 +121,7 @@ class DubinsPathPlanner {
   //! \brief The arrival azimuth whose final-approach runway (virtual goal -> waypoint) keeps
   //! the zone margin: the natural/commanded azimuth when compliant, otherwise the nearest
   //! alternative in 22.5-degree steps (only when the waypoint has no attitude requirement).
-  std::optional<flt64_t> compliantArrivalAzimuth(std::size_t wpIndex, flt64_t naturalAz,
-                                                flt64_t runwayM) const;
+  std::optional<flt64_t> compliantArrivalAzimuth(std::size_t wpIndex, flt64_t naturalAz, flt64_t runwayM) const;
 
   //! \brief Whether the remaining portion of a leg (from arc length `fromS`) keeps the margin.
   bool legClear(const Leg& leg, flt64_t fromS) const;
@@ -159,19 +154,17 @@ class DubinsPathPlanner {
   //! \brief Compute the spiral approach budget for the current leg: how many loop-back
   //! passes the commanded elevation change is expected to need at the platform's max depth
   //! rate, given the leg's path time. 0 when the leg is achievable in one pass.
-  void computeElevationApproachBudget(
-      const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose, flt64_t groundSpeedMps);
+  void computeElevationApproachBudget(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose,
+                                      flt64_t groundSpeedMps);
 
   //! \brief Decide whether an elevation-only gate failure is a planned spiral pass (free) or
   //! a real miss. Within the up-front budget it is always a pass; past it the budget is
   //! recomputed from the remaining elevation error and the actual loop-leg time, but only
   //! while the elevation is still converging at the platform depth rate.
-  bool allowSpiralPass(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose,
-                       flt64_t groundSpeedMps);
+  bool allowSpiralPass(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose, flt64_t groundSpeedMps);
 
   //! \brief |commanded - current| elevation for the current waypoint, in its frame.
-  std::optional<flt64_t> elevationErrorM(
-      const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose) const;
+  std::optional<flt64_t> elevationErrorM(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose) const;
 
   //! \brief Update the distance metrics in progress_ for the current vehicle position.
   void updateDistanceMetrics(flt64_t xE, flt64_t yN, flt64_t distToWaypointM);
@@ -185,21 +178,21 @@ class DubinsPathPlanner {
 
   GeographicLib::LocalCartesian localFrame_;  // origin at the plan start pose
   Dubins2DPose planStartPose_;                // local start pose recorded by plan()
-  std::vector<flt64_t> wpX_;  // waypoint local coordinates (east)
-  std::vector<flt64_t> wpY_;  // waypoint local coordinates (north)
+  std::vector<flt64_t> wpX_;                  // waypoint local coordinates (east)
+  std::vector<flt64_t> wpY_;                  // waypoint local coordinates (north)
 
   std::size_t targetIndex_ = 0;
   std::optional<Leg> currentLeg_;
-  flt64_t legProgressS_ = 0.0;           // monotonic arc-length progress along the current leg
+  flt64_t legProgressS_ = 0.0;             // monotonic arc-length progress along the current leg
   std::optional<flt64_t> lastGateAlongM_;  // previous signed along-track distance to the gate
   bool routeComplete_ = false;
   bool failed_ = false;
   int32_t replanCount_ = 0;
-  int32_t elevApproachesUsed_ = 0;          // spiral passes consumed on the current leg
+  int32_t elevApproachesUsed_ = 0;             // spiral passes consumed on the current leg
   std::optional<int32_t> elevApproachBudget_;  // planned spiral passes for the current leg
   std::optional<flt64_t> lastSpiralElevErrM_;  // elevation error at the previous spiral pass
   bool hasLastPos_ = false;
-  flt64_t lastXE_ = 0.0;                 // previous update position (cumulative distance)
+  flt64_t lastXE_ = 0.0;  // previous update position (cumulative distance)
   flt64_t lastYN_ = 0.0;
   WaypointProgress progress_;
   ControlVector lastVector_;

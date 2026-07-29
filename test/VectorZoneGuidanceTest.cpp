@@ -4,16 +4,16 @@
 #include <cmath>
 #include <cstdint>
 
+#include "InternalTypes.h"
 #include "autopilot/guidance/AngleMath.hpp"
 #include "autopilot/safety/VectorZoneGuidance.hpp"
-#include "InternalTypes.h"
 
 constexpr flt64_t kTurnRadiusM = 20.0;
 constexpr flt64_t kMarginM = 5.0;
 
 static arlcore::autopilot::VectorAvoidanceConfig testConfig() {
   arlcore::autopilot::VectorAvoidanceConfig c;
-  c.minFollowS = 0.0;   // let the episode end as soon as geometry allows (test speed)
+  c.minFollowS = 0.0;  // let the episode end as soon as geometry allows (test speed)
   c.exitClearTicks = 3;
   return c;
 }
@@ -47,8 +47,7 @@ TEST(VectorZoneGuidanceTest, PassesThroughWhenClear) {
   arlcore::autopilot::VectorZoneGuidance guidance(testConfig(), kTurnRadiusM, kMarginM);
   arlcore::autopilot::ZoneSet zones;
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-                arlcore::autopilot::LocalPolygon({{500.0, -50.0}, {600.0, -50.0},
-                                                  {600.0, 50.0}, {500.0, 50.0}}));
+                arlcore::autopilot::LocalPolygon({{500.0, -50.0}, {600.0, -50.0}, {600.0, 50.0}, {500.0, 50.0}}));
   // WHEN: steering due north well clear of the zone
   // THEN: the commanded heading passes through untouched and avoidance stays off
   EXPECT_DOUBLE_EQ(guidance.steer(0.0, {0.0, 0.0}, 3.0, zones), 0.0);
@@ -65,8 +64,7 @@ TEST(VectorZoneGuidanceTest, EntersBoundaryFollowWhenBlocked) {
   arlcore::autopilot::VectorZoneGuidance guidance(testConfig(), kTurnRadiusM, kMarginM);
   arlcore::autopilot::ZoneSet zones;
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-                arlcore::autopilot::LocalPolygon({{-100.0, 30.0}, {100.0, 30.0},
-                                                  {100.0, 130.0}, {-100.0, 130.0}}));
+                arlcore::autopilot::LocalPolygon({{-100.0, 30.0}, {100.0, 30.0}, {100.0, 130.0}, {-100.0, 130.0}}));
   // WHEN: steering due north straight at the wall
   const flt64_t heading = guidance.steer(0.0, {0.0, 0.0}, 3.0, zones);
   // THEN: avoidance engages and deflects well away from due north
@@ -79,8 +77,7 @@ TEST(VectorZoneGuidanceTest, NeverEntersKeepOutWhileCommandedInto) {
   arlcore::autopilot::VectorZoneGuidance guidance(testConfig(), kTurnRadiusM, kMarginM);
   arlcore::autopilot::ZoneSet zones;
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-                arlcore::autopilot::LocalPolygon({{-150.0, 60.0}, {150.0, 60.0},
-                                                  {150.0, 260.0}, {-150.0, 260.0}}));
+                arlcore::autopilot::LocalPolygon({{-150.0, 60.0}, {150.0, 60.0}, {150.0, 260.0}, {-150.0, 260.0}}));
   BugSim sim;
   // WHEN: commanded due north straight into the box for 1200 steps
   const flt64_t minClearance = sim.run(&guidance, zones, 0.0, 1200);
@@ -95,8 +92,7 @@ TEST(VectorZoneGuidanceTest, KeepInCirculation) {
   arlcore::autopilot::VectorZoneGuidance guidance(testConfig(), kTurnRadiusM, kMarginM);
   arlcore::autopilot::ZoneSet zones;
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_IN,
-                arlcore::autopilot::LocalPolygon({{-150.0, -150.0}, {150.0, -150.0},
-                                                  {150.0, 150.0}, {-150.0, 150.0}}));
+                arlcore::autopilot::LocalPolygon({{-150.0, -150.0}, {150.0, -150.0}, {150.0, 150.0}, {-150.0, 150.0}}));
   BugSim sim;  // starts at the center
   // WHEN: commanded due east forever (2000 steps)
   const flt64_t minClearance = sim.run(&guidance, zones, M_PI / 2.0, 2000);
@@ -111,8 +107,7 @@ TEST(VectorZoneGuidanceTest, ResumesCommandedHeadingPastObstacle) {
   arlcore::autopilot::VectorZoneGuidance guidance(testConfig(), kTurnRadiusM, kMarginM);
   arlcore::autopilot::ZoneSet zones;
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-                arlcore::autopilot::LocalPolygon({{-40.0, 60.0}, {40.0, 60.0},
-                                                  {40.0, 140.0}, {-40.0, 140.0}}));
+                arlcore::autopilot::LocalPolygon({{-40.0, 60.0}, {40.0, 60.0}, {40.0, 140.0}, {-40.0, 140.0}}));
   BugSim sim;
   // WHEN: commanded due north for 1500 steps
   const flt64_t minClearance = sim.run(&guidance, zones, 0.0, 1500);

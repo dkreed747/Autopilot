@@ -5,7 +5,8 @@
 #include "autopilot/modes/DrivingResourceArbiter.hpp"
 
 //! \brief Config with the default class split: safe > remote {500,400} > local {vector,waypoint}.
-static arlcore::autopilot::ArbitrationConfig makeConfig(int32_t localVector = 100, int32_t localWaypoint = 10, int32_t safe = 1000) {
+static arlcore::autopilot::ArbitrationConfig makeConfig(int32_t localVector = 100, int32_t localWaypoint = 10,
+                                                        int32_t safe = 1000) {
   arlcore::autopilot::ArbitrationConfig config;
   config.local.vectorPriority = localVector;
   config.local.waypointPriority = localWaypoint;

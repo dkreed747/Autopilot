@@ -7,9 +7,9 @@
 #include <mutex>
 #include <optional>
 
+#include "NumericGuid.h"
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/modes/ICommandModeGate.hpp"
-#include "NumericGuid.h"
 #include "autopilot/modes/OperationalModeTypes.hpp"
 
 namespace arlcore::autopilot {
@@ -20,8 +20,7 @@ namespace arlcore::autopilot {
 //! mode-changed callback is invoked without the internal lock held.
 class OperationalModeManager : public ICommandModeGate {
  public:
-  OperationalModeManager(const OperationalModeConfig& config,
-                         const arlcore::NumericGuid& platformId);
+  OperationalModeManager(const OperationalModeConfig& config, const arlcore::NumericGuid& platformId);
 
   //! \brief Callback fired after every reported-mode change, including the
   //! initial mode determination on the first beginStep.
@@ -49,8 +48,7 @@ class OperationalModeManager : public ICommandModeGate {
   OperationalMode mode() const;
 
   // ICommandModeGate
-  CommandClass classify(
-      const UMAA::Common::IdentifierType& source) const override;
+  CommandClass classify(const UMAA::Common::IdentifierType& source) const override;
   bool rejectedAtValidation(CommandClass cls) const override;
   bool wouldAdmit(CommandClass cls) const override;
   AdmissionDecision requestAdmission(CommandClass cls) override;

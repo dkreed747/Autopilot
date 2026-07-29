@@ -61,17 +61,11 @@ TEST(PlatformReportFactoryTest, MapsCapabilitiesWithUnderwater) {
   EXPECT_DOUBLE_EQ(report.surfaceCapabilities().maxTurnRate().value(), 0.26);
   EXPECT_FALSE(report.surfaceCapabilities().maxReverseSpeed().has_value());
   ASSERT_TRUE(report.underwaterCapabilities().has_value());
-  ASSERT_TRUE(
-      report.underwaterCapabilities().value().maxForwardSpeed().has_value());
-  EXPECT_DOUBLE_EQ(
-      report.underwaterCapabilities().value().maxForwardSpeed().value(), 4.0);
-  ASSERT_TRUE(
-      report.underwaterCapabilities().value().maxDepthChangeRate().has_value());
-  EXPECT_DOUBLE_EQ(
-      report.underwaterCapabilities().value().maxDepthChangeRate().value(),
-      0.2);
-  EXPECT_FALSE(
-      report.underwaterCapabilities().value().cruisingSpeed().has_value());
+  ASSERT_TRUE(report.underwaterCapabilities().value().maxForwardSpeed().has_value());
+  EXPECT_DOUBLE_EQ(report.underwaterCapabilities().value().maxForwardSpeed().value(), 4.0);
+  ASSERT_TRUE(report.underwaterCapabilities().value().maxDepthChangeRate().has_value());
+  EXPECT_DOUBLE_EQ(report.underwaterCapabilities().value().maxDepthChangeRate().value(), 0.2);
+  EXPECT_FALSE(report.underwaterCapabilities().value().cruisingSpeed().has_value());
 }
 
 TEST(PlatformReportFactoryTest, OmitsUnderwaterBlockWhenDisabled) {

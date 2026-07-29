@@ -32,9 +32,7 @@ struct ObservedMission {
   std::string lastStatus;
   std::string lastReason;
   bool terminal = false;
-  std::optional<
-      UMAA::MO::GlobalWaypointControl::GlobalWaypointExecutionStatusReportType>
-      execStatus;
+  std::optional<UMAA::MO::GlobalWaypointControl::GlobalWaypointExecutionStatusReportType> execStatus;
   std::chrono::steady_clock::time_point lastSeen;
   std::chrono::steady_clock::time_point execSeen;
 };
@@ -45,28 +43,20 @@ struct ObservedMission {
 //! snapshot stays bounded.
 class WaypointActivityMonitor {
  public:
-  using CommandType =
-      UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandType;
-  using StatusType =
-      UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandStatusType;
-  using ExecType =
-      UMAA::MO::GlobalWaypointControl::GlobalWaypointExecutionStatusReportType;
-  using GlobalWaypointType =
-      UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
-  using ListElement = UMAA::MO::GlobalWaypointControl::
-      GlobalWaypointCommandTypeWaypointsListElement;
+  using CommandType = UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandType;
+  using StatusType = UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandStatusType;
+  using ExecType = UMAA::MO::GlobalWaypointControl::GlobalWaypointExecutionStatusReportType;
+  using GlobalWaypointType = UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
+  using ListElement = UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeWaypointsListElement;
 
-  WaypointActivityMonitor(const dds::domain::DomainParticipant& participant,
-                          const dds::sub::qos::DataReaderQos& rqos,
+  WaypointActivityMonitor(const dds::domain::DomainParticipant& participant, const dds::sub::qos::DataReaderQos& rqos,
                           const dds::sub::qos::DataReaderQos& largeListRqos);
 
   //! \brief Drain all readers and reconcile the observed-mission table (once
   //! per poller tick).
   void poll();
 
-  const std::map<arlcore::NumericGuid, ObservedMission>& missions() const {
-    return missions_;
-  }
+  const std::map<arlcore::NumericGuid, ObservedMission>& missions() const { return missions_; }
 
   //! \brief The latest execution status seen for a session, if any.
   std::optional<ExecType> execFor(const arlcore::NumericGuid& sessionId) const;
@@ -74,8 +64,7 @@ class WaypointActivityMonitor {
  private:
   //! \brief Drop a session's list from the reader unless another tracked session still
   //! references the same listID (its elements could never be re-derived after removal).
-  void releaseListIfUnshared(const arlcore::NumericGuid& session,
-                             const UMAA::Common::LargeListMetadata& metadata);
+  void releaseListIfUnshared(const arlcore::NumericGuid& session, const UMAA::Common::LargeListMetadata& metadata);
 
   std::shared_ptr<arlcore::io::CycloneReader<CommandType>> cmdReader_;
   std::shared_ptr<arlcore::io::CycloneReader<StatusType>> statusReader_;
@@ -83,8 +72,7 @@ class WaypointActivityMonitor {
   arlcore::umaa::LargeListReader<GlobalWaypointType, ListElement> listReader_;
 
   std::map<arlcore::NumericGuid, ObservedMission> missions_;
-  std::map<arlcore::NumericGuid, UMAA::Common::LargeListMetadata>
-      metadataBySession_;
+  std::map<arlcore::NumericGuid, UMAA::Common::LargeListMetadata> metadataBySession_;
 };
 
 }  // namespace arlcore::autopilot::tools

@@ -6,8 +6,8 @@ namespace arlcore::autopilot {
 
 using arlcore::umaa::services::CommandStateResult;
 using arlcore::umaa::services::IncomingCommandBehavior;
-using OperationalModeControlEnumType = UMAA::Common::MaritimeEnumeration::
-    OperationalModeControlEnumModule::OperationalModeControlEnumType;
+using OperationalModeControlEnumType =
+    UMAA::Common::MaritimeEnumeration::OperationalModeControlEnumModule::OperationalModeControlEnumType;
 
 static OperationalMode toOperationalMode(OperationalModeControlEnumType mode) {
   switch (mode) {
@@ -21,41 +21,33 @@ static OperationalMode toOperationalMode(OperationalModeControlEnumType mode) {
   }
 }
 
-OperationalModeControlProvider::OperationalModeControlProvider(
-    const arlcore::NumericGuid& source,
-    std::shared_ptr<OperationalModeControlProviderIo> io,
-    OperationalModeManager* modeManager)
+OperationalModeControlProvider::OperationalModeControlProvider(const arlcore::NumericGuid& source,
+                                                               std::shared_ptr<OperationalModeControlProviderIo> io,
+                                                               OperationalModeManager* modeManager)
     : CommandProviderBase(source, io), modeManager_(modeManager) {
   setBehavior(IncomingCommandBehavior::CANCEL_EXISTING);
 }
 
-bool OperationalModeControlProvider::isCommandValid(
-    const OperationalModeCommandType& cmd) {
+bool OperationalModeControlProvider::isCommandValid(const OperationalModeCommandType& cmd) {
   if (modeManager_->mode() == OperationalMode::MANUAL) {
-    UMAA_LOG_WARN(
-        util::SYSTEM_LOGGER,
-        "Operational mode command rejected: the platform holds MANUAL control")
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Operational mode command rejected: the platform holds MANUAL control")
     return false;
   }
   return true;
 }
 
-CommandStateResult OperationalModeControlProvider::onCommanded(
-    const std::weak_ptr<CmdSession> session) {
+CommandStateResult OperationalModeControlProvider::onCommanded(const std::weak_ptr<CmdSession> session) {
   auto cmdSession = session.lock();
   if (!cmdSession) {
     return CommandStateResult::ERROR;
   }
-  const OperationalMode requested =
-      toOperationalMode(cmdSession->getCommand().operationalMode());
+  const OperationalMode requested = toOperationalMode(cmdSession->getCommand().operationalMode());
   // Only reachable in MANUAL if it engaged between validation and here; the
   // base then fails the command SERVICE_FAILED (legal from COMMANDED).
-  return modeManager_->commandMode(requested) ? CommandStateResult::ADVANCE
-                                              : CommandStateResult::ERROR;
+  return modeManager_->commandMode(requested) ? CommandStateResult::ADVANCE : CommandStateResult::ERROR;
 }
 
-CommandStateResult OperationalModeControlProvider::onExecuting(
-    const std::weak_ptr<CmdSession> session) {
+CommandStateResult OperationalModeControlProvider::onExecuting(const std::weak_ptr<CmdSession> session) {
   // The transition already applied in onCommanded; complete in the same cycle.
   return CommandStateResult::ADVANCE;
 }

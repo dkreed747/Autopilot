@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <GeographicLib/LocalCartesian.hpp>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -10,18 +11,15 @@
 #include <thread>
 #include <vector>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
-#include "autopilot/guidance/AngleMath.hpp"
-#include "autopilot/core/AutopilotBrain.hpp"
-#include "autopilot/safety/ConstraintSupervisor.hpp"
-#include "autopilot/safety/SafeModeStrategyFactory.hpp"
+#include "InternalTypes.h"
 #include "UuidFactory.h"
 #include "WaterZoneConditional.h"
-#include "InternalTypes.h"
+#include "autopilot/core/AutopilotBrain.hpp"
+#include "autopilot/guidance/AngleMath.hpp"
+#include "autopilot/safety/ConstraintSupervisor.hpp"
+#include "autopilot/safety/SafeModeStrategyFactory.hpp"
 
-using WaterZoneKindEnumType =
-    UMAA::Common::MaritimeEnumeration::WaterZoneKindEnumModule::WaterZoneKindEnumType;
+using WaterZoneKindEnumType = UMAA::Common::MaritimeEnumeration::WaterZoneKindEnumModule::WaterZoneKindEnumType;
 using DateTime = UMAA::Common::Measurement::DateTime;
 using GeoPosition2D = UMAA::Common::Measurement::GeoPosition2D;
 using GlobalPoseReportType = UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
@@ -103,9 +101,8 @@ static std::shared_ptr<arlcore::umaa::conditional::WaterZoneConditional> keepInC
   shape.ShapeVariantTypeSubtypes().PolygonVariantVariant(polygon);
   spec.zone().push_back(shape);
 
-  const arlcore::umaa::conditional::ConditionalType base(conditionalId.getGuid(), "keep-in",
-                             specId.getGuid(), stamp,
-                             UMAA::MM::Conditional::WaterZoneConditionalTypeTopic);
+  const arlcore::umaa::conditional::ConditionalType base(conditionalId.getGuid(), "keep-in", specId.getGuid(), stamp,
+                                                         UMAA::MM::Conditional::WaterZoneConditionalTypeTopic);
   return std::make_shared<arlcore::umaa::conditional::WaterZoneConditional>(base, spec);
 }
 
@@ -130,8 +127,8 @@ struct Harness {
       : config(std::move(cfg)), zoneMap(config.zones) {
     brain = std::make_unique<arlcore::autopilot::AutopilotBrain>(&nav, &vehicle, config);
     brain->setZoneMap(&zoneMap);
-    supervisor = std::make_unique<arlcore::autopilot::ConstraintSupervisor>(config, &nav, &zoneMap,
-        nullptr, arlcore::UuidFactory::getInstance().generateGuid());
+    supervisor = std::make_unique<arlcore::autopilot::ConstraintSupervisor>(
+        config, &nav, &zoneMap, nullptr, arlcore::UuidFactory::getInstance().generateGuid());
     brain->setConstraintSource(supervisor.get());
     supervisor->attachSafety(brain.get(), std::move(strategy));
 
@@ -204,8 +201,7 @@ TEST_F(SafetyEndToEndTest, ZoneExitRecoversAndResumes) {
   h.stepFor(4);
 
   // THEN: the FSM is recovering and inbound commands are blocked
-  EXPECT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::RECOVERING);
+  EXPECT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::RECOVERING);
   EXPECT_TRUE(h.brain->recovering());
   EXPECT_FALSE(h.supervisor->commandsAllowed());
 
@@ -213,8 +209,7 @@ TEST_F(SafetyEndToEndTest, ZoneExitRecoversAndResumes) {
   h.stepFor(400);
 
   // THEN: the FSM returns to MONITORING with the vehicle back inside
-  EXPECT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::MONITORING);
+  EXPECT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::MONITORING);
   EXPECT_FALSE(h.brain->recovering());
   EXPECT_TRUE(h.supervisor->commandsAllowed());
   EXPECT_GT(h.vehicle.xE, 0.0);  // back inside
@@ -234,8 +229,7 @@ TEST_F(SafetyEndToEndTest, ZeroGraceEngagesSafeModeInstantlyAndReleasesOnAllClea
   h.stepFor(4);
 
   // THEN: safe mode engages instantly with a zero-speed hold (not driving anywhere)
-  EXPECT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
+  EXPECT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
   EXPECT_FALSE(h.supervisor->commandsAllowed());
   EXPECT_EQ(h.brain->mode(), arlcore::autopilot::DriveSource::SAFE);
   ASSERT_TRUE(h.vehicle.last.has_value());
@@ -247,8 +241,7 @@ TEST_F(SafetyEndToEndTest, ZeroGraceEngagesSafeModeInstantlyAndReleasesOnAllClea
   h.stepFor(10);
 
   // THEN: all-clear releases safe mode
-  EXPECT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::MONITORING);
+  EXPECT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::MONITORING);
   EXPECT_TRUE(h.supervisor->commandsAllowed());
   EXPECT_EQ(h.brain->mode(), arlcore::autopilot::DriveSource::NONE);
 }
@@ -267,16 +260,14 @@ TEST_F(SafetyEndToEndTest, GraceExpiryEscalatesRecoveryToSafeMode) {
   h.stepFor(4);
 
   // THEN: recovery engages first
-  EXPECT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::RECOVERING);
+  EXPECT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::RECOVERING);
 
   // WHEN: the grace period expires mid-recovery
   std::this_thread::sleep_for(std::chrono::milliseconds(80));
   h.stepFor(2);
 
   // THEN: the FSM escalates to safe mode and recovery stands down
-  EXPECT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
+  EXPECT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
   EXPECT_FALSE(h.brain->recovering());
 }
 
@@ -301,23 +292,20 @@ TEST_F(SafetyEndToEndTest, SrpRunsToCompletionAndReleases) {
   h.stepFor(4);
 
   // THEN: safe mode engages with the SRP route incomplete
-  ASSERT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
+  ASSERT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
   EXPECT_EQ(h.brain->mode(), arlcore::autopilot::DriveSource::SAFE);
   EXPECT_FALSE(h.brain->safeRouteComplete());
 
   // WHEN: the SRP flies to completion
   int32_t ticks = 0;
-  while (h.supervisor->safetyState() ==
-             arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE &&
+  while (h.supervisor->safetyState() == arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE &&
          ticks < 3000) {
     h.step();
     ++ticks;
   }
 
   // THEN: the strategy releases the autopilot near the final SRP waypoint (100, 40)
-  EXPECT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::MONITORING);
+  EXPECT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::MONITORING);
   EXPECT_TRUE(h.supervisor->commandsAllowed());
   EXPECT_EQ(h.brain->mode(), arlcore::autopilot::DriveSource::NONE);
   EXPECT_NEAR(h.vehicle.xE, 100.0, 25.0);
@@ -340,8 +328,7 @@ TEST_F(SafetyEndToEndTest, SrpHoldRepositionsOnDriftOut) {
   h.vehicle.xE = -30.0;
   h.vehicle.yN = 100.0;
   h.stepFor(4);
-  ASSERT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
+  ASSERT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
 
   // WHEN: the SRP runs to its end (with accept_commands_after_srp=false the strategy switches
   // to holding the final waypoint; the completion is consumed within the same supervisor tick,
@@ -357,8 +344,7 @@ TEST_F(SafetyEndToEndTest, SrpHoldRepositionsOnDriftOut) {
   // THEN: the vehicle holds within the radius of the final waypoint without releasing
   ASSERT_TRUE(holding());
   ASSERT_LT(driftM(), 15.0);
-  EXPECT_EQ(h.supervisor->safetyState(),
-            arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
+  EXPECT_EQ(h.supervisor->safetyState(), arlcore::autopilot::ConstraintSupervisor::SafetyState::SAFE_MODE);
   EXPECT_FALSE(h.supervisor->commandsAllowed());
 
   // WHEN: the vehicle drifts out of the hold circle (east)

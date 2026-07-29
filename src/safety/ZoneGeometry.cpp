@@ -6,6 +6,7 @@
 #include <limits>
 #include <stdexcept>
 #include <utility>
+
 #include "InternalTypes.h"
 
 namespace arlcore::autopilot {
@@ -97,9 +98,7 @@ flt64_t LocalPolygon::signedDistance(const Vec2& p) const {
   return contains(p) ? d : -d;
 }
 
-void ZoneSet::addZone(ZoneKind kind, LocalPolygon polygon) {
-  zones_.push_back(Zone{kind, std::move(polygon)});
-}
+void ZoneSet::addZone(ZoneKind kind, LocalPolygon polygon) { zones_.push_back(Zone{kind, std::move(polygon)}); }
 
 flt64_t ZoneSet::zoneClearance(const Zone& z, const Vec2& p) {
   const flt64_t sd = z.polygon.signedDistance(p);
@@ -189,7 +188,7 @@ bool ZoneSet::pathClear(const DubinsPath& path, flt64_t marginM, flt64_t stepM) 
 }
 
 std::optional<flt64_t> ZoneSet::raycastFirstHit(const Vec2& origin, const Vec2& dir, flt64_t marginM,
-                                               flt64_t maxRangeM) const {
+                                                flt64_t maxRangeM) const {
   if (zones_.empty()) {
     return std::nullopt;
   }

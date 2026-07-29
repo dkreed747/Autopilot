@@ -2,22 +2,21 @@
 #define AUTOPILOT_CORE_AUTOPILOTBRAIN_HPP_
 
 #include <chrono>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <vector>
 
-#include <memory>
-
 #include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/core/IAutopilot.hpp"
+#include "autopilot/core/NavState.hpp"
+#include "autopilot/guidance/DubinsPathPlanner.hpp"
 #include "autopilot/safety/ConstraintClamp.hpp"
 #include "autopilot/safety/IConstraintSource.hpp"
-#include "autopilot/guidance/DubinsPathPlanner.hpp"
-#include "autopilot/core/IAutopilot.hpp"
-#include "autopilot/vehicle/IVehicleControl.hpp"
-#include "autopilot/core/NavState.hpp"
 #include "autopilot/safety/RecoveryGuidance.hpp"
 #include "autopilot/safety/VectorZoneGuidance.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
+#include "autopilot/vehicle/IVehicleControl.hpp"
 
 namespace arlcore::autopilot {
 
@@ -28,8 +27,7 @@ class AutopilotBrain : public IAutopilot {
   AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const AutopilotConfig& config);
 
   void setVectorSetpoint(const UMAA::MO::GlobalVectorControl::GlobalVectorCommandType& cmd) override;
-  bool setWaypointSetpoint(
-      const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints) override;
+  bool setWaypointSetpoint(const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints) override;
   void clearSetpoint(DriveSource src) override;
   void onNavUpdate() override;
 

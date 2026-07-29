@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+
 #include "InternalTypes.h"
 
 namespace arlcore::autopilot {
@@ -157,8 +158,8 @@ static Dubins2DPose advance(const Dubins2DPose& from, SegType type, flt64_t sM, 
 }
 
 std::optional<DubinsPath> DubinsPath::solve(const Dubins2DPose& start, const Dubins2DPose& goal, flt64_t rhoM) {
-  if (!std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(start.theta) ||
-      !std::isfinite(goal.x) || !std::isfinite(goal.y) || !std::isfinite(goal.theta) || !std::isfinite(rhoM)) {
+  if (!std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(start.theta) || !std::isfinite(goal.x) ||
+      !std::isfinite(goal.y) || !std::isfinite(goal.theta) || !std::isfinite(rhoM)) {
     return std::nullopt;
   }
 

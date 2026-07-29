@@ -5,13 +5,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "InternalTypes.h"
 #include "NumericGuid.h"
 #include "autopilot/modes/OperationalModeManager.hpp"
-#include "InternalTypes.h"
 
-static arlcore::autopilot::OperationalModeConfig makeModeConfig(
-    bool allowImplicit = true, bool failOutOfMode = true,
-    flt64_t idleRevertS = 0.0) {
+static arlcore::autopilot::OperationalModeConfig makeModeConfig(bool allowImplicit = true, bool failOutOfMode = true,
+                                                                flt64_t idleRevertS = 0.0) {
   arlcore::autopilot::OperationalModeConfig config;
   config.allowImplicitModeTransitions = allowImplicit;
   config.commandsOutOfModeAreFailed = failOutOfMode;
@@ -27,13 +26,8 @@ static arlcore::NumericGuid platformGuid() {
 
 //! \brief Manager plus a recorder of every mode-changed callback.
 struct ManagerHarness {
-  explicit ManagerHarness(
-      const arlcore::autopilot::OperationalModeConfig& config)
-      : manager(config, platformGuid()) {
-    manager.setModeChangedCallback(
-        [this](arlcore::autopilot::OperationalMode mode) {
-          reported.push_back(mode);
-        });
+  explicit ManagerHarness(const arlcore::autopilot::OperationalModeConfig& config) : manager(config, platformGuid()) {
+    manager.setModeChangedCallback([this](arlcore::autopilot::OperationalMode mode) { reported.push_back(mode); });
   }
 
   arlcore::autopilot::OperationalModeManager manager;
@@ -68,8 +62,7 @@ TEST(OperationalModeManagerTest, BootsManualWhenEngagedAtFirstPoll) {
 
 TEST(OperationalModeManagerTest, ManualEngageWinsFromEveryUnmannedState) {
   // GIVEN: managers sitting in STANDBY, REMOTE, and AUTONOMOUS
-  for (const auto setup : {arlcore::autopilot::OperationalMode::STANDBY,
-                           arlcore::autopilot::OperationalMode::REMOTE,
+  for (const auto setup : {arlcore::autopilot::OperationalMode::STANDBY, arlcore::autopilot::OperationalMode::REMOTE,
                            arlcore::autopilot::OperationalMode::AUTONOMOUS}) {
     ManagerHarness h(makeModeConfig());
     h.manager.beginStep(false);
@@ -107,21 +100,16 @@ TEST(OperationalModeManagerTest, ExplicitCommandsMoveBetweenAllUnmannedModes) {
   h.manager.beginStep(false);
 
   // WHEN: REMOTE, AUTONOMOUS, and STANDBY are commanded in sequence
-  EXPECT_TRUE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::REMOTE));
+  EXPECT_TRUE(h.manager.commandMode(arlcore::autopilot::OperationalMode::REMOTE));
   EXPECT_EQ(h.manager.mode(), arlcore::autopilot::OperationalMode::REMOTE);
-  EXPECT_TRUE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
+  EXPECT_TRUE(h.manager.commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
   EXPECT_EQ(h.manager.mode(), arlcore::autopilot::OperationalMode::AUTONOMOUS);
-  EXPECT_TRUE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::STANDBY));
+  EXPECT_TRUE(h.manager.commandMode(arlcore::autopilot::OperationalMode::STANDBY));
 
   // THEN: every hop was applied and reported in order
   const std::vector<arlcore::autopilot::OperationalMode> expected = {
-      arlcore::autopilot::OperationalMode::STANDBY,
-      arlcore::autopilot::OperationalMode::REMOTE,
-      arlcore::autopilot::OperationalMode::AUTONOMOUS,
-      arlcore::autopilot::OperationalMode::STANDBY};
+      arlcore::autopilot::OperationalMode::STANDBY, arlcore::autopilot::OperationalMode::REMOTE,
+      arlcore::autopilot::OperationalMode::AUTONOMOUS, arlcore::autopilot::OperationalMode::STANDBY};
   EXPECT_EQ(h.reported, expected);
 }
 
@@ -132,10 +120,8 @@ TEST(OperationalModeManagerTest, ExplicitCommandsFailInManual) {
 
   // WHEN: any unmanned mode is commanded
   // THEN: the command is refused and the mode stays MANUAL
-  EXPECT_FALSE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::REMOTE));
-  EXPECT_FALSE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::STANDBY));
+  EXPECT_FALSE(h.manager.commandMode(arlcore::autopilot::OperationalMode::REMOTE));
+  EXPECT_FALSE(h.manager.commandMode(arlcore::autopilot::OperationalMode::STANDBY));
   EXPECT_EQ(h.manager.mode(), arlcore::autopilot::OperationalMode::MANUAL);
 }
 
@@ -146,13 +132,11 @@ TEST(OperationalModeManagerTest, ManualIsNeverCommandable) {
 
   // WHEN: MANUAL is requested as an explicit command
   // THEN: it is refused (MANUAL is platform-owned)
-  EXPECT_FALSE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::MANUAL));
+  EXPECT_FALSE(h.manager.commandMode(arlcore::autopilot::OperationalMode::MANUAL));
   EXPECT_EQ(h.manager.mode(), arlcore::autopilot::OperationalMode::STANDBY);
 }
 
-TEST(OperationalModeManagerTest,
-     SameModeCommandUpgradesEntryKindWithoutReport) {
+TEST(OperationalModeManagerTest, SameModeCommandUpgradesEntryKindWithoutReport) {
   // GIVEN: AUTONOMOUS entered implicitly by a local command
   ManagerHarness h(makeModeConfig(true, true, 0.0));
   h.manager.beginStep(false);
@@ -162,8 +146,7 @@ TEST(OperationalModeManagerTest,
   const size_t reportsBefore = h.reported.size();
 
   // WHEN: AUTONOMOUS is re-commanded explicitly and the class then goes idle
-  EXPECT_TRUE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
+  EXPECT_TRUE(h.manager.commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
   h.manager.endStep(false, false);
 
   // THEN: no new report was published and the now-explicit mode never
@@ -172,15 +155,13 @@ TEST(OperationalModeManagerTest,
   EXPECT_EQ(h.manager.mode(), arlcore::autopilot::OperationalMode::AUTONOMOUS);
 }
 
-TEST(OperationalModeManagerTest,
-     StandbyLocalCommandImplicitlyEntersAutonomous) {
+TEST(OperationalModeManagerTest, StandbyLocalCommandImplicitlyEntersAutonomous) {
   // GIVEN: STANDBY with implicit transitions enabled
   ManagerHarness h(makeModeConfig());
   h.manager.beginStep(false);
 
   // WHEN: a local command requests admission
-  const auto decision =
-      h.manager.requestAdmission(arlcore::autopilot::CommandClass::LOCAL);
+  const auto decision = h.manager.requestAdmission(arlcore::autopilot::CommandClass::LOCAL);
 
   // THEN: it is admitted and the mode hopped to AUTONOMOUS with a report
   EXPECT_EQ(decision, arlcore::autopilot::AdmissionDecision::ADMIT);
@@ -194,8 +175,7 @@ TEST(OperationalModeManagerTest, StandbyRemoteCommandImplicitlyEntersRemote) {
   h.manager.beginStep(false);
 
   // WHEN: a remote command requests admission
-  const auto decision =
-      h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE);
+  const auto decision = h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE);
 
   // THEN: it is admitted and the mode hopped to REMOTE
   EXPECT_EQ(decision, arlcore::autopilot::AdmissionDecision::ADMIT);
@@ -206,12 +186,10 @@ TEST(OperationalModeManagerTest, RemoteCommandPreemptsAutonomousImplicitly) {
   // GIVEN: AUTONOMOUS (explicitly entered) with implicit transitions enabled
   ManagerHarness h(makeModeConfig());
   h.manager.beginStep(false);
-  ASSERT_TRUE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
+  ASSERT_TRUE(h.manager.commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
 
   // WHEN: a remote command requests admission
-  const auto decision =
-      h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE);
+  const auto decision = h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE);
 
   // THEN: operator precedence hops the mode to REMOTE, and the hop is implicit
   // (it later idle-reverts to STANDBY rather than restoring AUTONOMOUS)
@@ -225,13 +203,11 @@ TEST(OperationalModeManagerTest, LocalCommandNeverImplicitlyLeavesRemote) {
   // GIVEN: REMOTE mode with implicit transitions enabled
   ManagerHarness h(makeModeConfig(true, false, 60.0));
   h.manager.beginStep(false);
-  ASSERT_EQ(
-      h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE),
-      arlcore::autopilot::AdmissionDecision::ADMIT);
+  ASSERT_EQ(h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE),
+            arlcore::autopilot::AdmissionDecision::ADMIT);
 
   // WHEN: a local command requests admission
-  const auto decision =
-      h.manager.requestAdmission(arlcore::autopilot::CommandClass::LOCAL);
+  const auto decision = h.manager.requestAdmission(arlcore::autopilot::CommandClass::LOCAL);
 
   // THEN: it is held and the mode stays REMOTE
   EXPECT_EQ(decision, arlcore::autopilot::AdmissionDecision::HOLD);
@@ -248,12 +224,10 @@ TEST(OperationalModeManagerTest, ImplicitTransitionsDisabledHoldsInStandby) {
   // them
   EXPECT_EQ(h.manager.requestAdmission(arlcore::autopilot::CommandClass::LOCAL),
             arlcore::autopilot::AdmissionDecision::HOLD);
-  EXPECT_EQ(
-      h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE),
-      arlcore::autopilot::AdmissionDecision::HOLD);
+  EXPECT_EQ(h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE),
+            arlcore::autopilot::AdmissionDecision::HOLD);
   EXPECT_EQ(h.manager.mode(), arlcore::autopilot::OperationalMode::STANDBY);
-  EXPECT_FALSE(
-      h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::LOCAL));
+  EXPECT_FALSE(h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::LOCAL));
 }
 
 TEST(OperationalModeManagerTest, FailPolicyRejectsOutOfModeAtValidation) {
@@ -263,10 +237,8 @@ TEST(OperationalModeManagerTest, FailPolicyRejectsOutOfModeAtValidation) {
 
   // WHEN: validation is consulted for either class
   // THEN: out-of-mode commands are rejected at validation
-  EXPECT_TRUE(
-      h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::LOCAL));
-  EXPECT_TRUE(
-      h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::REMOTE));
+  EXPECT_TRUE(h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::LOCAL));
+  EXPECT_TRUE(h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::REMOTE));
 }
 
 TEST(OperationalModeManagerTest, ManualRejectsAtValidationRegardlessOfPolicy) {
@@ -276,10 +248,8 @@ TEST(OperationalModeManagerTest, ManualRejectsAtValidationRegardlessOfPolicy) {
 
   // WHEN: validation is consulted
   // THEN: everything is rejected: nothing executes or holds in MANUAL
-  EXPECT_TRUE(
-      h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::LOCAL));
-  EXPECT_TRUE(
-      h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::REMOTE));
+  EXPECT_TRUE(h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::LOCAL));
+  EXPECT_TRUE(h.manager.rejectedAtValidation(arlcore::autopilot::CommandClass::REMOTE));
 }
 
 TEST(OperationalModeManagerTest, WouldAdmitIsSideEffectFree) {
@@ -306,33 +276,28 @@ TEST(OperationalModeManagerTest, ClassAllowedMatrix) {
 
   // THEN: STANDBY allows nothing
   EXPECT_FALSE(h.manager.classAllowed(arlcore::autopilot::CommandClass::LOCAL));
-  EXPECT_FALSE(
-      h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
+  EXPECT_FALSE(h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
 
   // WHEN: REMOTE is commanded
-  ASSERT_TRUE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::REMOTE));
+  ASSERT_TRUE(h.manager.commandMode(arlcore::autopilot::OperationalMode::REMOTE));
 
   // THEN: REMOTE allows only remote
   EXPECT_FALSE(h.manager.classAllowed(arlcore::autopilot::CommandClass::LOCAL));
   EXPECT_TRUE(h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
 
   // WHEN: AUTONOMOUS is commanded
-  ASSERT_TRUE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
+  ASSERT_TRUE(h.manager.commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
 
   // THEN: AUTONOMOUS allows only local
   EXPECT_TRUE(h.manager.classAllowed(arlcore::autopilot::CommandClass::LOCAL));
-  EXPECT_FALSE(
-      h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
+  EXPECT_FALSE(h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
 
   // WHEN: the platform engages manual control
   h.manager.beginStep(true);
 
   // THEN: MANUAL allows nothing
   EXPECT_FALSE(h.manager.classAllowed(arlcore::autopilot::CommandClass::LOCAL));
-  EXPECT_FALSE(
-      h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
+  EXPECT_FALSE(h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
 }
 
 TEST(OperationalModeManagerTest, ImplicitModeRevertsWhenActiveClassIdle) {
@@ -383,9 +348,8 @@ TEST(OperationalModeManagerTest, LargeIdleRevertKeepsModeAcrossIdleTicks) {
   // GIVEN: REMOTE entered implicitly with a long idle_revert_s
   ManagerHarness h(makeModeConfig(true, true, 3600.0));
   h.manager.beginStep(false);
-  ASSERT_EQ(
-      h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE),
-      arlcore::autopilot::AdmissionDecision::ADMIT);
+  ASSERT_EQ(h.manager.requestAdmission(arlcore::autopilot::CommandClass::REMOTE),
+            arlcore::autopilot::AdmissionDecision::ADMIT);
 
   // WHEN: several idle ticks pass
   h.manager.endStep(false, false);
@@ -410,8 +374,7 @@ TEST(OperationalModeManagerTest, EpochBumpsOnlyOnAuthoritativeTransitions) {
   EXPECT_EQ(h.manager.authoritativeEpoch(), epoch0);
 
   // WHEN: an explicit command and then a manual engagement occur
-  ASSERT_TRUE(
-      h.manager.commandMode(arlcore::autopilot::OperationalMode::REMOTE));
+  ASSERT_TRUE(h.manager.commandMode(arlcore::autopilot::OperationalMode::REMOTE));
   EXPECT_EQ(h.manager.authoritativeEpoch(), epoch0 + 1u);
   h.manager.beginStep(true);
 
@@ -433,10 +396,7 @@ TEST(OperationalModeManagerTest, ClassifyMatchesParentIdAgainstPlatformId) {
   foreignSource.parentID(foreign);
 
   // THEN: only the matching parentID is LOCAL; nil and foreign are REMOTE
-  EXPECT_EQ(h.manager.classify(localSource),
-            arlcore::autopilot::CommandClass::LOCAL);
-  EXPECT_EQ(h.manager.classify(nilSource),
-            arlcore::autopilot::CommandClass::REMOTE);
-  EXPECT_EQ(h.manager.classify(foreignSource),
-            arlcore::autopilot::CommandClass::REMOTE);
+  EXPECT_EQ(h.manager.classify(localSource), arlcore::autopilot::CommandClass::LOCAL);
+  EXPECT_EQ(h.manager.classify(nilSource), arlcore::autopilot::CommandClass::REMOTE);
+  EXPECT_EQ(h.manager.classify(foreignSource), arlcore::autopilot::CommandClass::REMOTE);
 }

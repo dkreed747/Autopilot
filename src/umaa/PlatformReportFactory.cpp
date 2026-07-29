@@ -1,6 +1,7 @@
 #include "autopilot/umaa/PlatformReportFactory.hpp"
 
 #include <optional>
+
 #include "InternalTypes.h"
 
 namespace arlcore::autopilot {
@@ -11,16 +12,14 @@ using UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType;
 using UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType;
 
 //! \brief Copy an optional config value into a generated @optional field.
-static void setIf(
-    std::optional<flt64_t>& field,
-    const std::optional<flt64_t>& value) {  // NOLINT(runtime/references)
+static void setIf(std::optional<flt64_t>& field,
+                  const std::optional<flt64_t>& value) {  // NOLINT(runtime/references)
   if (value.has_value()) {
     field = value.value();
   }
 }
 
-UVPlatformSpecsReportType makePlatformSpecsReport(
-    const PlatformSpecsConfig& specs) {
+UVPlatformSpecsReportType makePlatformSpecsReport(const PlatformSpecsConfig& specs) {
   UVPlatformSpecsReportType report;
   report.name() = specs.name;
   report.lengthAtWaterline() = specs.lengthAtWaterlineM;
@@ -40,8 +39,7 @@ UVPlatformSpecsReportType makePlatformSpecsReport(
   return report;
 }
 
-UVPlatformCapabilitiesReportType makePlatformCapabilitiesReport(
-    const PlatformCapabilitiesConfig& caps) {
+UVPlatformCapabilitiesReportType makePlatformCapabilitiesReport(const PlatformCapabilitiesConfig& caps) {
   UVPlatformCapabilitiesReportType report;
   report.minWaterDepth() = caps.minWaterDepthM;
 
@@ -60,8 +58,7 @@ UVPlatformCapabilitiesReportType makePlatformCapabilitiesReport(
     setIf(underwater.cruisingSpeed(), caps.underwater.cruisingSpeedMps);
     setIf(underwater.maxTurnRate(), caps.underwater.maxTurnRateRps);
     setIf(underwater.minSpeedInMedium(), caps.underwater.minSpeedInMediumMps);
-    setIf(underwater.maxDepthChangeRate(),
-          caps.underwater.maxDepthChangeRateMps);
+    setIf(underwater.maxDepthChangeRate(), caps.underwater.maxDepthChangeRateMps);
     report.underwaterCapabilities() = underwater;
   }
 

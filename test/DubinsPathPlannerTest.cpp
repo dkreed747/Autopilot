@@ -1,15 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <GeographicLib/LocalCartesian.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <vector>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
-#include "autopilot/guidance/DubinsPathPlanner.hpp"
-#include "autopilot/guidance/AngleMath.hpp"
 #include "InternalTypes.h"
+#include "autopilot/guidance/AngleMath.hpp"
+#include "autopilot/guidance/DubinsPathPlanner.hpp"
 
 using GlobalWaypointType = UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using GlobalPoseReportType = UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
@@ -68,9 +67,9 @@ struct PlannerSimVehicle {
 };
 
 static GlobalWaypointType makeWaypoint(flt64_t xE, flt64_t yN, flt64_t speedMps,
-                                std::optional<flt64_t> arrivalYawRad = std::nullopt,
-                                std::optional<flt64_t> depthM = std::nullopt,
-                                std::optional<flt64_t> altitudeAsfM = std::nullopt) {
+                                       std::optional<flt64_t> arrivalYawRad = std::nullopt,
+                                       std::optional<flt64_t> depthM = std::nullopt,
+                                       std::optional<flt64_t> altitudeAsfM = std::nullopt) {
   GeographicLib::LocalCartesian frame(kOriginLat, kOriginLon, 0.0);
   flt64_t lat = 0.0;
   flt64_t lon = 0.0;
@@ -82,11 +81,19 @@ static GlobalWaypointType makeWaypoint(flt64_t xE, flt64_t yN, flt64_t speedMps,
   wp.position().value().geodeticLongitude(lon);
   wp.speed().VariableSpeedVariantTypeSubtypes().RequiredSpeedVariantVariant(
       UMAA::Common::Speed::RequiredSpeedVariantType());
-  wp.speed().VariableSpeedVariantTypeSubtypes().RequiredSpeedVariantVariant().speed()
-      .SpeedRequirementVariantTypeSubtypes().GroundSpeedRequirementVariantVariant(
-          UMAA::Common::Speed::GroundSpeedRequirementVariantType());
-  wp.speed().VariableSpeedVariantTypeSubtypes().RequiredSpeedVariantVariant().speed()
-      .SpeedRequirementVariantTypeSubtypes().GroundSpeedRequirementVariantVariant().speed()
+  wp.speed()
+      .VariableSpeedVariantTypeSubtypes()
+      .RequiredSpeedVariantVariant()
+      .speed()
+      .SpeedRequirementVariantTypeSubtypes()
+      .GroundSpeedRequirementVariantVariant(UMAA::Common::Speed::GroundSpeedRequirementVariantType());
+  wp.speed()
+      .VariableSpeedVariantTypeSubtypes()
+      .RequiredSpeedVariantVariant()
+      .speed()
+      .SpeedRequirementVariantTypeSubtypes()
+      .GroundSpeedRequirementVariantVariant()
+      .speed()
       .speed(speedMps);
   if (arrivalYawRad.has_value()) {
     UMAA::Common::Orientation::Orientation3DNEDRequirement att;
@@ -97,15 +104,14 @@ static GlobalWaypointType makeWaypoint(flt64_t xE, flt64_t yN, flt64_t speedMps,
     UMAA::Common::Measurement::ElevationRequirementVariantType elev;
     elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant(
         UMAA::Common::Measurement::DepthRequirementVariantType());
-    elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant().depth()
-        .depth(depthM.value());
+    elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant().depth().depth(depthM.value());
     wp.elevation() = elev;
   } else if (altitudeAsfM.has_value()) {
     UMAA::Common::Measurement::ElevationRequirementVariantType elev;
     elev.ElevationRequirementVariantTypeSubtypes().AltitudeASFRequirementVariantVariant(
         UMAA::Common::Measurement::AltitudeASFRequirementVariantType());
-    elev.ElevationRequirementVariantTypeSubtypes().AltitudeASFRequirementVariantVariant()
-        .altitude().altitude(altitudeAsfM.value());
+    elev.ElevationRequirementVariantTypeSubtypes().AltitudeASFRequirementVariantVariant().altitude().altitude(
+        altitudeAsfM.value());
     wp.elevation() = elev;
   }
   return wp;
@@ -124,7 +130,8 @@ static arlcore::autopilot::PlannerParams testParams() {
 }
 
 //! \brief Drive the vehicle under planner guidance until the route completes/fails.
-static void runMission(arlcore::autopilot::DubinsPathPlanner* planner, PlannerSimVehicle* vehicle, int32_t maxSteps, flt64_t dtS = 0.5) {
+static void runMission(arlcore::autopilot::DubinsPathPlanner* planner, PlannerSimVehicle* vehicle, int32_t maxSteps,
+                       flt64_t dtS = 0.5) {
   for (int32_t i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
     const arlcore::autopilot::ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
     vehicle->step(cv, dtS);
@@ -160,7 +167,7 @@ TEST(DubinsPathPlannerTest, FollowsMultiWaypointRouteToCompletion) {
   runMission(&planner, &vehicle, 3000);
   // THEN: the route completes with no failure, no waypoints remain, and speed drops to zero
   EXPECT_TRUE(planner.routeComplete()) << "distance to wp: " << planner.progress().distanceToWaypointM
-      << " waypointsRemaining: " << planner.progress().waypointsRemaining;
+                                       << " waypointsRemaining: " << planner.progress().waypointsRemaining;
   EXPECT_FALSE(planner.failed());
   EXPECT_EQ(planner.progress().waypointsRemaining, 0);
   // After completion the planner must command zero speed.
@@ -276,11 +283,8 @@ TEST(DubinsPathPlannerTest, TightTurnRadiusWithLongLeadStillCaptures) {
   params.leadDistanceM = 50.0;
   params.posCaptureM = 12.0;
   std::vector<GlobalWaypointType> route = {
-      makeWaypoint(0.0, 350.0, 3.0),
-      makeWaypoint(250.0, 600.0, 3.0),
-      makeWaypoint(500.0, 350.0, 3.0),
-      makeWaypoint(250.0, 100.0, 3.0),
-      makeWaypoint(-50.0, 350.0, 3.0),
+      makeWaypoint(0.0, 350.0, 3.0),   makeWaypoint(250.0, 600.0, 3.0), makeWaypoint(500.0, 350.0, 3.0),
+      makeWaypoint(250.0, 100.0, 3.0), makeWaypoint(-50.0, 350.0, 3.0),
   };
   planner.plan(route, vehicle.pose(), params);
 
@@ -319,8 +323,8 @@ TEST(DubinsPathPlannerTest, DenseLawnmowerWithArrivalAttitudes) {
   // WHEN: the vehicle flies the mission
   runMission(&planner, &vehicle, 20000, 0.1);
   // THEN: the route completes without burning the miss budget
-  EXPECT_TRUE(planner.routeComplete()) << "target " << planner.progress().waypointsRemaining
-      << " remaining, dist " << planner.progress().distanceToWaypointM;
+  EXPECT_TRUE(planner.routeComplete()) << "target " << planner.progress().waypointsRemaining << " remaining, dist "
+                                       << planner.progress().distanceToWaypointM;
   EXPECT_FALSE(planner.failed());
 }
 
@@ -372,8 +376,7 @@ TEST(DubinsPathPlannerTest, DepthRateLimitedLegSpiralsWithoutFailing) {
   params.maxMissesPerWaypoint = 1;  // spirals must not consume misses
   params.maxReplans = 3;            // nor ordinary replans
   // 250 m leg at 3 m/s is ~83 s; 35 m depth change at 0.15 m/s needs ~233 s (~3 passes).
-  std::vector<GlobalWaypointType> route = {
-      makeWaypoint(0.0, 250.0, 3.0, std::nullopt, 40.0)};
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 250.0, 3.0, std::nullopt, 40.0)};
   planner.plan(route, vehicle.pose(), params);
 
   // WHEN: the vehicle flies the mission
@@ -390,14 +393,13 @@ TEST(DubinsPathPlannerTest, AltitudeAboveSeaFloorWaypointCompletes) {
   // GIVEN: an altitude-above-sea-floor waypoint achievable within one pass
   arlcore::autopilot::DubinsPathPlanner planner;
   PlannerSimVehicle vehicle;
-  vehicle.depthM = 10.0;   // floor at 60 -> ASF 50
+  vehicle.depthM = 10.0;  // floor at 60 -> ASF 50
   vehicle.floorDepthM = 60.0;
   arlcore::autopilot::PlannerParams params = testParams();
   params.maxDepthRateMps = 0.5;
   // Command 15 m above the sea floor (= 45 m depth); 300 m at 3 m/s = 100 s; 35 m depth
   // change at 0.5 m/s = 70 s -> achievable in one pass.
-  std::vector<GlobalWaypointType> route = {
-      makeWaypoint(0.0, 300.0, 3.0, std::nullopt, std::nullopt, 15.0)};
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 300.0, 3.0, std::nullopt, std::nullopt, 15.0)};
   planner.plan(route, vehicle.pose(), params);
 
   // WHEN: the vehicle flies the mission

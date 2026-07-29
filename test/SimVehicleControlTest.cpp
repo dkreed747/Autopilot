@@ -4,11 +4,11 @@
 #include <cstdint>
 #include <memory>
 
-#include "autopilot/guidance/AngleMath.hpp"
-#include "LocalReaderSender.h"
-#include "autopilot/vehicle/SimVehicleControl.hpp"
-#include "UuidFactory.h"
 #include "InternalTypes.h"
+#include "LocalReaderSender.h"
+#include "UuidFactory.h"
+#include "autopilot/guidance/AngleMath.hpp"
+#include "autopilot/vehicle/SimVehicleControl.hpp"
 
 using GlobalPoseReportType = UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 using SpeedReportType = UMAA::SA::SpeedStatus::SpeedReportType;
@@ -38,8 +38,7 @@ struct SimFixture {
 
   std::unique_ptr<arlcore::autopilot::SimVehicleControl> make() {
     return std::make_unique<arlcore::autopilot::SimVehicleControl>(
-        caps, sim, arlcore::UuidFactory::getInstance().generateGuid(),
-        poseIo, speedIo, velocityIo);
+        caps, sim, arlcore::UuidFactory::getInstance().generateGuid(), poseIo, speedIo, velocityIo);
   }
 };
 
@@ -49,7 +48,6 @@ static arlcore::autopilot::ControlVector makeCv(flt64_t headingRad, flt64_t spee
   cv.speedMps = speedMps;
   return cv;
 }
-
 
 TEST(SimVehicleControlTest, PublishesAllThreeNavReportsEachStep) {
   // GIVEN: a sim vehicle at its configured initial pose

@@ -3,13 +3,12 @@
 #include <algorithm>
 #include <cmath>
 
-#include "Logger.h"
 #include "InternalTypes.h"
+#include "Logger.h"
 
 namespace arlcore::autopilot {
 
-RecoveryGuidance::RecoveryGuidance(const RecoveryConfig& config, flt64_t cruiseSpeedMps,
-                                   flt64_t safetyMarginM)
+RecoveryGuidance::RecoveryGuidance(const RecoveryConfig& config, flt64_t cruiseSpeedMps, flt64_t safetyMarginM)
     : config_(config), cruiseSpeedMps_(cruiseSpeedMps), safetyMarginM_(safetyMarginM) {}
 
 bool RecoveryGuidance::begin(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM,
@@ -33,14 +32,13 @@ bool RecoveryGuidance::begin(const GeoPoint& position, flt64_t depthM, std::opti
   flt64_t h = 0.0;
   anchor->Reverse(local->x, local->y, 0.0, target.latDeg, target.lonDeg, h);
   target_ = target;
-  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Recovery: driving to compliant point "
-    << std::hypot(local->x - x, local->y - y) << " m away")
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                "Recovery: driving to compliant point " << std::hypot(local->x - x, local->y - y) << " m away")
   return true;
 }
 
 std::optional<ControlVector> RecoveryGuidance::tick(const GeoPoint& position, flt64_t depthM,
-                                                    std::optional<flt64_t> asfM,
-                                                    const ZoneMap& map) {
+                                                    std::optional<flt64_t> asfM, const ZoneMap& map) {
   if (!target_.has_value()) {
     return std::nullopt;
   }
@@ -69,15 +67,14 @@ std::optional<ControlVector> RecoveryGuidance::tick(const GeoPoint& position, fl
   return cv;
 }
 
-bool RecoveryGuidance::complete(const GeoPoint& position, flt64_t depthM,
-                                std::optional<flt64_t> asfM, const ZoneMap& map) {
+bool RecoveryGuidance::complete(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM,
+                                const ZoneMap& map) {
   if (map.classify(position, depthM, asfM) == ZoneCompliance::COMPLIANT) {
     const auto now = std::chrono::steady_clock::now();
     if (!compliantSince_.has_value()) {
       compliantSince_ = now;
     }
-    return std::chrono::duration<flt64_t>(now - compliantSince_.value()).count() >=
-           config_.completeHoldS;
+    return std::chrono::duration<flt64_t>(now - compliantSince_.value()).count() >= config_.completeHoldS;
   }
   compliantSince_.reset();
   return false;

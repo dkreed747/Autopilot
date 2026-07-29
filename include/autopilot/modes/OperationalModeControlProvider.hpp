@@ -15,20 +15,16 @@ namespace arlcore::autopilot {
 //! mode; the single rejection is MANUAL, which the platform alone controls.
 class OperationalModeControlProvider
     : public arlcore::umaa::services::CommandProviderBase<
-          OperationalModeCommandType, OperationalModeCommandAckReportType,
-          OperationalModeCommandStatusType> {
+          OperationalModeCommandType, OperationalModeCommandAckReportType, OperationalModeCommandStatusType> {
  public:
-  OperationalModeControlProvider(
-      const arlcore::NumericGuid& source,
-      std::shared_ptr<OperationalModeControlProviderIo> io,
-      OperationalModeManager* modeManager);
+  OperationalModeControlProvider(const arlcore::NumericGuid& source,
+                                 std::shared_ptr<OperationalModeControlProviderIo> io,
+                                 OperationalModeManager* modeManager);
 
  protected:
   bool isCommandValid(const OperationalModeCommandType& cmd) override;
-  arlcore::umaa::services::CommandStateResult onCommanded(
-      const std::weak_ptr<CmdSession> session) override;
-  arlcore::umaa::services::CommandStateResult onExecuting(
-      const std::weak_ptr<CmdSession> session) override;
+  arlcore::umaa::services::CommandStateResult onCommanded(const std::weak_ptr<CmdSession> session) override;
+  arlcore::umaa::services::CommandStateResult onExecuting(const std::weak_ptr<CmdSession> session) override;
 
  private:
   OperationalModeManager* modeManager_;

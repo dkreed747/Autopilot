@@ -4,12 +4,12 @@
 #include <memory>
 
 #include "CommandProviderBase.h"
-#include "autopilot/safety/ConstraintTypes.hpp"
-#include "autopilot/safety/ISafetyGate.hpp"
+#include "InternalTypes.h"
 #include "autopilot/core/IAutopilot.hpp"
 #include "autopilot/modes/ICommandModeGate.hpp"
+#include "autopilot/safety/ConstraintTypes.hpp"
+#include "autopilot/safety/ISafetyGate.hpp"
 #include "autopilot/umaa/VectorControlServiceProviderIo.hpp"
-#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -18,18 +18,14 @@ namespace arlcore::autopilot {
 //! setpoint on the brain. Under the hold policy an out-of-mode command parks at ISSUED until
 //! the mode becomes compatible, an authoritative mode change flushes it (INTERRUPTED), or it
 //! is canceled/replaced.
-class VectorControlServiceProvider : public arlcore::umaa::services::CommandProviderBase<
-    GlobalVectorCommandType,
-    GlobalVectorCommandAckReportType,
-    GlobalVectorCommandStatusType,
-    GlobalVectorExecutionStatusReportType> {
+class VectorControlServiceProvider
+    : public arlcore::umaa::services::CommandProviderBase<GlobalVectorCommandType, GlobalVectorCommandAckReportType,
+                                                          GlobalVectorCommandStatusType,
+                                                          GlobalVectorExecutionStatusReportType> {
  public:
-  VectorControlServiceProvider(const arlcore::NumericGuid& source,
-                               std::shared_ptr<VectorControlServiceProviderIo> io,
-                               IAutopilot* autopilot,
-                               flt64_t maxForwardSpeedMps,
-                               const ISafetyGate* safetyGate = nullptr,
-                               ICommandModeGate* modeGate = nullptr);
+  VectorControlServiceProvider(const arlcore::NumericGuid& source, std::shared_ptr<VectorControlServiceProviderIo> io,
+                               IAutopilot* autopilot, flt64_t maxForwardSpeedMps,
+                               const ISafetyGate* safetyGate = nullptr, ICommandModeGate* modeGate = nullptr);
 
  protected:
   bool isCommandValid(const GlobalVectorCommandType& cmd) override;

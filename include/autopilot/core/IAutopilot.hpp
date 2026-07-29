@@ -1,14 +1,13 @@
 #ifndef AUTOPILOT_CORE_IAUTOPILOT_HPP_
 #define AUTOPILOT_CORE_IAUTOPILOT_HPP_
 
-#include <vector>
-
 #include <UMAA/MO/GlobalVectorControl/GlobalVectorCommandType.hpp>
 #include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
+#include <vector>
 
+#include "autopilot/guidance/ProgressTypes.hpp"
 #include "autopilot/modes/DriveSource.hpp"
 #include "autopilot/modes/DrivingResourceArbiter.hpp"
-#include "autopilot/guidance/ProgressTypes.hpp"
 
 namespace arlcore::autopilot {
 

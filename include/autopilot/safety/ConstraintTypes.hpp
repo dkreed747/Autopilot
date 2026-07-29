@@ -5,17 +5,14 @@
 #include <optional>
 #include <vector>
 
-#include "NumericGuid.h"
 #include "InternalTypes.h"
+#include "NumericGuid.h"
 
 namespace arlcore::autopilot {
 
 //! \brief Whether a water zone must contain the vehicle (KEEP_IN, UMAA INSIDE) or exclude it
 //! (KEEP_OUT, UMAA OUTSIDE).
-enum class ZoneKind {
-  KEEP_IN,
-  KEEP_OUT
-};
+enum class ZoneKind { KEEP_IN, KEEP_OUT };
 
 //! \brief A geodetic position in degrees.
 struct GeoPoint {

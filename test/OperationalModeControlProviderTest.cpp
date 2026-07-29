@@ -7,16 +7,13 @@
 #include <vector>
 
 #include "LocalReaderSender.h"
-#include "autopilot/modes/OperationalModeControlProvider.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
+#include "autopilot/modes/OperationalModeControlProvider.hpp"
 
-using ModeCmdEnum = UMAA::Common::MaritimeEnumeration::
-    OperationalModeControlEnumModule::OperationalModeControlEnumType;
-using ModeCmdStatus = UMAA::Common::MaritimeEnumeration::
-    CommandStatusEnumModule::CommandStatusEnumType;
-using ModeCmdReason = UMAA::Common::MaritimeEnumeration::
-    CommandStatusReasonEnumModule::CommandStatusReasonEnumType;
+using ModeCmdEnum = UMAA::Common::MaritimeEnumeration::OperationalModeControlEnumModule::OperationalModeControlEnumType;
+using ModeCmdStatus = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::CommandStatusEnumType;
+using ModeCmdReason = UMAA::Common::MaritimeEnumeration::CommandStatusReasonEnumModule::CommandStatusReasonEnumType;
 
 static arlcore::NumericGuid modeTestPlatformGuid() {
   std::array<uint8_t, 16> bytes{};
@@ -24,8 +21,8 @@ static arlcore::NumericGuid modeTestPlatformGuid() {
   return arlcore::NumericGuid(bytes);
 }
 
-static UMAA::MM::OperationalModeControl::OperationalModeCommandType modeCommand(
-    ModeCmdEnum mode, const arlcore::NumericGuid& parentId) {
+static UMAA::MM::OperationalModeControl::OperationalModeCommandType modeCommand(ModeCmdEnum mode,
+                                                                                const arlcore::NumericGuid& parentId) {
   UMAA::MM::OperationalModeControl::OperationalModeCommandType cmd;
   cmd.operationalMode() = mode;
   cmd.sessionID(arlcore::UuidFactory::getInstance().generateGuid().getGuid());
@@ -39,25 +36,18 @@ class OperationalModeControlProviderTest : public ::testing::Test {
  protected:
   void SetUp() override {
     arlcore::autopilot::OperationalModeConfig modeConfig;
-    manager_ = std::make_unique<arlcore::autopilot::OperationalModeManager>(
-        modeConfig, modeTestPlatformGuid());
-    manager_->setModeChangedCallback(
-        [this](arlcore::autopilot::OperationalMode mode) {
-          reported_.push_back(mode);
-        });
+    manager_ = std::make_unique<arlcore::autopilot::OperationalModeManager>(modeConfig, modeTestPlatformGuid());
+    manager_->setModeChangedCallback([this](arlcore::autopilot::OperationalMode mode) { reported_.push_back(mode); });
     manager_->beginStep(false);
 
-    cmdIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::OperationalModeCommandType>>();
-    ackIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::OperationalModeCommandAckReportType>>();
-    statusIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::OperationalModeCommandStatusType>>();
-    provider_ = std::make_unique<
-        arlcore::autopilot::OperationalModeControlProvider>(
+    cmdIo_ = std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::OperationalModeCommandType>>();
+    ackIo_ =
+        std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::OperationalModeCommandAckReportType>>();
+    statusIo_ =
+        std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::OperationalModeCommandStatusType>>();
+    provider_ = std::make_unique<arlcore::autopilot::OperationalModeControlProvider>(
         arlcore::UuidFactory::getInstance().generateGuid(),
-        std::make_shared<arlcore::autopilot::OperationalModeControlProviderIo>(
-            cmdIo_, ackIo_, statusIo_),
+        std::make_shared<arlcore::autopilot::OperationalModeControlProviderIo>(cmdIo_, ackIo_, statusIo_),
         manager_.get());
   }
 
@@ -78,15 +68,9 @@ class OperationalModeControlProviderTest : public ::testing::Test {
 
   std::unique_ptr<arlcore::autopilot::OperationalModeManager> manager_;
   std::vector<arlcore::autopilot::OperationalMode> reported_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::OperationalModeCommandType>>
-      cmdIo_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::OperationalModeCommandAckReportType>>
-      ackIo_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::OperationalModeCommandStatusType>>
-      statusIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::OperationalModeCommandType>> cmdIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::OperationalModeCommandAckReportType>> ackIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::OperationalModeCommandStatusType>> statusIo_;
   std::unique_ptr<arlcore::autopilot::OperationalModeControlProvider> provider_;
 };
 
@@ -112,8 +96,7 @@ TEST_F(OperationalModeControlProviderTest, CommandRunsToCompletedInOneCycle) {
   EXPECT_EQ(reported_.back(), arlcore::autopilot::OperationalMode::AUTONOMOUS);
 }
 
-TEST_F(OperationalModeControlProviderTest,
-       SameModeCommandCompletesWithoutReport) {
+TEST_F(OperationalModeControlProviderTest, SameModeCommandCompletesWithoutReport) {
   // GIVEN: the provider already in STANDBY
   const size_t reportsBefore = reported_.size();
 
@@ -146,16 +129,14 @@ TEST_F(OperationalModeControlProviderTest, CommandFailsValidationInManual) {
   EXPECT_EQ(manager_->mode(), arlcore::autopilot::OperationalMode::MANUAL);
 }
 
-TEST_F(OperationalModeControlProviderTest,
-       RemoteClassifiedSourceMayCommandAutonomous) {
+TEST_F(OperationalModeControlProviderTest, RemoteClassifiedSourceMayCommandAutonomous) {
   // GIVEN: a commander whose parentID does NOT match the platform (a remote
   // operator)
   std::array<uint8_t, 16> foreign{};
   foreign[0] = 0x99;
 
   // WHEN: it commands AUTONOMOUS
-  cmdIo_->send(
-      modeCommand(ModeCmdEnum::AUTONOMOUS, arlcore::NumericGuid(foreign)));
+  cmdIo_->send(modeCommand(ModeCmdEnum::AUTONOMOUS, arlcore::NumericGuid(foreign)));
   provider_->cycle();
 
   // THEN: classification does not apply to mode commands; the transition is
@@ -163,8 +144,7 @@ TEST_F(OperationalModeControlProviderTest,
   EXPECT_EQ(manager_->mode(), arlcore::autopilot::OperationalMode::AUTONOMOUS);
 }
 
-TEST_F(OperationalModeControlProviderTest,
-       CancelAfterCompletionDoesNotRevertTheMode) {
+TEST_F(OperationalModeControlProviderTest, CancelAfterCompletionDoesNotRevertTheMode) {
   // GIVEN: a completed REMOTE mode command
   const auto cmd = modeCommand(ModeCmdEnum::REMOTE, modeTestPlatformGuid());
   cmdIo_->send(cmd);

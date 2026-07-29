@@ -1,18 +1,16 @@
 #include "autopilot/safety/SafeModeStrategyFactory.hpp"
 
+#include <GeographicLib/LocalCartesian.hpp>
 #include <cmath>
 #include <utility>
 #include <vector>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
-#include "autopilot/core/AutopilotBrain.hpp"
-#include "Logger.h"
-#include "autopilot/guidance/MissionRoute.hpp"
 #include "InternalTypes.h"
+#include "Logger.h"
+#include "autopilot/core/AutopilotBrain.hpp"
+#include "autopilot/guidance/MissionRoute.hpp"
 
 namespace arlcore::autopilot {
-
 
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 
@@ -55,18 +53,20 @@ class SrpMissionStrategy : public ISafeModeStrategy {
     switch (phase_) {
       case Phase::RUNNING:
         if (brain->safeRouteFailed()) {
-          UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "SRP strategy: safe route failed mid-run; "
-            "holding in place")
+          UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
+                         "SRP strategy: safe route failed mid-run; "
+                         "holding in place")
           brain->activateSafeHold();
           phase_ = Phase::HOLDING;
         } else if (brain->safeRouteComplete()) {
           if (srp_.config().acceptCommandsAfterSrp) {
-            UMAA_LOG_INFO(util::SYSTEM_LOGGER, "SRP complete; releasing the autopilot to "
-              "accept commands")
+            UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                          "SRP complete; releasing the autopilot to "
+                          "accept commands")
             released_ = true;
           } else {
-            UMAA_LOG_INFO(util::SYSTEM_LOGGER, "SRP complete; holding the final waypoint within "
-              << srp_.config().holdRadiusM << " m")
+            UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                          "SRP complete; holding the final waypoint within " << srp_.config().holdRadiusM << " m")
             brain->activateSafeHold();
             phase_ = Phase::HOLDING;
           }
@@ -77,13 +77,11 @@ class SrpMissionStrategy : public ISafeModeStrategy {
         if (!pose.has_value()) {
           break;
         }
-        const GeographicLib::LocalCartesian center(srp_.lastWaypoint().latDeg,
-                                                   srp_.lastWaypoint().lonDeg, 0.0);
+        const GeographicLib::LocalCartesian center(srp_.lastWaypoint().latDeg, srp_.lastWaypoint().lonDeg, 0.0);
         flt64_t x = 0.0;
         flt64_t y = 0.0;
         flt64_t z = 0.0;
-        center.Forward(pose->position().geodeticLatitude(), pose->position().geodeticLongitude(),
-                       0.0, x, y, z);
+        center.Forward(pose->position().geodeticLatitude(), pose->position().geodeticLongitude(), 0.0, x, y, z);
         if (std::hypot(x, y) > srp_.config().holdRadiusM) {
           // Drive back to the hold center, arriving headed opposite the drift direction (the
           // bearing from the drift position back to the center).
@@ -95,8 +93,8 @@ class SrpMissionStrategy : public ISafeModeStrategy {
             back.elevValueM = srp_.config().safeElevationM;
             back.elevFrame = "depth";
           }
-          UMAA_LOG_INFO(util::SYSTEM_LOGGER, "SRP hold: drifted " << std::hypot(x, y)
-            << " m from the hold point; repositioning")
+          UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                        "SRP hold: drifted " << std::hypot(x, y) << " m from the hold point; repositioning")
           brain->activateSafeRoute({makeWaypoint(back)});
           phase_ = Phase::REPOSITIONING;
         }
@@ -126,18 +124,19 @@ class SrpMissionStrategy : public ISafeModeStrategy {
 };
 
 std::unique_ptr<ISafeModeStrategy> makeSafeModeStrategy(const SafetyConfig& config,
-                                                       const std::optional<SafeReturnPath>& srp) {
+                                                        const std::optional<SafeReturnPath>& srp) {
   if (config.safeMode.strategy == "srp") {
     if (srp.has_value()) {
       return std::make_unique<SrpMissionStrategy>(srp.value());
     }
-    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "safe_mode.strategy is 'srp' but no SRP is loaded; "
-      "using zero-speed hold")
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "safe_mode.strategy is 'srp' but no SRP is loaded; "
+                  "using zero-speed hold")
     return std::make_unique<ZeroSpeedHoldStrategy>();
   }
   if (config.safeMode.strategy != "zero_speed_hold") {
-    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Unknown safe_mode.strategy '" << config.safeMode.strategy
-      << "'; using zero-speed hold")
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "Unknown safe_mode.strategy '" << config.safeMode.strategy << "'; using zero-speed hold")
   }
   return std::make_unique<ZeroSpeedHoldStrategy>();
 }

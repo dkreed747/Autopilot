@@ -1,17 +1,16 @@
 #ifndef AUTOPILOT_GUIDANCE_TOLERANCEUTILS_HPP_
 #define AUTOPILOT_GUIDANCE_TOLERANCEUTILS_HPP_
 
-#include <optional>
-
 #include <UMAA/Common/Distance/DistanceRequirementType.hpp>
 #include <UMAA/Common/Measurement/ElevationRequirementVariantType.hpp>
 #include <UMAA/Common/Orientation/DirectionRequirementVariantType.hpp>
 #include <UMAA/Common/Orientation/Orientation3DNEDRequirement.hpp>
 #include <UMAA/Common/Speed/SpeedRequirementVariantType.hpp>
 #include <UMAA/Common/Speed/VariableSpeedVariantType.hpp>
+#include <optional>
 
-#include "autopilot/guidance/ControlVector.hpp"
 #include "InternalTypes.h"
+#include "autopilot/guidance/ControlVector.hpp"
 
 namespace arlcore::autopilot {
 
@@ -65,16 +64,13 @@ namespace arlcore::autopilot::tolerance {
 
 //! \brief Extract the commanded heading + tolerance from a direction requirement. Supports
 //! true-north / magnetic-north reference frames; returns nullopt for unsupported variants.
-std::optional<DirectionValue> extractDirection(
-    const UMAA::Common::Orientation::DirectionRequirementVariantType& dir);
+std::optional<DirectionValue> extractDirection(const UMAA::Common::Orientation::DirectionRequirementVariantType& dir);
 
 //! \brief Extract ground/water speed + tolerance from a speed requirement.
-std::optional<SpeedValue> extractSpeed(
-    const UMAA::Common::Speed::SpeedRequirementVariantType& speed);
+std::optional<SpeedValue> extractSpeed(const UMAA::Common::Speed::SpeedRequirementVariantType& speed);
 
 //! \brief Extract speed from a waypoint's variable-speed requirement (required/recommended).
-std::optional<SpeedValue> extractSpeed(
-    const UMAA::Common::Speed::VariableSpeedVariantType& speed);
+std::optional<SpeedValue> extractSpeed(const UMAA::Common::Speed::VariableSpeedVariantType& speed);
 
 //! \brief Extract elevation/depth value + frame + tolerance from an elevation requirement.
 std::optional<ElevationValue> extractElevation(
@@ -84,8 +80,7 @@ std::optional<ElevationValue> extractElevation(
 AttitudeValue extractYaw(const UMAA::Common::Orientation::Orientation3DNEDRequirement& attitude);
 
 //! \brief Extract the cross-track distance tolerance (meters) from a track tolerance, if set.
-std::optional<flt64_t> extractTrackToleranceM(
-    const UMAA::Common::Distance::DistanceRequirementType& trackTolerance);
+std::optional<flt64_t> extractTrackToleranceM(const UMAA::Common::Distance::DistanceRequirementType& trackTolerance);
 
 //! \brief Whether an actual heading satisfies the direction requirement (falls back to a
 //! symmetric half-width of defaultTolRad when the command carries no tolerance).

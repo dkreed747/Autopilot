@@ -7,14 +7,14 @@
 #include <vector>
 
 #include "CommandProviderBase.h"
-#include "autopilot/safety/ConstraintTypes.hpp"
-#include "autopilot/safety/ISafetyGate.hpp"
+#include "InternalTypes.h"
+#include "LargeListReader.h"
 #include "autopilot/core/IAutopilot.hpp"
 #include "autopilot/modes/ICommandModeGate.hpp"
+#include "autopilot/safety/ConstraintTypes.hpp"
+#include "autopilot/safety/ISafetyGate.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
-#include "LargeListReader.h"
 #include "autopilot/umaa/WaypointControlServiceProviderIo.hpp"
-#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -23,19 +23,15 @@ namespace arlcore::autopilot {
 //! autopilot brain (which plans a Dubins path), and reports per-cycle execution status. It is
 //! preempted by a vector command (-> FAILED/INTERRUPTED) and is rejected if a vector already
 //! holds the driving resource (-> FAILED/RESOURCE_REJECTED).
-class WaypointControlServiceProvider : public arlcore::umaa::services::CommandProviderBase<
-    GlobalWaypointCommandType,
-    GlobalWaypointCommandAckReportType,
-    GlobalWaypointCommandStatusType,
-    GlobalWaypointExecutionStatusReportType> {
+class WaypointControlServiceProvider
+    : public arlcore::umaa::services::CommandProviderBase<GlobalWaypointCommandType, GlobalWaypointCommandAckReportType,
+                                                          GlobalWaypointCommandStatusType,
+                                                          GlobalWaypointExecutionStatusReportType> {
  public:
   WaypointControlServiceProvider(const arlcore::NumericGuid& source,
-                                 std::shared_ptr<WaypointControlServiceProviderIo> io,
-                                 IAutopilot* autopilot,
-                                 flt64_t maxForwardSpeedMps,
-                                 int32_t maxListWaitCycles,
-                                 const ISafetyGate* safetyGate = nullptr,
-                                 const ZoneMap* zoneMap = nullptr,
+                                 std::shared_ptr<WaypointControlServiceProviderIo> io, IAutopilot* autopilot,
+                                 flt64_t maxForwardSpeedMps, int32_t maxListWaitCycles,
+                                 const ISafetyGate* safetyGate = nullptr, const ZoneMap* zoneMap = nullptr,
                                  ICommandModeGate* modeGate = nullptr);
 
  protected:
@@ -62,22 +58,22 @@ class WaypointControlServiceProvider : public arlcore::umaa::services::CommandPr
   //! \brief Fail the session directly from the COMMANDED state (reasons like
   //! RESOURCE_REJECTED are only legal there), releasing everything this command holds.
   arlcore::umaa::services::CommandStateResult failInCommanded(const std::weak_ptr<CmdSession> session,
-      CommandStatusReasonEnumType reason, const std::string& logMessage);
+                                                              CommandStatusReasonEnumType reason,
+                                                              const std::string& logMessage);
 
-  bool validateWaypoints(
-      const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints) const;
+  bool validateWaypoints(const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints) const;
 
   //! \brief Whether every waypoint keeps the zone safety margin (command-time validation
   //! against the active water zones). Fills `message` with the offending waypoint.
-  bool waypointsZoneCompliant(
-      const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints,
-      std::string* message) const;
+  bool waypointsZoneCompliant(const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints,
+                              std::string* message) const;
 
   arlcore::NumericGuid sourceId_;
   IAutopilot* autopilot_;
   std::shared_ptr<WaypointControlServiceProviderIo> wpIo_;
   arlcore::umaa::LargeListReader<UMAA::MO::GlobalWaypointControl::GlobalWaypointType,
-      GlobalWaypointCommandTypeWaypointsListElement> listReader_;
+                                 GlobalWaypointCommandTypeWaypointsListElement>
+      listReader_;
   flt64_t maxForwardSpeedMps_;
   int32_t maxListWaitCycles_;
   const ISafetyGate* safetyGate_;

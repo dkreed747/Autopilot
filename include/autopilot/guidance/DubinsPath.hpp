@@ -4,6 +4,7 @@
 #include <array>
 #include <optional>
 #include <string>
+
 #include "InternalTypes.h"
 
 namespace arlcore::autopilot {

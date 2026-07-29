@@ -7,9 +7,9 @@
 #include <optional>
 #include <utility>
 
-#include "autopilot/guidance/AngleMath.hpp"
-#include "Logger.h"
 #include "InternalTypes.h"
+#include "Logger.h"
+#include "autopilot/guidance/AngleMath.hpp"
 
 namespace arlcore::autopilot {
 
@@ -17,47 +17,36 @@ using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 using UMAA::SA::SpeedStatus::SpeedReportType;
 using UMAA::SA::VelocityStatus::VelocityReportType;
 
-SimVehicleControl::SimVehicleControl(
-    const PlatformCapabilitiesConfig& caps,
-    const SimVehicleConfig& simConfig, const arlcore::NumericGuid& navSourceId,
-    std::shared_ptr<arlcore::io::SenderBase<GlobalPoseReportType>> poseSender,
-    std::shared_ptr<arlcore::io::SenderBase<SpeedReportType>> speedSender,
-    std::shared_ptr<arlcore::io::SenderBase<VelocityReportType>> velocitySender) :
-    caps_(caps),
-    simConfig_(simConfig),
-    poseProvider_(navSourceId, std::move(poseSender)),
-    speedProvider_(navSourceId, std::move(speedSender)),
-    velocityProvider_(navSourceId, std::move(velocitySender)),
-    frame_(simConfig.initialLatitudeDeg, simConfig.initialLongitudeDeg, 0.0),
-    headingRad_(simConfig.initialHeadingRad) {}
+SimVehicleControl::SimVehicleControl(const PlatformCapabilitiesConfig& caps, const SimVehicleConfig& simConfig,
+                                     const arlcore::NumericGuid& navSourceId,
+                                     std::shared_ptr<arlcore::io::SenderBase<GlobalPoseReportType>> poseSender,
+                                     std::shared_ptr<arlcore::io::SenderBase<SpeedReportType>> speedSender,
+                                     std::shared_ptr<arlcore::io::SenderBase<VelocityReportType>> velocitySender)
+    : caps_(caps),
+      simConfig_(simConfig),
+      poseProvider_(navSourceId, std::move(poseSender)),
+      speedProvider_(navSourceId, std::move(speedSender)),
+      velocityProvider_(navSourceId, std::move(velocitySender)),
+      frame_(simConfig.initialLatitudeDeg, simConfig.initialLongitudeDeg, 0.0),
+      headingRad_(simConfig.initialHeadingRad) {}
 
-SimVehicleControl::~SimVehicleControl() {
-  shutdown();
-}
+SimVehicleControl::~SimVehicleControl() { shutdown(); }
 
-flt64_t SimVehicleControl::maxTurnRateRps() const {
-  return caps_.surface.maxTurnRateRps.value_or(0.25);
-}
+flt64_t SimVehicleControl::maxTurnRateRps() const { return caps_.surface.maxTurnRateRps.value_or(0.25); }
 
-flt64_t SimVehicleControl::maxForwardSpeedMps() const {
-  return caps_.surface.maxForwardSpeedMps.value_or(5.0);
-}
+flt64_t SimVehicleControl::maxForwardSpeedMps() const { return caps_.surface.maxForwardSpeedMps.value_or(5.0); }
 
-flt64_t SimVehicleControl::maxReverseSpeedMps() const {
-  return caps_.surface.maxReverseSpeedMps.value_or(0.0);
-}
+flt64_t SimVehicleControl::maxReverseSpeedMps() const { return caps_.surface.maxReverseSpeedMps.value_or(0.0); }
 
-flt64_t SimVehicleControl::maxDepthRateMps() const {
-  return caps_.underwater.maxDepthChangeRateMps.value_or(0.5);
-}
+flt64_t SimVehicleControl::maxDepthRateMps() const { return caps_.underwater.maxDepthChangeRateMps.value_or(0.5); }
 
 bool SimVehicleControl::initialize() {
   if (running_) {
     return true;
   }
   if (simConfig_.cycleRateHz <= 0.0) {
-    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "SimVehicleControl cycle rate must be positive (got "
-      << simConfig_.cycleRateHz << " Hz)")
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
+                   "SimVehicleControl cycle rate must be positive (got " << simConfig_.cycleRateHz << " Hz)")
     return false;
   }
   {
@@ -71,8 +60,9 @@ bool SimVehicleControl::initialize() {
   }
   running_ = true;
   simThread_ = std::thread(&SimVehicleControl::runLoop, this);
-  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "SimVehicleControl initialized at " << simConfig_.cycleRateHz
-    << " Hz (start " << simConfig_.initialLatitudeDeg << ", " << simConfig_.initialLongitudeDeg << ")")
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "SimVehicleControl initialized at " << simConfig_.cycleRateHz << " Hz (start "
+                                                                         << simConfig_.initialLatitudeDeg << ", "
+                                                                         << simConfig_.initialLongitudeDeg << ")")
   return true;
 }
 
@@ -85,8 +75,8 @@ void SimVehicleControl::shutdown() {
 
 void SimVehicleControl::runLoop() {
   using clock = std::chrono::steady_clock;
-  const auto period = std::chrono::duration_cast<clock::duration>(
-      std::chrono::duration<flt64_t>(1.0 / simConfig_.cycleRateHz));
+  const auto period =
+      std::chrono::duration_cast<clock::duration>(std::chrono::duration<flt64_t>(1.0 / simConfig_.cycleRateHz));
   auto last = clock::now();
   auto next = last + period;
   while (running_) {
@@ -103,9 +93,9 @@ bool SimVehicleControl::sendControlVector(const ControlVector& cv) {
   std::scoped_lock lock(mtx_);
   setpoint_ = cv;
   controlVectorCount_++;
-  UMAA_LOG_DEBUG(util::SYSTEM_LOGGER, "SimVehicleControl setpoint: heading(rad)=" << cv.headingRad
-    << " speed(mps)=" << cv.speedMps
-    << " elevation=" << (cv.elevationM.has_value() ? cv.elevationM.value() : 0.0))
+  UMAA_LOG_DEBUG(util::SYSTEM_LOGGER, "SimVehicleControl setpoint: heading(rad)="
+                                          << cv.headingRad << " speed(mps)=" << cv.speedMps
+                                          << " elevation=" << (cv.elevationM.has_value() ? cv.elevationM.value() : 0.0))
   return true;
 }
 

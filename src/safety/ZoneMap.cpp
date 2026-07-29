@@ -7,8 +7,8 @@
 #include <utility>
 #include <vector>
 
-#include "Logger.h"
 #include "InternalTypes.h"
+#include "Logger.h"
 
 namespace arlcore::autopilot {
 
@@ -85,8 +85,7 @@ void ZoneMap::ingest(const ConstraintSnapshot& snapshot) {
   revision_ = snapshot.revision;
 }
 
-ZoneSet ZoneMap::activeSet(const GeographicLib::LocalCartesian& frame,
-                           const ElevationEnvelope& envelope) const {
+ZoneSet ZoneMap::activeSet(const GeographicLib::LocalCartesian& frame, const ElevationEnvelope& envelope) const {
   ZoneSet set;
   ElevationEnvelope padded = envelope;
   padded.minDepthM -= config_.elevationMarginM;
@@ -132,13 +131,11 @@ flt64_t ZoneMap::clearanceM(const GeoPoint& position, const ElevationEnvelope& e
   return set.clearanceM(Vec2{x, y});
 }
 
-flt64_t ZoneMap::clearanceM(const GeoPoint& position, flt64_t depthM,
-                           std::optional<flt64_t> asfM) const {
+flt64_t ZoneMap::clearanceM(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM) const {
   return clearanceM(position, ElevationEnvelope::atPoint(depthM, asfM));
 }
 
-ZoneCompliance ZoneMap::classify(const GeoPoint& position, flt64_t depthM,
-                                 std::optional<flt64_t> asfM) const {
+ZoneCompliance ZoneMap::classify(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM) const {
   const flt64_t clearance = clearanceM(position, depthM, asfM);
   if (clearance < 0.0) {
     return ZoneCompliance::VIOLATION;

@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <utility>
 
-#include "autopilot/guidance/MissionRoute.hpp"
 #include "InternalTypes.h"
+#include "autopilot/guidance/MissionRoute.hpp"
 
 namespace arlcore::autopilot::tools {
 
@@ -12,34 +12,23 @@ using arlcore::io::CycloneReader;
 using arlcore::io::ReadStatus;
 using arlcore::io::SampleEnvelope;
 using arlcore::umaa::LargeListStatus;
-using StatusEnum = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::
-    CommandStatusEnumType;
+using StatusEnum = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::CommandStatusEnumType;
 
 static constexpr uint32_t kMaxCommandDrain = 16;
 static constexpr size_t kMaxTrackedMissions = 16;
 static constexpr flt64_t kTerminalEvictS = 120.0;
 
-WaypointActivityMonitor::WaypointActivityMonitor(
-    const dds::domain::DomainParticipant& participant,
-    const dds::sub::qos::DataReaderQos& rqos,
-    const dds::sub::qos::DataReaderQos& largeListRqos)
+WaypointActivityMonitor::WaypointActivityMonitor(const dds::domain::DomainParticipant& participant,
+                                                 const dds::sub::qos::DataReaderQos& rqos,
+                                                 const dds::sub::qos::DataReaderQos& largeListRqos)
     : cmdReader_(std::make_shared<CycloneReader<CommandType>>(
-          participant,
-          UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeTopic,
-          rqos)),
+          participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeTopic, rqos)),
       statusReader_(std::make_shared<CycloneReader<StatusType>>(
-          participant,
-          UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandStatusTypeTopic,
-          rqos)),
+          participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandStatusTypeTopic, rqos)),
       execReader_(std::make_shared<CycloneReader<ExecType>>(
-          participant,
-          UMAA::MO::GlobalWaypointControl::
-              GlobalWaypointExecutionStatusReportTypeTopic,
-          rqos)),
+          participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointExecutionStatusReportTypeTopic, rqos)),
       listReader_(std::make_shared<CycloneReader<ListElement>>(
-          participant,
-          UMAA::MO::GlobalWaypointControl::
-              GlobalWaypointCommandTypeWaypointsListElementTopic,
+          participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeWaypointsListElementTopic,
           largeListRqos)) {}
 
 void WaypointActivityMonitor::poll() {
@@ -96,8 +85,7 @@ void WaypointActivityMonitor::poll() {
       continue;
     }
     const arlcore::umaa::LargeListResult<GlobalWaypointType> result =
-        listReader_.getListById(
-            arlcore::NumericGuid(metadataIt->second.listID()));
+        listReader_.getListById(arlcore::NumericGuid(metadataIt->second.listID()));
     if (result.status == LargeListStatus::VALID_LIST) {
       if (auto locked = result.list.lock()) {
         mission.waypoints.assign(locked->begin(), locked->end());
@@ -116,8 +104,7 @@ void WaypointActivityMonitor::poll() {
     mission.lastStatus = statusName(status.commandStatus());
     mission.lastReason = statusReasonName(status.commandStatusReason());
     mission.lastSeen = now;
-    if (status.commandStatus() == StatusEnum::COMPLETED ||
-        status.commandStatus() == StatusEnum::FAILED ||
+    if (status.commandStatus() == StatusEnum::COMPLETED || status.commandStatus() == StatusEnum::FAILED ||
         status.commandStatus() == StatusEnum::CANCELED) {
       mission.terminal = true;
     }
@@ -138,8 +125,7 @@ void WaypointActivityMonitor::poll() {
   // Eviction: terminal missions age out; a hard cap bounds the snapshot (oldest
   // first).
   for (auto it = missions_.begin(); it != missions_.end();) {
-    const flt64_t idleS =
-        std::chrono::duration<flt64_t>(now - it->second.lastSeen).count();
+    const flt64_t idleS = std::chrono::duration<flt64_t>(now - it->second.lastSeen).count();
     if (it->second.terminal && idleS > kTerminalEvictS) {
       const auto metadataIt = metadataBySession_.find(it->first);
       if (metadataIt != metadataBySession_.end()) {
@@ -156,8 +142,7 @@ void WaypointActivityMonitor::poll() {
     for (auto it = missions_.begin(); it != missions_.end(); ++it) {
       const bool betterVictim =
           (it->second.terminal && !victim->second.terminal) ||
-          (it->second.terminal == victim->second.terminal &&
-           it->second.lastSeen < victim->second.lastSeen);
+          (it->second.terminal == victim->second.terminal && it->second.lastSeen < victim->second.lastSeen);
       if (betterVictim) {
         victim = it;
       }
@@ -171,8 +156,8 @@ void WaypointActivityMonitor::poll() {
   }
 }
 
-void WaypointActivityMonitor::releaseListIfUnshared(
-    const arlcore::NumericGuid& session, const UMAA::Common::LargeListMetadata& metadata) {
+void WaypointActivityMonitor::releaseListIfUnshared(const arlcore::NumericGuid& session,
+                                                    const UMAA::Common::LargeListMetadata& metadata) {
   const arlcore::NumericGuid listId(metadata.listID());
   for (const auto& [otherSession, otherMetadata] : metadataBySession_) {
     if (otherSession != session && arlcore::NumericGuid(otherMetadata.listID()) == listId) {
@@ -182,8 +167,8 @@ void WaypointActivityMonitor::releaseListIfUnshared(
   listReader_.removeListByMetadata(metadata);
 }
 
-std::optional<WaypointActivityMonitor::ExecType>
-WaypointActivityMonitor::execFor(const arlcore::NumericGuid& sessionId) const {
+std::optional<WaypointActivityMonitor::ExecType> WaypointActivityMonitor::execFor(
+    const arlcore::NumericGuid& sessionId) const {
   const auto it = missions_.find(sessionId);
   if (it == missions_.end()) {
     return std::nullopt;

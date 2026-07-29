@@ -2,8 +2,8 @@
 
 #include <utility>
 
-#include "Logger.h"
 #include "InternalTypes.h"
+#include "Logger.h"
 
 namespace arlcore::autopilot {
 
@@ -22,12 +22,11 @@ static const char* modeName(OperationalMode mode) {
   }
 }
 
-OperationalModeManager::OperationalModeManager(
-    const OperationalModeConfig& config, const arlcore::NumericGuid& platformId)
+OperationalModeManager::OperationalModeManager(const OperationalModeConfig& config,
+                                               const arlcore::NumericGuid& platformId)
     : config_(config), platformId_(platformId) {}
 
-void OperationalModeManager::setModeChangedCallback(
-    std::function<void(OperationalMode)> callback) {
+void OperationalModeManager::setModeChangedCallback(std::function<void(OperationalMode)> callback) {
   std::scoped_lock lock(mtx_);
   onModeChanged_ = std::move(callback);
 }
@@ -39,21 +38,17 @@ void OperationalModeManager::beginStep(bool manualEngaged) {
     std::scoped_lock lock(mtx_);
     if (!initialized_) {
       initialized_ = true;
-      mode_ =
-          manualEngaged ? OperationalMode::MANUAL : OperationalMode::STANDBY;
+      mode_ = manualEngaged ? OperationalMode::MANUAL : OperationalMode::STANDBY;
       explicitEntry_ = false;
       changedTo = mode_;  // always announce the initial mode
     } else if (manualEngaged && mode_ != OperationalMode::MANUAL) {
       ++epoch_;  // authoritative: flushes held sessions
-      UMAA_LOG_WARN(
-          util::SYSTEM_LOGGER,
-          "Platform engaged MANUAL control; preempting " << modeName(mode_))
+      UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Platform engaged MANUAL control; preempting " << modeName(mode_))
       if (transitionLocked(OperationalMode::MANUAL, false)) {
         changedTo = mode_;
       }
     } else if (!manualEngaged && mode_ == OperationalMode::MANUAL) {
-      UMAA_LOG_INFO(util::SYSTEM_LOGGER,
-                    "Platform released MANUAL control; entering STANDBY")
+      UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Platform released MANUAL control; entering STANDBY")
       if (transitionLocked(OperationalMode::STANDBY, false)) {
         changedTo = mode_;
       }
@@ -65,21 +60,17 @@ void OperationalModeManager::beginStep(bool manualEngaged) {
   }
 }
 
-void OperationalModeManager::endStep(bool localCommandActive,
-                                     bool remoteCommandActive) {
+void OperationalModeManager::endStep(bool localCommandActive, bool remoteCommandActive) {
   std::function<void(OperationalMode)> callback;
   std::optional<OperationalMode> changedTo;
   {
     std::scoped_lock lock(mtx_);
-    const bool revertible = (mode_ == OperationalMode::REMOTE ||
-                             mode_ == OperationalMode::AUTONOMOUS) &&
-                            !explicitEntry_;
+    const bool revertible =
+        (mode_ == OperationalMode::REMOTE || mode_ == OperationalMode::AUTONOMOUS) && !explicitEntry_;
     if (!revertible) {
       idleSince_.reset();
     } else {
-      const bool activeClassBusy = (mode_ == OperationalMode::REMOTE)
-                                       ? remoteCommandActive
-                                       : localCommandActive;
+      const bool activeClassBusy = (mode_ == OperationalMode::REMOTE) ? remoteCommandActive : localCommandActive;
       if (activeClassBusy) {
         idleSince_.reset();
       } else {
@@ -87,12 +78,10 @@ void OperationalModeManager::endStep(bool localCommandActive,
         if (!idleSince_.has_value()) {
           idleSince_ = now;
         }
-        const flt64_t idleS =
-            std::chrono::duration<flt64_t>(now - idleSince_.value()).count();
+        const flt64_t idleS = std::chrono::duration<flt64_t>(now - idleSince_.value()).count();
         if (idleS >= config_.idleRevertS) {
           UMAA_LOG_INFO(util::SYSTEM_LOGGER,
-                        "Implicit " << modeName(mode_) << " idle for " << idleS
-                                    << " s; reverting to STANDBY")
+                        "Implicit " << modeName(mode_) << " idle for " << idleS << " s; reverting to STANDBY")
           if (transitionLocked(OperationalMode::STANDBY, false)) {
             changedTo = mode_;
           }
@@ -111,15 +100,12 @@ bool OperationalModeManager::commandMode(OperationalMode requested) {
   std::optional<OperationalMode> changedTo;
   {
     std::scoped_lock lock(mtx_);
-    if (mode_ == OperationalMode::MANUAL ||
-        requested == OperationalMode::MANUAL) {
+    if (mode_ == OperationalMode::MANUAL || requested == OperationalMode::MANUAL) {
       return false;
     }
     ++epoch_;  // authoritative even when re-asserting the current mode
     if (transitionLocked(requested, true)) {
-      UMAA_LOG_INFO(
-          util::SYSTEM_LOGGER,
-          "Operational mode explicitly commanded to " << modeName(requested))
+      UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Operational mode explicitly commanded to " << modeName(requested))
       changedTo = mode_;
     }
     callback = onModeChanged_;
@@ -135,11 +121,8 @@ OperationalMode OperationalModeManager::mode() const {
   return mode_;
 }
 
-CommandClass OperationalModeManager::classify(
-    const UMAA::Common::IdentifierType& source) const {
-  return (arlcore::NumericGuid(source.parentID()) == platformId_)
-             ? CommandClass::LOCAL
-             : CommandClass::REMOTE;
+CommandClass OperationalModeManager::classify(const UMAA::Common::IdentifierType& source) const {
+  return (arlcore::NumericGuid(source.parentID()) == platformId_) ? CommandClass::LOCAL : CommandClass::REMOTE;
 }
 
 bool OperationalModeManager::rejectedAtValidation(CommandClass cls) const {
@@ -164,12 +147,9 @@ AdmissionDecision OperationalModeManager::requestAdmission(CommandClass cls) {
     switch (mode_) {
       case OperationalMode::STANDBY:
         if (config_.allowImplicitModeTransitions) {
-          const OperationalMode target = (cls == CommandClass::LOCAL)
-                                             ? OperationalMode::AUTONOMOUS
-                                             : OperationalMode::REMOTE;
-          UMAA_LOG_INFO(
-              util::SYSTEM_LOGGER,
-              "Implicit mode transition STANDBY -> " << modeName(target))
+          const OperationalMode target =
+              (cls == CommandClass::LOCAL) ? OperationalMode::AUTONOMOUS : OperationalMode::REMOTE;
+          UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Implicit mode transition STANDBY -> " << modeName(target))
           if (transitionLocked(target, false)) {
             changedTo = mode_;
           }
@@ -189,8 +169,7 @@ AdmissionDecision OperationalModeManager::requestAdmission(CommandClass cls) {
         } else if (config_.allowImplicitModeTransitions) {
           // Operator precedence: a remote command preempts the onboard
           // autonomy.
-          UMAA_LOG_INFO(util::SYSTEM_LOGGER,
-                        "Implicit mode transition AUTONOMOUS -> REMOTE")
+          UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Implicit mode transition AUTONOMOUS -> REMOTE")
           if (transitionLocked(OperationalMode::REMOTE, false)) {
             changedTo = mode_;
           }
@@ -240,8 +219,7 @@ bool OperationalModeManager::wouldAdmitLocked(CommandClass cls) const {
   }
 }
 
-bool OperationalModeManager::transitionLocked(OperationalMode next,
-                                              bool explicitEntry) {
+bool OperationalModeManager::transitionLocked(OperationalMode next, bool explicitEntry) {
   explicitEntry_ = explicitEntry;
   idleSince_.reset();
   if (mode_ == next) {

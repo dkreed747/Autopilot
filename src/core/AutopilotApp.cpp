@@ -1,33 +1,32 @@
 #include "autopilot/core/AutopilotApp.hpp"
 
+#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
+#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
+#include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 #include <chrono>
 #include <memory>
 #include <regex>
 #include <string>
 #include <thread>
 
-#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
-#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
-#include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
-
 #include "CycloneQosProviderWrapper.h"
 #include "CycloneReader.h"
 #include "CycloneSender.h"
 #include "CycloneUtilities.h"
+#include "InternalTypes.h"
 #include "Logger.h"
+#include "UuidFactory.h"
 #include "autopilot/safety/SafeModeStrategyFactory.hpp"
 #include "autopilot/umaa/PlatformReportFactory.hpp"
-#include "UuidFactory.h"
-#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 using arlcore::io::CycloneReader;
 using arlcore::io::CycloneSender;
 using arlcore::umaa::services::GlobalPoseReportConsumer;
+using arlcore::umaa::services::ReportProvider;
 using arlcore::umaa::services::SpeedReportConsumer;
 using arlcore::umaa::services::VelocityReportConsumer;
-using arlcore::umaa::services::ReportProvider;
 
 static arlcore::NumericGuid parseId(const std::string& uuid) {
   return arlcore::UuidFactory::getInstance().parseGuidFromString(uuid);
@@ -36,8 +35,7 @@ static arlcore::NumericGuid parseId(const std::string& uuid) {
 //! \brief A source ID must be a well-formed UUID string; anything else would silently
 //! produce a garbage GUID and commands addressed to the configured ID would never match.
 static bool validSourceId(const std::string& uuid, const char* name) {
-  static const std::regex kUuidPattern(
-      "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+  static const std::regex kUuidPattern("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
   if (std::regex_match(uuid, kUuidPattern)) {
     return true;
   }
@@ -62,8 +60,9 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
   const CapabilityLimits& surf = config_.platformCapabilities.surface;
   const bool hasSpeed = surf.cruisingSpeedMps.has_value() || surf.maxForwardSpeedMps.has_value();
   if (!hasSpeed || !surf.maxTurnRateRps.has_value() || surf.maxTurnRateRps.value() <= 0.0) {
-    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "platform_capabilities.surface must define "
-      "cruising/max forward speed and a positive max_turn_rate_rps (they drive the planner)")
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
+                   "platform_capabilities.surface must define "
+                   "cruising/max forward speed and a positive max_turn_rate_rps (they drive the planner)")
     return false;
   }
 
@@ -80,12 +79,11 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
 
   // Vehicle-control strategy (only "sim" is provided here; extend by strategy type).
   if (config_.vehicleControlType != "sim") {
-    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Unknown vehicle_control.type '" << config_.vehicleControlType
-      << "', defaulting to sim")
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "Unknown vehicle_control.type '" << config_.vehicleControlType << "', defaulting to sim")
   }
   vehicle_ = std::make_unique<SimVehicleControl>(
-      config_.platformCapabilities, config_.simVehicle,
-      parseId(config_.identity.navSourceId),
+      config_.platformCapabilities, config_.simVehicle, parseId(config_.identity.navSourceId),
       std::make_shared<CycloneSender<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>>(
           participant_, UMAA::SA::GlobalPoseStatus::GlobalPoseReportTypeTopic, wqos),
       std::make_shared<CycloneSender<UMAA::SA::SpeedStatus::SpeedReportType>>(
@@ -103,8 +101,8 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
   poseConsumer_ = std::make_shared<GlobalPoseReportConsumer>(
       std::make_shared<CycloneReader<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>>(
           participant_, UMAA::SA::GlobalPoseStatus::GlobalPoseReportTypeTopic, rqos));
-  speedConsumer_ = std::make_shared<SpeedReportConsumer>(
-      std::make_shared<CycloneReader<UMAA::SA::SpeedStatus::SpeedReportType>>(
+  speedConsumer_ =
+      std::make_shared<SpeedReportConsumer>(std::make_shared<CycloneReader<UMAA::SA::SpeedStatus::SpeedReportType>>(
           participant_, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, rqos));
   velocityConsumer_ = std::make_shared<VelocityReportConsumer>(
       std::make_shared<CycloneReader<UMAA::SA::VelocityStatus::VelocityReportType>>(
@@ -141,9 +139,9 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
           participant_, UMAA::MO::GlobalVectorControl::GlobalVectorCommandStatusTypeTopic, wqos),
       std::make_shared<CycloneSender<GlobalVectorExecutionStatusReportType>>(
           participant_, UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportTypeTopic, wqos));
-  vectorProvider_ = std::make_unique<VectorControlServiceProvider>(
-      parseId(config_.identity.vectorSourceId), vectorIo, brain_.get(), maxForwardSpeed,
-      supervisor_.get(), modeManager_.get());
+  vectorProvider_ =
+      std::make_unique<VectorControlServiceProvider>(parseId(config_.identity.vectorSourceId), vectorIo, brain_.get(),
+                                                     maxForwardSpeed, supervisor_.get(), modeManager_.get());
 
   // Waypoint control provider (with large-list element reader)
   auto waypointIo = std::make_shared<WaypointControlServiceProviderIo>(
@@ -184,8 +182,9 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
 
 bool AutopilotApp::initializeConstraintServices() {
   if (config_.identity.constraintsSourceId.empty()) {
-    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "identity.constraints_source_id not set; MM constraint "
-      "services disabled")
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                  "identity.constraints_source_id not set; MM constraint "
+                  "services disabled")
     return true;
   }
   if (!validSourceId(config_.identity.constraintsSourceId, "constraints_source_id")) {
@@ -206,50 +205,46 @@ bool AutopilotApp::initializeConstraintServices() {
 
   // Conditional report provider: owns the working conditional set and every payload topic
   auto reportIo = std::make_shared<arlcore::umaa::ConditionalReportProviderIo>(
-      std::make_shared<CycloneSender<condReport::ConditionalReportType>>(
-          participant_, condReport::ConditionalReportTypeTopic, wqos),
+      std::make_shared<CycloneSender<condReport::ConditionalReportType>>(participant_,
+                                                                         condReport::ConditionalReportTypeTopic, wqos),
       std::make_shared<CycloneSender<condReport::ConditionalReportTypeConditionalsSetElement>>(
           participant_, condReport::ConditionalReportTypeConditionalsSetElementTopic, largeWqos),
       std::make_shared<CycloneSender<cond::ConstraintViolatedConditionalType>>(
           participant_, cond::ConstraintViolatedConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::DepthConditionalType>>(
-          participant_, cond::DepthConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::DepthRateConditionalType>>(
-          participant_, cond::DepthRateConditionalTypeTopic, wqos),
+      std::make_shared<CycloneSender<cond::DepthConditionalType>>(participant_, cond::DepthConditionalTypeTopic, wqos),
+      std::make_shared<CycloneSender<cond::DepthRateConditionalType>>(participant_, cond::DepthRateConditionalTypeTopic,
+                                                                      wqos),
       std::make_shared<CycloneSender<cond::EmitterPresetConditionalType>>(
           participant_, cond::EmitterPresetConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::ExpConditionalType>>(
-          participant_, cond::ExpConditionalTypeTopic, wqos),
+      std::make_shared<CycloneSender<cond::ExpConditionalType>>(participant_, cond::ExpConditionalTypeTopic, wqos),
       std::make_shared<CycloneSender<cond::HeadingSectorConditionalType>>(
           participant_, cond::HeadingSectorConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::LogicalANDConditionalType>>(
-          participant_, cond::LogicalANDConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::LogicalNOTConditionalType>>(
-          participant_, cond::LogicalNOTConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::LogicalORConditionalType>>(
-          participant_, cond::LogicalORConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::MissionStateConditionalType>>(
-          participant_, cond::MissionStateConditionalTypeTopic, wqos),
+      std::make_shared<CycloneSender<cond::LogicalANDConditionalType>>(participant_,
+                                                                       cond::LogicalANDConditionalTypeTopic, wqos),
+      std::make_shared<CycloneSender<cond::LogicalNOTConditionalType>>(participant_,
+                                                                       cond::LogicalNOTConditionalTypeTopic, wqos),
+      std::make_shared<CycloneSender<cond::LogicalORConditionalType>>(participant_, cond::LogicalORConditionalTypeTopic,
+                                                                      wqos),
+      std::make_shared<CycloneSender<cond::MissionStateConditionalType>>(participant_,
+                                                                         cond::MissionStateConditionalTypeTopic, wqos),
       std::make_shared<CycloneSender<cond::ObjectiveStateConditionalType>>(
           participant_, cond::ObjectiveStateConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::PitchRateConditionalType>>(
-          participant_, cond::PitchRateConditionalTypeTopic, wqos),
+      std::make_shared<CycloneSender<cond::PitchRateConditionalType>>(participant_, cond::PitchRateConditionalTypeTopic,
+                                                                      wqos),
       std::make_shared<CycloneSender<cond::RelativeSpeedConditionalType>>(
           participant_, cond::RelativeSpeedConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::RollRateConditionalType>>(
-          participant_, cond::RollRateConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::SpeedConditionalType>>(
-          participant_, cond::SpeedConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::TaskStateConditionalType>>(
-          participant_, cond::TaskStateConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::TimeConditionalType>>(
-          participant_, cond::TimeConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::WaterZoneConditionalType>>(
-          participant_, cond::WaterZoneConditionalTypeTopic, wqos),
-      std::make_shared<CycloneSender<cond::YawRateConditionalType>>(
-          participant_, cond::YawRateConditionalTypeTopic, wqos));
-  conditionalReportProvider_ = std::make_shared<arlcore::umaa::conditional::ConditionalReportProvider>(
-      constraintsId, reportIo);
+      std::make_shared<CycloneSender<cond::RollRateConditionalType>>(participant_, cond::RollRateConditionalTypeTopic,
+                                                                     wqos),
+      std::make_shared<CycloneSender<cond::SpeedConditionalType>>(participant_, cond::SpeedConditionalTypeTopic, wqos),
+      std::make_shared<CycloneSender<cond::TaskStateConditionalType>>(participant_, cond::TaskStateConditionalTypeTopic,
+                                                                      wqos),
+      std::make_shared<CycloneSender<cond::TimeConditionalType>>(participant_, cond::TimeConditionalTypeTopic, wqos),
+      std::make_shared<CycloneSender<cond::WaterZoneConditionalType>>(participant_, cond::WaterZoneConditionalTypeTopic,
+                                                                      wqos),
+      std::make_shared<CycloneSender<cond::YawRateConditionalType>>(participant_, cond::YawRateConditionalTypeTopic,
+                                                                    wqos));
+  conditionalReportProvider_ =
+      std::make_shared<arlcore::umaa::conditional::ConditionalReportProvider>(constraintsId, reportIo);
 
   // Factory io: shares the SA nav consumers; the specialization readers see both the
   // console-published payloads and our own re-published instances (loopback)
@@ -257,48 +252,44 @@ bool AutopilotApp::initializeConstraintServices() {
       poseConsumer_, speedConsumer_, velocityConsumer_,
       std::make_shared<CycloneReader<cond::ConstraintViolatedConditionalType>>(
           participant_, cond::ConstraintViolatedConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::DepthConditionalType>>(
-          participant_, cond::DepthConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::DepthRateConditionalType>>(
-          participant_, cond::DepthRateConditionalTypeTopic, rqos),
+      std::make_shared<CycloneReader<cond::DepthConditionalType>>(participant_, cond::DepthConditionalTypeTopic, rqos),
+      std::make_shared<CycloneReader<cond::DepthRateConditionalType>>(participant_, cond::DepthRateConditionalTypeTopic,
+                                                                      rqos),
       std::make_shared<CycloneReader<cond::EmitterPresetConditionalType>>(
           participant_, cond::EmitterPresetConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::ExpConditionalType>>(
-          participant_, cond::ExpConditionalTypeTopic, rqos),
+      std::make_shared<CycloneReader<cond::ExpConditionalType>>(participant_, cond::ExpConditionalTypeTopic, rqos),
       std::make_shared<CycloneReader<cond::HeadingSectorConditionalType>>(
           participant_, cond::HeadingSectorConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::LogicalANDConditionalType>>(
-          participant_, cond::LogicalANDConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::LogicalNOTConditionalType>>(
-          participant_, cond::LogicalNOTConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::LogicalORConditionalType>>(
-          participant_, cond::LogicalORConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::MissionStateConditionalType>>(
-          participant_, cond::MissionStateConditionalTypeTopic, rqos),
+      std::make_shared<CycloneReader<cond::LogicalANDConditionalType>>(participant_,
+                                                                       cond::LogicalANDConditionalTypeTopic, rqos),
+      std::make_shared<CycloneReader<cond::LogicalNOTConditionalType>>(participant_,
+                                                                       cond::LogicalNOTConditionalTypeTopic, rqos),
+      std::make_shared<CycloneReader<cond::LogicalORConditionalType>>(participant_, cond::LogicalORConditionalTypeTopic,
+                                                                      rqos),
+      std::make_shared<CycloneReader<cond::MissionStateConditionalType>>(participant_,
+                                                                         cond::MissionStateConditionalTypeTopic, rqos),
       std::make_shared<CycloneReader<cond::ObjectiveStateConditionalType>>(
           participant_, cond::ObjectiveStateConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::PitchRateConditionalType>>(
-          participant_, cond::PitchRateConditionalTypeTopic, rqos),
+      std::make_shared<CycloneReader<cond::PitchRateConditionalType>>(participant_, cond::PitchRateConditionalTypeTopic,
+                                                                      rqos),
       std::make_shared<CycloneReader<cond::RelativeSpeedConditionalType>>(
           participant_, cond::RelativeSpeedConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::RollRateConditionalType>>(
-          participant_, cond::RollRateConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::SpeedConditionalType>>(
-          participant_, cond::SpeedConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::TaskStateConditionalType>>(
-          participant_, cond::TaskStateConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::TimeConditionalType>>(
-          participant_, cond::TimeConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::WaterZoneConditionalType>>(
-          participant_, cond::WaterZoneConditionalTypeTopic, rqos),
-      std::make_shared<CycloneReader<cond::YawRateConditionalType>>(
-          participant_, cond::YawRateConditionalTypeTopic, rqos));
+      std::make_shared<CycloneReader<cond::RollRateConditionalType>>(participant_, cond::RollRateConditionalTypeTopic,
+                                                                     rqos),
+      std::make_shared<CycloneReader<cond::SpeedConditionalType>>(participant_, cond::SpeedConditionalTypeTopic, rqos),
+      std::make_shared<CycloneReader<cond::TaskStateConditionalType>>(participant_, cond::TaskStateConditionalTypeTopic,
+                                                                      rqos),
+      std::make_shared<CycloneReader<cond::TimeConditionalType>>(participant_, cond::TimeConditionalTypeTopic, rqos),
+      std::make_shared<CycloneReader<cond::WaterZoneConditionalType>>(participant_, cond::WaterZoneConditionalTypeTopic,
+                                                                      rqos),
+      std::make_shared<CycloneReader<cond::YawRateConditionalType>>(participant_, cond::YawRateConditionalTypeTopic,
+                                                                    rqos));
   conditionalFactory_ = std::make_shared<arlcore::umaa::conditional::ConditionalFactory>(conditionalFactoryIo_);
 
   // Loopback read-back of our own report; the consumer resolves evaluable conditionals
   conditionalReportConsumer_ = std::make_shared<arlcore::umaa::conditional::ConditionalReportConsumer>(
-      std::make_shared<CycloneReader<condReport::ConditionalReportType>>(
-          participant_, condReport::ConditionalReportTypeTopic, rqos),
+      std::make_shared<CycloneReader<condReport::ConditionalReportType>>(participant_,
+                                                                         condReport::ConditionalReportTypeTopic, rqos),
       std::make_shared<CycloneReader<condReport::ConditionalReportTypeConditionalsSetElement>>(
           participant_, condReport::ConditionalReportTypeConditionalsSetElementTopic, largeRqos),
       conditionalFactory_);
@@ -341,11 +332,9 @@ bool AutopilotApp::initializeConstraintServices() {
 
   // Supervisor: snapshot authority, zone map feed, state reports, safety gate
   zoneMap_ = std::make_unique<ZoneMap>(config_.zones);
-  auto stateSender = std::make_shared<CycloneSender<
-      UMAA::MM::ConditionalStateReport::ConditionalStateReportType>>(
+  auto stateSender = std::make_shared<CycloneSender<UMAA::MM::ConditionalStateReport::ConditionalStateReportType>>(
       participant_, UMAA::MM::ConditionalStateReport::ConditionalStateReportTypeTopic, wqos);
-  supervisor_ = std::make_shared<ConstraintSupervisor>(config_, &navState_, zoneMap_.get(),
-                                                       stateSender, constraintsId);
+  supervisor_ = std::make_shared<ConstraintSupervisor>(config_, &navState_, zoneMap_.get(), stateSender, constraintsId);
   conditionalReportConsumer_->registerObserver(supervisor_->conditionalSetObserver());
   activeConstraintsProvider_->registerObserver(supervisor_->activeSetObserver());
   brain_->setConstraintSource(supervisor_.get());
@@ -363,48 +352,48 @@ bool AutopilotApp::initializeConstraintServices() {
       return false;
     }
     UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Ignoring invalid SRP configuration (strategy is '"
-      << config_.safety.safeMode.strategy << "'): " << srpError)
+                                           << config_.safety.safeMode.strategy << "'): " << srpError)
   }
   if (config_.safety.safeMode.strategy == "srp" && !safeReturnPath_.has_value()) {
-    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "safe_mode.strategy is 'srp' with no CSV configured; "
-      "falling back to zero-speed hold")
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                  "safe_mode.strategy is 'srp' with no CSV configured; "
+                  "falling back to zero-speed hold")
   }
 
   // Arm the violation FSM with the configured safe-mode strategy.
   supervisor_->attachSafety(brain_.get(), makeSafeModeStrategy(config_.safety, safeReturnPath_));
 
-  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "MM constraint services initialized (source "
-    << config_.identity.constraintsSourceId << ")")
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                "MM constraint services initialized (source " << config_.identity.constraintsSourceId << ")")
   return true;
 }
 
 bool AutopilotApp::initializeOperationalModeServices() {
   if (config_.identity.operationalModeControlSourceId.empty()) {
-    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "identity.operational_mode_control_source_id not set; MM "
-      "operational mode services disabled")
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                  "identity.operational_mode_control_source_id not set; MM "
+                  "operational mode services disabled")
     return true;
   }
-  if (!validSourceId(config_.identity.operationalModeControlSourceId,
-                     "operational_mode_control_source_id") ||
-      !validSourceId(config_.identity.operationalModeStatusSourceId,
-                     "operational_mode_status_source_id")) {
+  if (!validSourceId(config_.identity.operationalModeControlSourceId, "operational_mode_control_source_id") ||
+      !validSourceId(config_.identity.operationalModeStatusSourceId, "operational_mode_status_source_id")) {
     // The pair is configured together: a control service without the status report is
     // UMAA-non-compliant, and a report without the control service is pointless.
     return false;
   }
 
-  modeManager_ = std::make_unique<OperationalModeManager>(config_.operationalMode,
-                                                          parseId(config_.identity.platformId));
+  modeManager_ =
+      std::make_unique<OperationalModeManager>(config_.operationalMode, parseId(config_.identity.platformId));
 
   arlcore::io::CycloneQosProviderWrapper qosProvider(config_.dds.qosFile, config_.dds.domainQosProfile);
   const auto rqos = qosProvider.datareader_qos();
   const auto wqos = qosProvider.datawriter_qos();
 
-  operationalModeReportProvider_ = std::make_unique<
-      ReportProvider<UMAA::MM::OperationalModeStatus::OperationalModeReportType>>(
-      parseId(config_.identity.operationalModeStatusSourceId),
-      std::make_shared<CycloneSender<UMAA::MM::OperationalModeStatus::OperationalModeReportType>>(
-          participant_, UMAA::MM::OperationalModeStatus::OperationalModeReportTypeTopic, wqos));
+  operationalModeReportProvider_ =
+      std::make_unique<ReportProvider<UMAA::MM::OperationalModeStatus::OperationalModeReportType>>(
+          parseId(config_.identity.operationalModeStatusSourceId),
+          std::make_shared<CycloneSender<UMAA::MM::OperationalModeStatus::OperationalModeReportType>>(
+              participant_, UMAA::MM::OperationalModeStatus::OperationalModeReportTypeTopic, wqos));
 
   auto modeIo = std::make_shared<OperationalModeControlProviderIo>(
       std::make_shared<CycloneReader<OperationalModeCommandType>>(
@@ -423,8 +412,7 @@ bool AutopilotApp::initializeOperationalModeServices() {
     }
     // Leaving MANUAL lands in STANDBY and the human may have driven anywhere, so replan a
     // stale safe-mode plan; any other STANDBY entry must not disturb a running safe maneuver.
-    if (supervisor_ && lastReportedMode_ == OperationalMode::MANUAL &&
-        mode == OperationalMode::STANDBY) {
+    if (supervisor_ && lastReportedMode_ == OperationalMode::MANUAL && mode == OperationalMode::STANDBY) {
       supervisor_->refreshSafeModePlan();
     }
     lastReportedMode_ = mode;
@@ -435,7 +423,7 @@ bool AutopilotApp::initializeOperationalModeServices() {
   modeManager_->beginStep(vehicle_->isManualEngaged());
 
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "MM operational mode services initialized (control source "
-    << config_.identity.operationalModeControlSourceId << ")")
+                                         << config_.identity.operationalModeControlSourceId << ")")
   return true;
 }
 
@@ -443,8 +431,7 @@ void AutopilotApp::publishOperationalMode(OperationalMode mode) {
   if (!operationalModeReportProvider_) {
     return;
   }
-  using OperationalModeEnumType =
-      UMAA::Common::MaritimeEnumeration::OperationalModeEnumModule::OperationalModeEnumType;
+  using OperationalModeEnumType = UMAA::Common::MaritimeEnumeration::OperationalModeEnumModule::OperationalModeEnumType;
   UMAA::MM::OperationalModeStatus::OperationalModeReportType report;
   switch (mode) {
     case OperationalMode::MANUAL:
@@ -527,8 +514,7 @@ void AutopilotApp::step() {
   vectorProvider_->cycle();
   waypointProvider_->cycle();
   if (modeManager_) {
-    modeManager_->endStep(commandClassActive(CommandClass::LOCAL),
-                          commandClassActive(CommandClass::REMOTE));
+    modeManager_->endStep(commandClassActive(CommandClass::LOCAL), commandClassActive(CommandClass::REMOTE));
     // Periodic republish (on top of on-change publication) so consumers can treat report
     // age as a liveness signal rather than "time since the last mode change".
     if (std::chrono::steady_clock::now() - lastModeReportAt_ >= std::chrono::seconds(1)) {
@@ -554,8 +540,6 @@ void AutopilotApp::run() {
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot control loop stopped")
 }
 
-void AutopilotApp::stop() {
-  running_ = false;
-}
+void AutopilotApp::stop() { running_ = false; }
 
 }  // namespace arlcore::autopilot

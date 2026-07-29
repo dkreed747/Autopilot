@@ -1,6 +1,9 @@
 //! \brief End-to-end waypoint mission driver: publishes a UMAA Global Waypoint mission and
 //! records the track, command status, and planned path to files (see tools/README.md).
 
+#include <GeographicLib/LocalCartesian.hpp>
+#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
+#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
 #include <chrono>
 #include <filesystem>  // NOLINT(build/c++17)
 #include <fstream>
@@ -10,22 +13,17 @@
 #include <thread>
 #include <vector>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
-#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
-#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
-
-#include "autopilot/config/AutopilotConfig.hpp"
 #include "CycloneQosProviderWrapper.h"
 #include "CycloneReader.h"
 #include "CycloneUtilities.h"
+#include "InternalTypes.h"
+#include "UuidFactory.h"
+#include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/config/YamlConfigLoader.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
 #include "autopilot/guidance/MissionRoute.hpp"
 #include "autopilot/guidance/PlannerParamsFactory.hpp"
-#include "UuidFactory.h"
 #include "clients/WaypointMissionClient.hpp"
-#include "autopilot/config/YamlConfigLoader.hpp"
-#include "InternalTypes.h"
 
 using arlcore::autopilot::MissionWaypoint;
 using arlcore::autopilot::tools::WaypointMissionClient;
@@ -54,8 +52,7 @@ int main(int argc, char** argv) {
 
   // Mission from the CSV when given (coordinates relative to the sim start), otherwise a
   // built-in closed loop with turns in both directions.
-  GeographicLib::LocalCartesian frame(config.simVehicle.initialLatitudeDeg,
-                                      config.simVehicle.initialLongitudeDeg, 0.0);
+  GeographicLib::LocalCartesian frame(config.simVehicle.initialLatitudeDeg, config.simVehicle.initialLongitudeDeg, 0.0);
   std::vector<MissionWaypoint> route;
   if (!missionPath.empty()) {
     route = arlcore::autopilot::loadMissionCsv(missionPath, frame);
@@ -63,8 +60,7 @@ int main(int argc, char** argv) {
       std::cerr << "Failed to load mission from " << missionPath << std::endl;
       return 1;
     }
-    std::cout << "Loaded mission from " << missionPath << " (" << route.size()
-              << " waypoints)" << std::endl;
+    std::cout << "Loaded mission from " << missionPath << " (" << route.size() << " waypoints)" << std::endl;
   } else {
     for (const auto& [e, n] : std::vector<std::pair<flt64_t, flt64_t>>{
              {0.0, 350.0}, {250.0, 600.0}, {500.0, 350.0}, {250.0, 100.0}, {-50.0, 350.0}}) {
@@ -86,8 +82,7 @@ int main(int argc, char** argv) {
     wpCsv.precision(10);
     wpCsv << "index,lat_deg,lon_deg,capture_radius_m,arrival_yaw_rad,elev_value_m,elev_frame\n";
     for (std::size_t i = 0; i < waypoints.size(); i++) {
-      wpCsv << i << "," << route[i].latDeg << "," << route[i].lonDeg << ","
-            << route[i].captureRadiusM << ",";
+      wpCsv << i << "," << route[i].latDeg << "," << route[i].lonDeg << "," << route[i].captureRadiusM << ",";
       if (route[i].arrivalYawRad.has_value()) {
         wpCsv << route[i].arrivalYawRad.value();
       }
@@ -121,8 +116,8 @@ int main(int argc, char** argv) {
   // Nav readers for the track recording; the mission client owns the command-side IO.
   auto poseReader = std::make_shared<CycloneReader<GlobalPoseReportType>>(
       participant, UMAA::SA::GlobalPoseStatus::GlobalPoseReportTypeTopic, rqos);
-  auto speedReader = std::make_shared<CycloneReader<SpeedReportType>>(
-      participant, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, rqos);
+  auto speedReader =
+      std::make_shared<CycloneReader<SpeedReportType>>(participant, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, rqos);
 
   // The runner acts as this platform's onboard autonomy: its commands classify LOCAL and
   // (with implicit transitions enabled) drive the autopilot into AUTONOMOUS.
@@ -138,8 +133,8 @@ int main(int argc, char** argv) {
     std::cerr << "Failed to publish waypoint command" << std::endl;
     return 1;
   }
-  std::cout << "Mission command published (session " << sessionId << ", "
-            << waypoints.size() << " waypoints)" << std::endl;
+  std::cout << "Mission command published (session " << sessionId << ", " << waypoints.size() << " waypoints)"
+            << std::endl;
 
   std::ofstream track(outDir + "/track.csv");
   track.precision(10);
@@ -152,8 +147,7 @@ int main(int argc, char** argv) {
   std::string finalStatus = "TIMEOUT";
 
   while (client.active() && std::chrono::steady_clock::now() < deadline) {
-    const flt64_t elapsed =
-        std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - start).count();
+    const flt64_t elapsed = std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - start).count();
 
     SpeedReportType speed;
     if (speedReader->readLatest(&speed) == ReadStatus::SUCCESS && speed.speedOverGround().has_value()) {
@@ -161,9 +155,8 @@ int main(int argc, char** argv) {
     }
     GlobalPoseReportType pose;
     if (poseReader->readLatest(&pose) == ReadStatus::SUCCESS) {
-      track << elapsed << "," << pose.position().geodeticLatitude() << ","
-            << pose.position().geodeticLongitude() << "," << pose.attitude().yaw().yaw() << ","
-            << lastSpeed << ",";
+      track << elapsed << "," << pose.position().geodeticLatitude() << "," << pose.position().geodeticLongitude() << ","
+            << pose.attitude().yaw().yaw() << "," << lastSpeed << ",";
       if (pose.depth().has_value()) {
         track << pose.depth().value();
       }
@@ -175,8 +168,8 @@ int main(int argc, char** argv) {
     }
 
     for (const auto& update : client.pollStatus()) {
-      std::cout << "[" << elapsed << "s] command status: " << update.status
-                << " (" << update.logMessage << ")" << std::endl;
+      std::cout << "[" << elapsed << "s] command status: " << update.status << " (" << update.logMessage << ")"
+                << std::endl;
       statusLog << elapsed << " " << update.status << " " << update.logMessage << "\n";
       if (update.terminal) {
         finalStatus = update.status;

@@ -1,11 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <GeographicLib/LocalCartesian.hpp>
 #include <cmath>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
-#include "autopilot/safety/RecoveryGuidance.hpp"
 #include "InternalTypes.h"
+#include "autopilot/safety/RecoveryGuidance.hpp"
 
 constexpr flt64_t kLat = 39.0;
 constexpr flt64_t kLon = -76.5;

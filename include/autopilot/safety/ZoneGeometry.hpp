@@ -5,9 +5,9 @@
 #include <utility>
 #include <vector>
 
-#include "autopilot/safety/ConstraintTypes.hpp"
-#include "autopilot/guidance/DubinsPath.hpp"
 #include "InternalTypes.h"
+#include "autopilot/guidance/DubinsPath.hpp"
+#include "autopilot/safety/ConstraintTypes.hpp"
 
 namespace arlcore::autopilot {
 
@@ -84,8 +84,7 @@ class ZoneSet {
   //! \brief Distance along the ray from `origin` in direction `dir` (unit vector) at which the
   //! clearance first drops below `marginM`, or nullopt if the ray stays clear out to `maxRangeM`.
   //! If the origin itself is below margin, returns 0.
-  std::optional<flt64_t> raycastFirstHit(const Vec2& origin, const Vec2& dir, flt64_t marginM,
-                                        flt64_t maxRangeM) const;
+  std::optional<flt64_t> raycastFirstHit(const Vec2& origin, const Vec2& dir, flt64_t marginM, flt64_t maxRangeM) const;
 
   //! \brief The nearest point to `p` with clearance >= `marginM`: iterative projection along the
   //! clearance gradient, with an expanding ring search as fallback for multi-zone corners.

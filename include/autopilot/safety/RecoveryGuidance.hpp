@@ -4,10 +4,10 @@
 #include <chrono>
 #include <optional>
 
+#include "InternalTypes.h"
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/guidance/ControlVector.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
-#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
@@ -22,8 +22,7 @@ class RecoveryGuidance {
 
   //! \brief Pick the recovery target for the current violation. Returns false when no
   //! compliant point could be found (the caller keeps the zero-speed hold while grace runs).
-  bool begin(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM,
-             const ZoneMap& map);
+  bool begin(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM, const ZoneMap& map);
 
   //! \brief Whether a recovery target is currently held.
   bool active() const { return target_.has_value(); }
@@ -31,12 +30,11 @@ class RecoveryGuidance {
   //! \brief The control vector for this tick: heading at the carrot, recovery speed,
   //! elevation held. The target is re-validated (and re-picked when constraints changed);
   //! nullopt when there is no reachable target.
-  std::optional<ControlVector> tick(const GeoPoint& position, flt64_t depthM,
-                                    std::optional<flt64_t> asfM, const ZoneMap& map);
+  std::optional<ControlVector> tick(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM,
+                                    const ZoneMap& map);
 
   //! \brief Whether the position has classified COMPLIANT for the configured hold time.
-  bool complete(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM,
-                const ZoneMap& map);
+  bool complete(const GeoPoint& position, flt64_t depthM, std::optional<flt64_t> asfM, const ZoneMap& map);
 
   //! \brief Drop the recovery target and timers.
   void end();

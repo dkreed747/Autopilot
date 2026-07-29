@@ -1,6 +1,10 @@
 //! \brief Live mission-control web console bridging the UMAA DDS bus to a browser GUI; the
 //! REST API is documented in tools/README.md.
 
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointExecutionStatusReportType.hpp>
+#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
+#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
+#include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -16,30 +20,25 @@
 #include <utility>
 #include <vector>
 
-#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointExecutionStatusReportType.hpp>
-#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
-#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
-#include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
-
-#include "autopilot/config/AutopilotConfig.hpp"
-#include "clients/ClientIdentity.hpp"
-#include "clients/ConstraintsClient.hpp"
 #include "CycloneQosProviderWrapper.h"
 #include "CycloneReader.h"
 #include "CycloneUtilities.h"
-#include "autopilot/guidance/DubinsPathPlanner.hpp"
-#include "autopilot/guidance/MissionRoute.hpp"
 #include "NumericGuid.h"
-#include "clients/OperationalModeClient.hpp"
-#include "autopilot/guidance/PlannerParamsFactory.hpp"
-#include "autopilot/guidance/ToleranceUtils.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
-#include "monitors/VectorActivityMonitor.hpp"
-#include "clients/VectorCommandClient.hpp"
-#include "monitors/WaypointActivityMonitor.hpp"
-#include "clients/WaypointMissionClient.hpp"
+#include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/config/YamlConfigLoader.hpp"
+#include "autopilot/guidance/DubinsPathPlanner.hpp"
+#include "autopilot/guidance/MissionRoute.hpp"
+#include "autopilot/guidance/PlannerParamsFactory.hpp"
+#include "autopilot/guidance/ToleranceUtils.hpp"
+#include "clients/ClientIdentity.hpp"
+#include "clients/ConstraintsClient.hpp"
+#include "clients/OperationalModeClient.hpp"
+#include "clients/VectorCommandClient.hpp"
+#include "clients/WaypointMissionClient.hpp"
+#include "monitors/VectorActivityMonitor.hpp"
+#include "monitors/WaypointActivityMonitor.hpp"
 
 // clang-format off
 // httplib drags in <netdb.h>, whose NO_DATA/NO_ADDRESS macros collide with the SDK's
@@ -99,8 +98,7 @@ class ConsoleState {
     execStatus_ = exec;
     lastExecAt_ = std::chrono::steady_clock::now();
   }
-  void pushCommandStatus(const std::string& status, const std::string& reason,
-                         const std::string& message) {
+  void pushCommandStatus(const std::string& status, const std::string& reason, const std::string& message) {
     std::scoped_lock lock(mutex_);
     statusHistory_.push_back({status, reason, message});
     while (statusHistory_.size() > 25) {
@@ -143,8 +141,7 @@ class ConsoleState {
     std::scoped_lock lock(mutex_);
     traffic_ = std::move(traffic);
   }
-  void pushVectorStatus(const std::string& status, const std::string& reason,
-                        const std::string& message) {
+  void pushVectorStatus(const std::string& status, const std::string& reason, const std::string& message) {
     std::scoped_lock lock(mutex_);
     vectorStatusHistory_.push_back({status, reason, message});
     while (vectorStatusHistory_.size() > 25) {
@@ -174,8 +171,7 @@ class ConsoleState {
       if (p.depth().has_value()) t["depth_m"] = p.depth().value();
       if (p.altitudeASF().has_value()) t["alt_asf_m"] = p.altitudeASF().value();
       if (p.altitude().has_value()) t["alt_msl_m"] = p.altitude().value();
-      const flt64_t ageS = std::chrono::duration<flt64_t>(
-          std::chrono::steady_clock::now() - lastPoseAt_).count();
+      const flt64_t ageS = std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - lastPoseAt_).count();
       t["age_s"] = ageS;
       if (speed_.has_value() && speed_->speedOverGround().has_value()) {
         t["sog_mps"] = speed_->speedOverGround().value();
@@ -196,8 +192,7 @@ class ConsoleState {
     m["planned_path"] = previewPath_.is_null() ? json::array() : previewPath_;
     m["status_history"] = json::array();
     for (const auto& s : statusHistory_) {
-      m["status_history"].push_back({{"status", s.status}, {"reason", s.reason},
-                                     {"message", s.message}});
+      m["status_history"].push_back({{"status", s.status}, {"reason", s.reason}, {"message", s.message}});
     }
     if (execStatus_.has_value()) {
       const auto& e = execStatus_.value();
@@ -213,8 +208,7 @@ class ConsoleState {
       ex["elevation_achieved"] = e.elevationAchieved();
       ex["speed_achieved"] = e.speedAchieved();
       ex["track_line_achieved"] = e.trackLineAchieved();
-      const flt64_t ageS = std::chrono::duration<flt64_t>(
-          std::chrono::steady_clock::now() - lastExecAt_).count();
+      const flt64_t ageS = std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - lastExecAt_).count();
       ex["age_s"] = ageS;
       j["exec_status"] = ex;
     }
@@ -230,8 +224,7 @@ class ConsoleState {
       json v = vector_;
       v["status_history"] = json::array();
       for (const auto& s : vectorStatusHistory_) {
-        v["status_history"].push_back({{"status", s.status}, {"reason", s.reason},
-                                       {"message", s.message}});
+        v["status_history"].push_back({{"status", s.status}, {"reason", s.reason}, {"message", s.message}});
       }
       j["vector"] = v;
     }
@@ -313,7 +306,7 @@ static json waypointsToJson(const std::vector<MissionWaypoint>& route) {
 
 //! \brief Plan the ideal Dubins route for a candidate mission from the given start pose.
 static json previewPath(const std::vector<MissionWaypoint>& route, const GlobalPoseReportType& start,
-                 const AutopilotConfig& config) {
+                        const AutopilotConfig& config) {
   std::vector<GlobalWaypointType> waypoints;
   for (const auto& wp : route) {
     waypoints.push_back(arlcore::autopilot::makeWaypoint(wp));
@@ -365,8 +358,7 @@ static json constraintsJson(const ConstraintsClient& client) {
   }
   if (client.lastEvent().has_value()) {
     const ConstraintEvent& e = client.lastEvent().value();
-    j["last_event"] = {{"service", e.service}, {"status", e.status}, {"reason", e.reason},
-                       {"message", e.message}};
+    j["last_event"] = {{"service", e.service}, {"status", e.status}, {"reason", e.reason}, {"message", e.message}};
   }
   return j;
 }
@@ -400,8 +392,8 @@ static void validateConstraintBody(const json& body) {
       const bool ordered = ceilingFrame == "depth" ? ceiling < floor : ceiling > floor;
       if (!ordered) {
         throw std::runtime_error(ceilingFrame == "depth"
-            ? "zone ceiling_m (shallower) must be less than floor_m (deeper)"
-            : "zone ceiling_m (shallower) must be a larger above-floor altitude than floor_m");
+                                     ? "zone ceiling_m (shallower) must be less than floor_m (deeper)"
+                                     : "zone ceiling_m (shallower) must be a larger above-floor altitude than floor_m");
       }
     }
   } else if (type == "speed" || type == "depth") {
@@ -433,10 +425,8 @@ constexpr flt64_t kRcServerWatchdogS = 1.0;  // browser-silence threshold before
 
 //! \brief Classify a bus command's origin: the console itself, this platform's onboard
 //! autonomy, or any other (remote) commander. A nil autopilot platform id can never match.
-static std::string classifySource(const arlcore::NumericGuid& sourceId,
-                           const arlcore::NumericGuid& sourceParentId,
-                           const ClientIdentity& console,
-                           const arlcore::NumericGuid& autopilotPlatformId) {
+static std::string classifySource(const arlcore::NumericGuid& sourceId, const arlcore::NumericGuid& sourceParentId,
+                                  const ClientIdentity& console, const arlcore::NumericGuid& autopilotPlatformId) {
   if (sourceId == console.sourceId) {
     return "own";
   }
@@ -510,7 +500,7 @@ static flt64_t secondsUntil(const UMAA::Common::Measurement::DateTime& endTime) 
 //! \brief Every waypoint mission and vector command observed on the bus, classified per
 //! commander so the GUI can color them.
 static json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorActivityMonitor& vecMonitor,
-                 const ClientIdentity& console, const arlcore::NumericGuid& autopilotPlatformId) {
+                        const ClientIdentity& console, const arlcore::NumericGuid& autopilotPlatformId) {
   const auto now = std::chrono::steady_clock::now();
   json traffic;
   traffic["missions"] = json::array();
@@ -518,8 +508,7 @@ static json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorAc
     json m;
     m["session"] = guidToString(session);
     m["source_id"] = guidToString(mission.sourceId);
-    m["classification"] = classifySource(mission.sourceId, mission.sourceParentId, console,
-                                         autopilotPlatformId);
+    m["classification"] = classifySource(mission.sourceId, mission.sourceParentId, console, autopilotPlatformId);
     if (!mission.lastStatus.empty()) {
       m["status"] = mission.lastStatus;
     }
@@ -538,8 +527,7 @@ static json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorAc
         const auto elev = arlcore::autopilot::tolerance::extractElevation(wp.elevation().value());
         if (elev.has_value()) {
           w["elev_value_m"] = elev->valueM;
-          w["elev_frame"] =
-              elev->frame == arlcore::autopilot::ElevationFrame::DEPTH ? "depth" : "asf";
+          w["elev_frame"] = elev->frame == arlcore::autopilot::ElevationFrame::DEPTH ? "depth" : "asf";
         }
       }
       m["waypoints"].push_back(w);
@@ -555,8 +543,7 @@ static json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorAc
     json v;
     v["session"] = guidToString(session);
     v["source_id"] = guidToString(vec.sourceId);
-    v["classification"] = classifySource(vec.sourceId, vec.sourceParentId, console,
-                                         autopilotPlatformId);
+    v["classification"] = classifySource(vec.sourceId, vec.sourceParentId, console, autopilotPlatformId);
     if (vec.headingRad.has_value()) {
       v["heading_deg"] = vec.headingRad.value() * kRadToDeg;
     }
@@ -655,8 +642,8 @@ int main(int argc, char** argv) {
       port = -1;
     }
     if (port < 1 || port > 65535) {
-      std::cerr << "Usage: mission_console [config.yaml] [port] [webroot] -- invalid port '"
-                << argv[2] << "'" << std::endl;
+      std::cerr << "Usage: mission_console [config.yaml] [port] [webroot] -- invalid port '" << argv[2] << "'"
+                << std::endl;
       return 2;
     }
   }
@@ -675,14 +662,13 @@ int main(int argc, char** argv) {
 
   auto poseReader = std::make_shared<CycloneReader<GlobalPoseReportType>>(
       participant, UMAA::SA::GlobalPoseStatus::GlobalPoseReportTypeTopic, rqos);
-  auto speedReader = std::make_shared<CycloneReader<SpeedReportType>>(
-      participant, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, rqos);
+  auto speedReader =
+      std::make_shared<CycloneReader<SpeedReportType>>(participant, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, rqos);
   auto velocityReader = std::make_shared<CycloneReader<VelocityReportType>>(
       participant, UMAA::SA::VelocityStatus::VelocityReportTypeTopic, rqos);
   // Console identity: platform_id equal to the autopilot's classifies as local autonomy,
   // anything else as a REMOTE operator.
-  const ClientIdentity consoleIdentity =
-      arlcore::autopilot::tools::makeClientIdentity(config.console);
+  const ClientIdentity consoleIdentity = arlcore::autopilot::tools::makeClientIdentity(config.console);
   const arlcore::NumericGuid autopilotPlatformId =
       config.identity.platformId.empty()
           ? arlcore::NumericGuid()
@@ -690,29 +676,26 @@ int main(int argc, char** argv) {
 
   WaypointMissionClient client(
       participant, wqos, rqos,
-      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.waypointSourceId),
-      consoleIdentity);
+      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.waypointSourceId), consoleIdentity);
 
   std::optional<ConstraintsClient> constraintsClient;
   if (!config.identity.constraintsSourceId.empty()) {
     const auto largeSetRqos = qosProvider.datareader_qos(config.dds.largeCollectionsQosProfile);
     constraintsClient.emplace(
         participant, wqos, rqos, largeSetRqos,
-        arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.constraintsSourceId),
-        consoleIdentity);
+        arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.constraintsSourceId), consoleIdentity);
   }
 
   std::optional<OperationalModeClient> modeClient;
   if (!config.identity.operationalModeControlSourceId.empty()) {
-    modeClient.emplace(participant, wqos, rqos,
-                       arlcore::UuidFactory::getInstance().parseGuidFromString(
-                           config.identity.operationalModeControlSourceId),
-                       consoleIdentity);
+    modeClient.emplace(
+        participant, wqos, rqos,
+        arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.operationalModeControlSourceId),
+        consoleIdentity);
   }
 
   VectorCommandClient vectorClient(
-      participant, wqos, rqos,
-      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.vectorSourceId),
+      participant, wqos, rqos, arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.vectorSourceId),
       consoleIdentity);
 
   // Bus-wide observers: every waypoint mission and vector command, whoever commanded it.
@@ -776,8 +759,8 @@ int main(int argc, char** argv) {
         vectorClient.pollAck();
         // Server-side RC deadman: browser heartbeats stopped, so stop the vehicle (the DDS
         // endTime still covers a dead console process).
-        if (rcEngaged && std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() -
-                                                       rcLastBeat).count() > kRcServerWatchdogS) {
+        if (rcEngaged && std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - rcLastBeat).count() >
+                             kRcServerWatchdogS) {
           if (vectorClient.active() && vectorClient.lastSetpoint().has_value()) {
             VectorSetpoint stop = vectorClient.lastSetpoint().value();
             stop.speedMps = 0.0;
@@ -797,7 +780,9 @@ int main(int argc, char** argv) {
   httplib::Server server;
   // Each SSE client pins a worker thread, so a large pool plus a hard stream cap keeps
   // workers free for /api/rc heartbeats — starving them would trip the deadman mid-drive.
-  server.new_task_queue = [] { return new httplib::ThreadPool(16); };  // NOLINT: httplib takes ownership of the raw pointer
+  server.new_task_queue = [] {
+    return new httplib::ThreadPool(16);
+  };  // NOLINT: httplib takes ownership of the raw pointer
   constexpr int32_t kMaxSseClients = 8;
   auto sseClients = std::make_shared<std::atomic<int32_t>>(0);
   if (!server.set_mount_point("/", webRoot)) {
@@ -815,7 +800,8 @@ int main(int argc, char** argv) {
       res.set_content(R"({"error":"too many stream clients"})", "application/json");
       return;
     }
-    res.set_chunked_content_provider("text/event-stream",
+    res.set_chunked_content_provider(
+        "text/event-stream",
         [&state, &running](size_t /*offset*/, httplib::DataSink& sink) {
           if (!running) {
             return false;
@@ -849,8 +835,7 @@ int main(int argc, char** argv) {
       for (const auto& wp : route) {
         waypoints.push_back(arlcore::autopilot::makeWaypoint(wp));
       }
-      const GlobalPoseReportType start =
-          state.latestPose().value_or(fallbackStartPose(config));
+      const GlobalPoseReportType start = state.latestPose().value_or(fallbackStartPose(config));
       const json preview = previewPath(route, start, config);
       const arlcore::NumericGuid session = client.start(waypoints);
       state.setMission(guidToString(session), waypointsToJson(route), preview);
@@ -877,10 +862,8 @@ int main(int argc, char** argv) {
     try {
       const json body = json::parse(req.body);
       const std::vector<MissionWaypoint> route = parseMission(body);
-      const GlobalPoseReportType start =
-          state.latestPose().value_or(fallbackStartPose(config));
-      res.set_content(json{{"path", previewPath(route, start, config)}}.dump(),
-                      "application/json");
+      const GlobalPoseReportType start = state.latestPose().value_or(fallbackStartPose(config));
+      res.set_content(json{{"path", previewPath(route, start, config)}}.dump(), "application/json");
     } catch (const std::exception& e) {
       res.status = 400;
       res.set_content(json{{"error", e.what()}}.dump(), "application/json");
@@ -900,8 +883,7 @@ int main(int argc, char** argv) {
       const auto session = modeClient->command(mode);
       if (!session.has_value()) {
         res.status = 400;
-        res.set_content(R"({"error":"mode must be STANDBY, REMOTE, or AUTONOMOUS"})",
-                        "application/json");
+        res.set_content(R"({"error":"mode must be STANDBY, REMOTE, or AUTONOMOUS"})", "application/json");
         return;
       }
       res.set_content(json{{"session", guidToString(session.value())}}.dump(), "application/json");
@@ -1007,17 +989,13 @@ int main(int argc, char** argv) {
         for (const auto& v : body.at("polygon")) {
           polygon.push_back({v[0].get<flt64_t>(), v[1].get<flt64_t>()});
         }
-        newId = constraintsClient->upsertZone(id, name, type == "keep_in", polygon,
-                                              body.value("ceiling_m", 0.0),
-                                              body.value("ceiling_frame", "depth"),
-                                              body.value("floor_m", 100.0),
+        newId = constraintsClient->upsertZone(id, name, type == "keep_in", polygon, body.value("ceiling_m", 0.0),
+                                              body.value("ceiling_frame", "depth"), body.value("floor_m", 100.0),
                                               body.value("floor_frame", "depth"));
       } else if (type == "speed") {
-        newId = constraintsClient->upsertSpeed(id, name, body.value("op", "lte"),
-                                               body.at("value").get<flt64_t>());
+        newId = constraintsClient->upsertSpeed(id, name, body.value("op", "lte"), body.at("value").get<flt64_t>());
       } else {
-        newId = constraintsClient->upsertDepth(id, name, body.value("op", "lte"),
-                                               body.at("value").get<flt64_t>());
+        newId = constraintsClient->upsertDepth(id, name, body.value("op", "lte"), body.at("value").get<flt64_t>());
       }
       res.set_content(json{{"id", newId}}.dump(), "application/json");
     } catch (const std::exception& e) {
@@ -1026,8 +1004,7 @@ int main(int argc, char** argv) {
     }
   });
 
-  server.Delete(R"(/api/constraints/([0-9a-fA-F-]+))",
-                [&](const httplib::Request& req, httplib::Response& res) {
+  server.Delete(R"(/api/constraints/([0-9a-fA-F-]+))", [&](const httplib::Request& req, httplib::Response& res) {
     if (!constraintsClient.has_value()) {
       res.status = 503;
       res.set_content(R"({"error":"constraints are not configured"})", "application/json");
@@ -1064,9 +1041,8 @@ int main(int argc, char** argv) {
     }
   });
 
-  std::cout << "Mission console listening on http://0.0.0.0:" << port
-            << " (web root: " << webRoot << ", DDS domain " << config.dds.domainId << ")"
-            << std::endl;
+  std::cout << "Mission console listening on http://0.0.0.0:" << port << " (web root: " << webRoot << ", DDS domain "
+            << config.dds.domainId << ")" << std::endl;
   server.listen("0.0.0.0", port);
 
   running = false;

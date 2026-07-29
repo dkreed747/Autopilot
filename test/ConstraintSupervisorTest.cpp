@@ -4,28 +4,26 @@
 #include <vector>
 
 #include "DepthConditional.h"
+#include "InternalTypes.h"
 #include "LocalReaderSender.h"
 #include "SpeedConditional.h"
 #include "UuidFactory.h"
 #include "WaterZoneConditional.h"
-
 #include "autopilot/safety/ConstraintSupervisor.hpp"
-#include "InternalTypes.h"
 
 using ConditionalOperatorEnumType =
     UMAA::Common::MaritimeEnumeration::ConditionalOperatorEnumModule::ConditionalOperatorEnumType;
-using WaterZoneKindEnumType =
-    UMAA::Common::MaritimeEnumeration::WaterZoneKindEnumModule::WaterZoneKindEnumType;
+using WaterZoneKindEnumType = UMAA::Common::MaritimeEnumeration::WaterZoneKindEnumModule::WaterZoneKindEnumType;
 using DateTime = UMAA::Common::Measurement::DateTime;
 using GeoPosition2D = UMAA::Common::Measurement::GeoPosition2D;
 using ConditionalStateReportType = UMAA::MM::ConditionalStateReport::ConditionalStateReportType;
 
-
 const DateTime kStamp(1, 100);
 
-static std::shared_ptr<arlcore::umaa::conditional::WaterZoneConditional> makeZone(
-    WaterZoneKindEnumType kind, flt64_t ceilingDepthM,
-    flt64_t floorDepthM, bool floorAsAsf = false) {
+static std::shared_ptr<arlcore::umaa::conditional::WaterZoneConditional> makeZone(WaterZoneKindEnumType kind,
+                                                                                  flt64_t ceilingDepthM,
+                                                                                  flt64_t floorDepthM,
+                                                                                  bool floorAsAsf = false) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
 
@@ -53,34 +51,30 @@ static std::shared_ptr<arlcore::umaa::conditional::WaterZoneConditional> makeZon
   shape.ShapeVariantTypeSubtypes().PolygonVariantVariant(polygon);
   spec.zone().push_back(shape);
 
-  const arlcore::umaa::conditional::ConditionalType base(conditionalId.getGuid(), "zone",
-                             specId.getGuid(), kStamp,
-                             UMAA::MM::Conditional::WaterZoneConditionalTypeTopic);
+  const arlcore::umaa::conditional::ConditionalType base(conditionalId.getGuid(), "zone", specId.getGuid(), kStamp,
+                                                         UMAA::MM::Conditional::WaterZoneConditionalTypeTopic);
   return std::make_shared<arlcore::umaa::conditional::WaterZoneConditional>(base, spec);
 }
 
-static std::shared_ptr<arlcore::umaa::conditional::SpeedConditional> makeSpeed(
-    ConditionalOperatorEnumType op, flt64_t valueMps) {
+static std::shared_ptr<arlcore::umaa::conditional::SpeedConditional> makeSpeed(ConditionalOperatorEnumType op,
+                                                                               flt64_t valueMps) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const UMAA::MM::Conditional::SpeedConditionalType spec(op, valueMps, kStamp, specId.getGuid());
-  const arlcore::umaa::conditional::ConditionalType base(conditionalId.getGuid(), "speed",
-                             specId.getGuid(), kStamp,
-                             UMAA::MM::Conditional::SpeedConditionalTypeTopic);
+  const arlcore::umaa::conditional::ConditionalType base(conditionalId.getGuid(), "speed", specId.getGuid(), kStamp,
+                                                         UMAA::MM::Conditional::SpeedConditionalTypeTopic);
   return std::make_shared<arlcore::umaa::conditional::SpeedConditional>(base, spec);
 }
 
-static std::shared_ptr<arlcore::umaa::conditional::DepthConditional> makeDepth(
-    ConditionalOperatorEnumType op, flt64_t valueM) {
+static std::shared_ptr<arlcore::umaa::conditional::DepthConditional> makeDepth(ConditionalOperatorEnumType op,
+                                                                               flt64_t valueM) {
   const arlcore::NumericGuid conditionalId = arlcore::UuidFactory::getInstance().generateGuid();
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const UMAA::MM::Conditional::DepthConditionalType spec(op, valueM, kStamp, specId.getGuid());
-  const arlcore::umaa::conditional::ConditionalType base(conditionalId.getGuid(), "depth",
-                             specId.getGuid(), kStamp,
-                             UMAA::MM::Conditional::DepthConditionalTypeTopic);
+  const arlcore::umaa::conditional::ConditionalType base(conditionalId.getGuid(), "depth", specId.getGuid(), kStamp,
+                                                         UMAA::MM::Conditional::DepthConditionalTypeTopic);
   return std::make_shared<arlcore::umaa::conditional::DepthConditional>(base, spec);
 }
-
 
 class ConstraintSupervisorTest : public ::testing::Test {
  protected:
@@ -88,8 +82,8 @@ class ConstraintSupervisorTest : public ::testing::Test {
     config_.safety.stateReportPeriodMs = 0;  // publish on every update() for the tests
     zoneMap_ = std::make_unique<arlcore::autopilot::ZoneMap>(config_.zones);
     stateRw_ = std::make_shared<arlcore::io::LocalReaderSender<ConditionalStateReportType>>();
-    supervisor_ = std::make_unique<arlcore::autopilot::ConstraintSupervisor>(config_, &nav_,
-        zoneMap_.get(), stateRw_, arlcore::UuidFactory::getInstance().generateGuid());
+    supervisor_ = std::make_unique<arlcore::autopilot::ConstraintSupervisor>(
+        config_, &nav_, zoneMap_.get(), stateRw_, arlcore::UuidFactory::getInstance().generateGuid());
   }
 
   arlcore::autopilot::AutopilotConfig config_;
@@ -122,8 +116,7 @@ TEST_F(ConstraintSupervisorTest, BuildsSnapshotFromActiveConditionals) {
   ASSERT_EQ(snapshot.zones[0].shapes.size(), 1u);
   EXPECT_EQ(snapshot.zones[0].shapes[0].polygon.size(), 4u);
   ASSERT_TRUE(snapshot.zones[0].band.ceiling.has_value());
-  EXPECT_EQ(snapshot.zones[0].band.ceiling->frame,
-            arlcore::autopilot::ElevationBound::Frame::DEPTH);
+  EXPECT_EQ(snapshot.zones[0].band.ceiling->frame, arlcore::autopilot::ElevationBound::Frame::DEPTH);
   EXPECT_DOUBLE_EQ(snapshot.zones[0].band.ceiling->value, 5.0);
   ASSERT_TRUE(snapshot.zones[0].band.floor.has_value());
   EXPECT_DOUBLE_EQ(snapshot.zones[0].band.floor->value, 20.0);
@@ -142,8 +135,7 @@ TEST_F(ConstraintSupervisorTest, BuildsSnapshotFromActiveConditionals) {
 
 TEST_F(ConstraintSupervisorTest, MixedFrameZoneBandConverts) {
   // GIVEN: a zone with ceiling at depth 0 and floor 5 m above the sea floor
-  supervisor_->activeSetObserver()->update({
-      makeZone(WaterZoneKindEnumType::OUTSIDE, 0.0, 5.0, /*floorAsAsf=*/true)});
+  supervisor_->activeSetObserver()->update({makeZone(WaterZoneKindEnumType::OUTSIDE, 0.0, 5.0, /*floorAsAsf=*/true)});
 
   // WHEN: the supervisor updates
   supervisor_->update();

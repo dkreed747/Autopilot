@@ -19,17 +19,12 @@ using UMAA::MM::OperationalModeControl::OperationalModeCommandType;
 //! execution-status type.
 class OperationalModeControlProviderIo
     : public arlcore::umaa::domain::UmaaCommandProviderIo<
-          OperationalModeCommandType, OperationalModeCommandAckReportType,
-          OperationalModeCommandStatusType> {
+          OperationalModeCommandType, OperationalModeCommandAckReportType, OperationalModeCommandStatusType> {
  public:
   OperationalModeControlProviderIo(
-      std::shared_ptr<arlcore::io::ReaderBase<OperationalModeCommandType>>
-          commandReader,
-      std::shared_ptr<
-          arlcore::io::SenderBase<OperationalModeCommandAckReportType>>
-          ackSender,
-      std::shared_ptr<arlcore::io::SenderBase<OperationalModeCommandStatusType>>
-          statusSender)
+      std::shared_ptr<arlcore::io::ReaderBase<OperationalModeCommandType>> commandReader,
+      std::shared_ptr<arlcore::io::SenderBase<OperationalModeCommandAckReportType>> ackSender,
+      std::shared_ptr<arlcore::io::SenderBase<OperationalModeCommandStatusType>> statusSender)
       : UmaaCommandProviderIo(commandReader, ackSender, statusSender) {}
 };
 

@@ -1,19 +1,15 @@
 #ifndef AUTOPILOT_CORE_AUTOPILOTAPP_HPP_
 #define AUTOPILOT_CORE_AUTOPILOTAPP_HPP_
 
+#include <UMAA/EO/UVPlatformSpecs/UVPlatformCapabilitiesReportType.hpp>
+#include <UMAA/EO/UVPlatformSpecs/UVPlatformSpecsReportType.hpp>
+#include <UMAA/MM/OperationalModeStatus/OperationalModeReportType.hpp>
 #include <atomic>
 #include <chrono>
+#include <dds/dds.hpp>
 #include <memory>
 
-#include <dds/dds.hpp>
-
-#include <UMAA/EO/UVPlatformSpecs/UVPlatformSpecsReportType.hpp>
-#include <UMAA/EO/UVPlatformSpecs/UVPlatformCapabilitiesReportType.hpp>
-#include <UMAA/MM/OperationalModeStatus/OperationalModeReportType.hpp>
-
 #include "ActiveConstraintsControlProvider.h"
-#include "autopilot/core/AutopilotBrain.hpp"
-#include "autopilot/config/AutopilotConfig.hpp"
 #include "ConditionalAddProvider.h"
 #include "ConditionalDeleteProvider.h"
 #include "ConditionalFactory.h"
@@ -21,22 +17,24 @@
 #include "ConditionalReportConsumer.h"
 #include "ConditionalReportProvider.h"
 #include "ConditionalReportProviderIo.h"
-#include "autopilot/safety/ConstraintSupervisor.hpp"
 #include "GlobalPoseReportConsumer.h"
-#include "autopilot/umaa/GlobalPoseObserver.hpp"
-#include "autopilot/umaa/SpeedObserver.hpp"
-#include "autopilot/umaa/VelocityObserver.hpp"
+#include "ReportProvider.h"
+#include "SpeedReportConsumer.h"
+#include "VelocityReportConsumer.h"
+#include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/core/AutopilotBrain.hpp"
 #include "autopilot/core/NavState.hpp"
 #include "autopilot/modes/OperationalModeControlProvider.hpp"
 #include "autopilot/modes/OperationalModeManager.hpp"
-#include "ReportProvider.h"
+#include "autopilot/safety/ConstraintSupervisor.hpp"
 #include "autopilot/safety/SafeReturnPath.hpp"
-#include "autopilot/vehicle/SimVehicleControl.hpp"
-#include "SpeedReportConsumer.h"
-#include "autopilot/umaa/VectorControlServiceProvider.hpp"
-#include "VelocityReportConsumer.h"
-#include "autopilot/umaa/WaypointControlServiceProvider.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
+#include "autopilot/umaa/GlobalPoseObserver.hpp"
+#include "autopilot/umaa/SpeedObserver.hpp"
+#include "autopilot/umaa/VectorControlServiceProvider.hpp"
+#include "autopilot/umaa/VelocityObserver.hpp"
+#include "autopilot/umaa/WaypointControlServiceProvider.hpp"
+#include "autopilot/vehicle/SimVehicleControl.hpp"
 
 namespace arlcore::autopilot {
 
@@ -81,17 +79,17 @@ class AutopilotApp {
   std::unique_ptr<VectorControlServiceProvider> vectorProvider_;
   std::unique_ptr<WaypointControlServiceProvider> waypointProvider_;
 
-  std::unique_ptr<arlcore::umaa::services::ReportProvider<
-      UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>> specsReportProvider_;
-  std::unique_ptr<arlcore::umaa::services::ReportProvider<
-      UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType>> capabilitiesReportProvider_;
+  std::unique_ptr<arlcore::umaa::services::ReportProvider<UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>>
+      specsReportProvider_;
+  std::unique_ptr<arlcore::umaa::services::ReportProvider<UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType>>
+      capabilitiesReportProvider_;
 
   // MM operational mode services (constructed only when
   // identity.operational_mode_control_source_id is set).
   std::unique_ptr<OperationalModeManager> modeManager_;
   std::unique_ptr<OperationalModeControlProvider> operationalModeProvider_;
-  std::unique_ptr<arlcore::umaa::services::ReportProvider<
-      UMAA::MM::OperationalModeStatus::OperationalModeReportType>> operationalModeReportProvider_;
+  std::unique_ptr<arlcore::umaa::services::ReportProvider<UMAA::MM::OperationalModeStatus::OperationalModeReportType>>
+      operationalModeReportProvider_;
   OperationalMode lastReportedMode_ = OperationalMode::STANDBY;
   std::chrono::steady_clock::time_point lastModeReportAt_{};
 

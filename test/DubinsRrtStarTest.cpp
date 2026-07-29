@@ -3,8 +3,8 @@
 #include <cmath>
 #include <cstdint>
 
-#include "autopilot/guidance/DubinsRrtStar.hpp"
 #include "InternalTypes.h"
+#include "autopilot/guidance/DubinsRrtStar.hpp"
 
 static arlcore::autopilot::DubinsRrtParams testParams() {
   arlcore::autopilot::DubinsRrtParams p;
@@ -47,9 +47,8 @@ TEST(DubinsRrtStarTest, FindsDetourAroundKeepOut) {
   // GIVEN: a keep-out box blocking the direct route from start to goal
   arlcore::autopilot::ZoneSet zones;
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-                arlcore::autopilot::LocalPolygon({{100.0, -80.0}, {200.0, -80.0},
-                                                  {200.0, 80.0}, {100.0, 80.0}}));
-  const arlcore::autopilot::Dubins2DPose start{0.0, 0.0, 0.0};   // facing +x, blocked by the box
+                arlcore::autopilot::LocalPolygon({{100.0, -80.0}, {200.0, -80.0}, {200.0, 80.0}, {100.0, 80.0}}));
+  const arlcore::autopilot::Dubins2DPose start{0.0, 0.0, 0.0};  // facing +x, blocked by the box
   const arlcore::autopilot::Dubins2DPose goal{300.0, 0.0, 0.0};
 
   // WHEN: the planner runs
@@ -69,8 +68,7 @@ TEST(DubinsRrtStarTest, DeterministicForFixedSeed) {
   // GIVEN: a keep-out world with identical planner parameters
   arlcore::autopilot::ZoneSet zones;
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-                arlcore::autopilot::LocalPolygon({{100.0, -80.0}, {200.0, -80.0},
-                                                  {200.0, 80.0}, {100.0, 80.0}}));
+                arlcore::autopilot::LocalPolygon({{100.0, -80.0}, {200.0, -80.0}, {200.0, 80.0}, {100.0, 80.0}}));
   const arlcore::autopilot::Dubins2DPose start{0.0, 0.0, 0.0};
   const arlcore::autopilot::Dubins2DPose goal{300.0, 0.0, 0.0};
 
@@ -97,8 +95,7 @@ TEST(DubinsRrtStarTest, UnreachableGoalReturnsNullopt) {
   // GIVEN: a goal boxed in on all sides by a keep-out
   arlcore::autopilot::ZoneSet zones;
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-                arlcore::autopilot::LocalPolygon({{250.0, -60.0}, {350.0, -60.0},
-                                                  {350.0, 60.0}, {250.0, 60.0}}));
+                arlcore::autopilot::LocalPolygon({{250.0, -60.0}, {350.0, -60.0}, {350.0, 60.0}, {250.0, 60.0}}));
   const arlcore::autopilot::Dubins2DPose start{0.0, 0.0, 0.0};
   const arlcore::autopilot::Dubins2DPose goal{300.0, 0.0, 0.0};  // inside the keep-out
 
@@ -114,11 +111,9 @@ TEST(DubinsRrtStarTest, StaysInsideKeepIn) {
   // GIVEN: a keep-in whose only compliant corridor is the gap above the keep-out
   arlcore::autopilot::ZoneSet zones;
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_IN,
-                arlcore::autopilot::LocalPolygon({{-50.0, -150.0}, {350.0, -150.0},
-                                                  {350.0, 150.0}, {-50.0, 150.0}}));
+                arlcore::autopilot::LocalPolygon({{-50.0, -150.0}, {350.0, -150.0}, {350.0, 150.0}, {-50.0, 150.0}}));
   zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
-                arlcore::autopilot::LocalPolygon({{100.0, -150.0}, {200.0, -150.0},
-                                                  {200.0, 100.0}, {100.0, 100.0}}));
+                arlcore::autopilot::LocalPolygon({{100.0, -150.0}, {200.0, -150.0}, {200.0, 100.0}, {100.0, 100.0}}));
   const arlcore::autopilot::Dubins2DPose start{0.0, 0.0, 0.0};
   const arlcore::autopilot::Dubins2DPose goal{300.0, 0.0, 0.0};
 
@@ -139,6 +134,6 @@ TEST(DubinsRrtStarTest, EmptyKeepInIntersectionFails) {
                 arlcore::autopilot::LocalPolygon({{500.0, 0.0}, {600.0, 0.0}, {600.0, 100.0}, {500.0, 100.0}}));
   // WHEN: a plan is requested between the two zones
   // THEN: no chain is returned
-  EXPECT_FALSE(arlcore::autopilot::planDubinsRrtStar({50.0, 50.0, 0.0}, {550.0, 50.0, 0.0}, zones, testParams(), 0)
-                   .has_value());
+  EXPECT_FALSE(
+      arlcore::autopilot::planDubinsRrtStar({50.0, 50.0, 0.0}, {550.0, 50.0, 0.0}, zones, testParams(), 0).has_value());
 }

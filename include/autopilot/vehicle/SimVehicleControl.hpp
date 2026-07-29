@@ -1,6 +1,10 @@
 #ifndef AUTOPILOT_VEHICLE_SIMVEHICLECONTROL_HPP_
 #define AUTOPILOT_VEHICLE_SIMVEHICLECONTROL_HPP_
 
+#include <GeographicLib/LocalCartesian.hpp>
+#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
+#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
+#include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -8,18 +12,12 @@
 #include <optional>
 #include <thread>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
-#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
-#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
-#include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
-
-#include "autopilot/config/AutopilotConfig.hpp"
-#include "autopilot/vehicle/IVehicleControl.hpp"
+#include "InternalTypes.h"
 #include "NumericGuid.h"
 #include "ReportProvider.h"
 #include "SenderBase.h"
-#include "InternalTypes.h"
+#include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/vehicle/IVehicleControl.hpp"
 
 namespace arlcore::autopilot {
 
@@ -29,13 +27,12 @@ namespace arlcore::autopilot {
 //! three report senders (DDS in the app, LocalReaderSender in tests).
 class SimVehicleControl : public IVehicleControl {
  public:
-  SimVehicleControl(const PlatformCapabilitiesConfig& caps,
-                    const SimVehicleConfig& simConfig, const arlcore::NumericGuid& navSourceId,
-                    std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>>
-                        poseSender,
-                    std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::SpeedStatus::SpeedReportType>> speedSender,
-                    std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::VelocityStatus::VelocityReportType>>
-                        velocitySender);
+  SimVehicleControl(
+      const PlatformCapabilitiesConfig& caps, const SimVehicleConfig& simConfig,
+      const arlcore::NumericGuid& navSourceId,
+      std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>> poseSender,
+      std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::SpeedStatus::SpeedReportType>> speedSender,
+      std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::VelocityStatus::VelocityReportType>> velocitySender);
 
   ~SimVehicleControl() override;
 

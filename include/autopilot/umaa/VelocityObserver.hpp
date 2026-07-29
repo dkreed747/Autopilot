@@ -13,9 +13,7 @@ class VelocityObserver : public arlcore::Observer<UMAA::SA::VelocityStatus::Velo
  public:
   explicit VelocityObserver(NavState* nav) : nav_(nav) {}
 
-  void update(const UMAA::SA::VelocityStatus::VelocityReportType& report) override {
-    nav_->setVelocity(report);
-  }
+  void update(const UMAA::SA::VelocityStatus::VelocityReportType& report) override { nav_->setVelocity(report); }
 
  private:
   NavState* nav_;

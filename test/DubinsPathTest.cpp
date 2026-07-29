@@ -4,8 +4,8 @@
 #include <cstdint>
 #include <random>
 
-#include "autopilot/guidance/DubinsPath.hpp"
 #include "InternalTypes.h"
+#include "autopilot/guidance/DubinsPath.hpp"
 
 constexpr flt64_t kPi = M_PI;
 
@@ -83,9 +83,9 @@ TEST(DubinsPathTest, NonFiniteInputRejected) {
   // WHEN: the solver runs on each
   // THEN: no path is produced
   EXPECT_FALSE(arlcore::autopilot::DubinsPath::solve({std::nan(""), 0.0, 0.0}, {1.0, 1.0, 0.0}, 10.0).has_value());
-  EXPECT_FALSE(arlcore::autopilot::DubinsPath::solve(
-                   {0.0, 0.0, 0.0}, {1.0, std::numeric_limits<flt64_t>::infinity(), 0.0}, 10.0)
-                   .has_value());
+  EXPECT_FALSE(
+      arlcore::autopilot::DubinsPath::solve({0.0, 0.0, 0.0}, {1.0, std::numeric_limits<flt64_t>::infinity(), 0.0}, 10.0)
+          .has_value());
 }
 
 TEST(DubinsPathTest, RandomizedEndpointCorrectness) {
@@ -130,8 +130,8 @@ TEST(DubinsPathTest, SamplingIsMonotonicAndContinuous) {
   for (flt64_t s = 1.0; s <= path->lengthM(); s += 1.0) {
     const arlcore::autopilot::Dubins2DPose cur = path->sample(s);
     const flt64_t step = std::hypot(cur.x - prev.x, cur.y - prev.y);
-    EXPECT_LE(step, 1.0 + 1e-6);   // never jumps further than the arc step
-    EXPECT_GT(step, 0.5);          // and always makes progress
+    EXPECT_LE(step, 1.0 + 1e-6);  // never jumps further than the arc step
+    EXPECT_GT(step, 0.5);         // and always makes progress
     prev = cur;
   }
 }

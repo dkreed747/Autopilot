@@ -8,17 +8,17 @@
 #include <string>
 #include <vector>
 
+#include "InternalTypes.h"
 #include "LargeList.h"
 #include "Logger.h"
-#include "autopilot/guidance/ToleranceUtils.hpp"
 #include "UmaaUtils.h"
-#include "InternalTypes.h"
+#include "autopilot/guidance/ToleranceUtils.hpp"
 
 namespace arlcore::autopilot {
 
+using arlcore::umaa::LargeListStatus;
 using arlcore::umaa::services::CommandStateResult;
 using arlcore::umaa::services::IncomingCommandBehavior;
-using arlcore::umaa::LargeListStatus;
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 
 //! \brief A DateTime `secondsAhead` seconds in the future (clamped to now for non-finite or
@@ -31,20 +31,21 @@ static UMAA::Common::Measurement::DateTime timestampPlus(flt64_t secondsAhead) {
   return t;
 }
 
-WaypointControlServiceProvider::WaypointControlServiceProvider(
-    const arlcore::NumericGuid& source, std::shared_ptr<WaypointControlServiceProviderIo> io,
-    IAutopilot* autopilot, flt64_t maxForwardSpeedMps, int32_t maxListWaitCycles,
-    const ISafetyGate* safetyGate, const ZoneMap* zoneMap, ICommandModeGate* modeGate) :
-    CommandProviderBase(source, io),
-    sourceId_(source),
-    autopilot_(autopilot),
-    wpIo_(io),
-    listReader_(io->listElementReader),
-    maxForwardSpeedMps_(maxForwardSpeedMps),
-    maxListWaitCycles_(maxListWaitCycles),
-    safetyGate_(safetyGate),
-    zoneMap_(zoneMap),
-    modeGate_(modeGate) {
+WaypointControlServiceProvider::WaypointControlServiceProvider(const arlcore::NumericGuid& source,
+                                                               std::shared_ptr<WaypointControlServiceProviderIo> io,
+                                                               IAutopilot* autopilot, flt64_t maxForwardSpeedMps,
+                                                               int32_t maxListWaitCycles, const ISafetyGate* safetyGate,
+                                                               const ZoneMap* zoneMap, ICommandModeGate* modeGate)
+    : CommandProviderBase(source, io),
+      sourceId_(source),
+      autopilot_(autopilot),
+      wpIo_(io),
+      listReader_(io->listElementReader),
+      maxForwardSpeedMps_(maxForwardSpeedMps),
+      maxListWaitCycles_(maxListWaitCycles),
+      safetyGate_(safetyGate),
+      zoneMap_(zoneMap),
+      modeGate_(modeGate) {
   // A new waypoint route replaces an in-flight route (same driving resource).
   setBehavior(IncomingCommandBehavior::CANCEL_EXISTING);
 }
@@ -70,9 +71,9 @@ void WaypointControlServiceProvider::relinquish(const std::weak_ptr<CmdSession> 
   held_ = false;
 }
 
-CommandStateResult WaypointControlServiceProvider::failInCommanded(
-    const std::weak_ptr<CmdSession> session, CommandStatusReasonEnumType reason,
-    const std::string& logMessage) {
+CommandStateResult WaypointControlServiceProvider::failInCommanded(const std::weak_ptr<CmdSession> session,
+                                                                   CommandStatusReasonEnumType reason,
+                                                                   const std::string& logMessage) {
   auto s = session.lock();
   if (!s) {
     return CommandStateResult::ERROR;
@@ -81,8 +82,8 @@ CommandStateResult WaypointControlServiceProvider::failInCommanded(
   // state, so they cannot be routed through isCommandFailed() in EXECUTING; the base reaps
   // the session once it observes the FAILED state.
   if (!s->fail(reason)) {
-    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Unable to fail waypoint session " << s->getSessionId()
-      << " with reason " << reason)
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
+                   "Unable to fail waypoint session " << s->getSessionId() << " with reason " << reason)
     return CommandStateResult::ERROR;
   }
   relinquish(session);
@@ -91,8 +92,7 @@ CommandStateResult WaypointControlServiceProvider::failInCommanded(
   return CommandStateResult::OK;
 }
 
-bool WaypointControlServiceProvider::validateWaypoints(
-    const std::vector<GlobalWaypointType>& waypoints) const {
+bool WaypointControlServiceProvider::validateWaypoints(const std::vector<GlobalWaypointType>& waypoints) const {
   if (waypoints.empty()) {
     return false;
   }
@@ -101,13 +101,14 @@ bool WaypointControlServiceProvider::validateWaypoints(
     if (!sp.has_value()) {
       // RECOMMENDED / TIME-WITH-SPEED variants are unsupported: accepting them would drive
       // the route at 0 m/s and hang the command in EXECUTING.
-      UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Waypoint speed variant is unsupported (require a "
-        "REQUIRED ground/water speed)")
+      UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
+                     "Waypoint speed variant is unsupported (require a "
+                     "REQUIRED ground/water speed)")
       return false;
     }
     if (maxForwardSpeedMps_ > 0.0 && sp->speedMps > maxForwardSpeedMps_) {
-      UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Waypoint speed " << sp->speedMps
-        << " exceeds platform max forward speed " << maxForwardSpeedMps_)
+      UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
+                     "Waypoint speed " << sp->speedMps << " exceeds platform max forward speed " << maxForwardSpeedMps_)
       return false;
     }
   }
@@ -116,8 +117,9 @@ bool WaypointControlServiceProvider::validateWaypoints(
 
 bool WaypointControlServiceProvider::isCommandValid(const GlobalWaypointCommandType& cmd) {
   if (safetyGate_ != nullptr && !safetyGate_->commandsAllowed()) {
-    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Waypoint command rejected: the safety supervisor holds "
-      "the vehicle (recovery/safe mode)")
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "Waypoint command rejected: the safety supervisor holds "
+                  "the vehicle (recovery/safe mode)")
     return false;
   }
   if (modeGate_ != nullptr) {
@@ -125,8 +127,7 @@ bool WaypointControlServiceProvider::isCommandValid(const GlobalWaypointCommandT
     // them with INTERRUPTED (in onIssued), never VALIDATION_FAILED.
     const bool heldSession = held_ && heldSessionId_ == arlcore::NumericGuid(cmd.sessionID());
     if (!heldSession && modeGate_->rejectedAtValidation(classOf(cmd))) {
-      UMAA_LOG_WARN(util::SYSTEM_LOGGER,
-                    "Waypoint command rejected: not permitted in the current operational mode")
+      UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Waypoint command rejected: not permitted in the current operational mode")
       return false;
     }
   }
@@ -167,8 +168,7 @@ CommandStateResult WaypointControlServiceProvider::onIssued(const std::weak_ptr<
       held_ = true;
       heldSessionId_ = arlcore::NumericGuid(cmd.sessionID());
       heldEpoch_ = modeGate_->authoritativeEpoch();
-      UMAA_LOG_INFO(util::SYSTEM_LOGGER,
-                    "Waypoint command held at ISSUED until the operational mode permits it")
+      UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Waypoint command held at ISSUED until the operational mode permits it")
     }
     return CommandStateResult::OK;
   }
@@ -176,16 +176,15 @@ CommandStateResult WaypointControlServiceProvider::onIssued(const std::weak_ptr<
   return CommandStateResult::ADVANCE;
 }
 
-bool WaypointControlServiceProvider::waypointsZoneCompliant(
-    const std::vector<GlobalWaypointType>& waypoints, std::string* message) const {
+bool WaypointControlServiceProvider::waypointsZoneCompliant(const std::vector<GlobalWaypointType>& waypoints,
+                                                            std::string* message) const {
   if (zoneMap_ == nullptr || !zoneMap_->hasZones()) {
     return true;
   }
   const flt64_t marginM = zoneMap_->config().safetyMarginM;
   for (std::size_t i = 0; i < waypoints.size(); ++i) {
     const GlobalWaypointType& wp = waypoints[i];
-    const GeoPoint at{wp.position().value().geodeticLatitude(),
-                      wp.position().value().geodeticLongitude()};
+    const GeoPoint at{wp.position().value().geodeticLatitude(), wp.position().value().geodeticLongitude()};
     // Gate at the commanded vertical position: depth is exact, an ASF elevation leaves the
     // depth unknown (no bathymetry) so its depth interval conservatively widens to
     // everything, and no elevation means the surface.
@@ -206,7 +205,7 @@ bool WaypointControlServiceProvider::waypointsZoneCompliant(
         *message = "Waypoint " + std::to_string(i + 1) + " violates an active water zone";
       }
       UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Waypoint " << (i + 1) << " of " << waypoints.size()
-        << " violates an active water zone (or its safety margin)")
+                                                      << " violates an active water zone (or its safety margin)")
       return false;
     }
   }
@@ -302,7 +301,8 @@ CommandStateResult WaypointControlServiceProvider::onExecuting(const std::weak_p
 }
 
 bool WaypointControlServiceProvider::onUpdated(const std::weak_ptr<CmdSession> session,
-    const GlobalWaypointCommandType& previousCmd, const GlobalWaypointCommandType& updatedCmd) {
+                                               const GlobalWaypointCommandType& previousCmd,
+                                               const GlobalWaypointCommandType& updatedCmd) {
   // Treat an update as a new route (keeping the driving resource) and replan next cycle;
   // only drop a switched-away list — a reused list id's elements were already consumed from
   // the shared reader, so removing it would destroy the updated route too.
@@ -319,8 +319,7 @@ bool WaypointControlServiceProvider::isCommandCompleted(const std::weak_ptr<CmdS
   return planned_ && autopilot_->waypointProgress().routeComplete;
 }
 
-CommandStatusReasonEnumType WaypointControlServiceProvider::isCommandFailed(
-    const std::weak_ptr<CmdSession> session) {
+CommandStatusReasonEnumType WaypointControlServiceProvider::isCommandFailed(const std::weak_ptr<CmdSession> session) {
   if (modeGate_ != nullptr) {
     auto s = session.lock();
     if (s && !modeGate_->classAllowed(classOf(s->getCommand()))) {

@@ -1,17 +1,16 @@
 #include <gtest/gtest.h>
 
+#include <GeographicLib/LocalCartesian.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <optional>
 #include <vector>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
+#include "InternalTypes.h"
 #include "autopilot/guidance/AngleMath.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
-#include "InternalTypes.h"
 
 using GlobalWaypointType = UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using GlobalPoseReportType = UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
@@ -68,11 +67,19 @@ static GlobalWaypointType makeWaypoint(flt64_t xE, flt64_t yN, flt64_t speedMps)
   wp.position().value().geodeticLongitude(p.lonDeg);
   wp.speed().VariableSpeedVariantTypeSubtypes().RequiredSpeedVariantVariant(
       UMAA::Common::Speed::RequiredSpeedVariantType());
-  wp.speed().VariableSpeedVariantTypeSubtypes().RequiredSpeedVariantVariant().speed()
-      .SpeedRequirementVariantTypeSubtypes().GroundSpeedRequirementVariantVariant(
-          UMAA::Common::Speed::GroundSpeedRequirementVariantType());
-  wp.speed().VariableSpeedVariantTypeSubtypes().RequiredSpeedVariantVariant().speed()
-      .SpeedRequirementVariantTypeSubtypes().GroundSpeedRequirementVariantVariant().speed()
+  wp.speed()
+      .VariableSpeedVariantTypeSubtypes()
+      .RequiredSpeedVariantVariant()
+      .speed()
+      .SpeedRequirementVariantTypeSubtypes()
+      .GroundSpeedRequirementVariantVariant(UMAA::Common::Speed::GroundSpeedRequirementVariantType());
+  wp.speed()
+      .VariableSpeedVariantTypeSubtypes()
+      .RequiredSpeedVariantVariant()
+      .speed()
+      .SpeedRequirementVariantTypeSubtypes()
+      .GroundSpeedRequirementVariantVariant()
+      .speed()
       .speed(speedMps);
   return wp;
 }
@@ -109,7 +116,8 @@ static arlcore::autopilot::ZoneMap makeMap(std::vector<arlcore::autopilot::ZoneR
 }
 
 //! \brief Minimum keep-out clearance over a geodetic preview polyline.
-static flt64_t previewMinClearance(const std::vector<std::pair<flt64_t, flt64_t>>& preview, const arlcore::autopilot::ZoneMap& map) {
+static flt64_t previewMinClearance(const std::vector<std::pair<flt64_t, flt64_t>>& preview,
+                                   const arlcore::autopilot::ZoneMap& map) {
   flt64_t minClearance = 1e18;
   for (const auto& [lat, lon] : preview) {
     minClearance = std::min(minClearance, map.clearanceM(arlcore::autopilot::GeoPoint{lat, lon}, 0.0));
@@ -117,7 +125,8 @@ static flt64_t previewMinClearance(const std::vector<std::pair<flt64_t, flt64_t>
   return minClearance;
 }
 
-static void runMission(arlcore::autopilot::DubinsPathPlanner* planner, ConstrainedSimVehicle* vehicle, int32_t maxSteps, flt64_t dtS = 0.5) {
+static void runMission(arlcore::autopilot::DubinsPathPlanner* planner, ConstrainedSimVehicle* vehicle, int32_t maxSteps,
+                       flt64_t dtS = 0.5) {
   for (int32_t i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
     const arlcore::autopilot::ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
     vehicle->step(cv, dtS);
@@ -133,8 +142,7 @@ TEST(ConstrainedPlannerTest, NoZonesMatchesUnconstrainedBehavior) {
   mapped.setZones(&empty);
 
   ConstrainedSimVehicle vehicle;
-  const std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 300.0, 4.0),
-                                                 makeWaypoint(250.0, 500.0, 4.0)};
+  const std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 300.0, 4.0), makeWaypoint(250.0, 500.0, 4.0)};
   // WHEN: both plan the same route from the same pose
   blind.plan(route, vehicle.pose(), testParams());
   mapped.plan(route, vehicle.pose(), testParams());
@@ -169,8 +177,7 @@ TEST(ConstrainedPlannerTest, DirectLegDetoursAroundKeepOut) {
   for (int32_t i = 0; i < 3000 && !planner.routeComplete() && !planner.failed(); ++i) {
     const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     vehicle.step(cv, 0.5);
-    minFlownClearance = std::min(minFlownClearance,
-                                 map.clearanceM(at(vehicle.xE, vehicle.yN), 0.0));
+    minFlownClearance = std::min(minFlownClearance, map.clearanceM(at(vehicle.xE, vehicle.yN), 0.0));
   }
   // THEN: ... and the flown track never violates the zone
   EXPECT_TRUE(planner.routeComplete());
@@ -217,8 +224,7 @@ TEST(ConstrainedPlannerTest, MidRouteConstraintChangeReplansCurrentLeg) {
   for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); ++i) {
     const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
     vehicle.step(cv, 0.5);
-    minFlownClearance = std::min(minFlownClearance,
-                                 map.clearanceM(at(vehicle.xE, vehicle.yN), 0.0));
+    minFlownClearance = std::min(minFlownClearance, map.clearanceM(at(vehicle.xE, vehicle.yN), 0.0));
   }
   EXPECT_TRUE(planner.routeComplete());
   EXPECT_GT(minFlownClearance, 0.0);

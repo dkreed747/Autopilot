@@ -119,7 +119,7 @@ TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
       "    goal_bias: 0.2\n"
       "constraints:\n"
       "  max_speed_mps: 4.5\n"
-      "  min_speed_mps:\n"       // explicit null stays unset
+      "  min_speed_mps:\n"  // explicit null stays unset
       "  max_depth_m: 25.0\n"
       "zones:\n"
       "  safety_margin_m: 8.0\n"

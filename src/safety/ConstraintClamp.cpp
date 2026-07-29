@@ -1,6 +1,7 @@
 #include "autopilot/safety/ConstraintClamp.hpp"
 
 #include <algorithm>
+
 #include "InternalTypes.h"
 
 namespace arlcore::autopilot {

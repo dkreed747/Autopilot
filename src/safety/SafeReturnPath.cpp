@@ -1,18 +1,17 @@
 #include "autopilot/safety/SafeReturnPath.hpp"
 
+#include <GeographicLib/LocalCartesian.hpp>
 #include <cmath>
 #include <string>
 #include <utility>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
-#include "Logger.h"
 #include "InternalTypes.h"
+#include "Logger.h"
 
 namespace arlcore::autopilot {
 
-SafeReturnPath::SafeReturnPath(SrpConfig config, std::vector<MissionWaypoint> waypoints) :
-    config_(std::move(config)), waypoints_(std::move(waypoints)) {}
+SafeReturnPath::SafeReturnPath(SrpConfig config, std::vector<MissionWaypoint> waypoints)
+    : config_(std::move(config)), waypoints_(std::move(waypoints)) {}
 
 std::optional<SafeReturnPath> SafeReturnPath::load(const SrpConfig& config, std::string* error) {
   if (error != nullptr) {
@@ -31,8 +30,9 @@ std::optional<SafeReturnPath> SafeReturnPath::load(const SrpConfig& config, std:
   };
 
   if (!config.originLatDeg.has_value() || !config.originLonDeg.has_value()) {
-    return fail("srp.csv_path is set but origin_lat_deg/origin_lon_deg are missing (the SRP "
-                "anchor must be explicit)");
+    return fail(
+        "srp.csv_path is set but origin_lat_deg/origin_lon_deg are missing (the SRP "
+        "anchor must be explicit)");
   }
   const flt64_t lat = config.originLatDeg.value();
   const flt64_t lon = config.originLonDeg.value();
@@ -67,8 +67,9 @@ std::optional<SafeReturnPath> SafeReturnPath::load(const SrpConfig& config, std:
     return fail("srp reposition_speed_mps must be positive");
   }
 
-  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Safe Return Path loaded: " << waypoints.size() <<
-    " waypoints from '" << config.csvPath << "' anchored at " << lat << ", " << lon)
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Safe Return Path loaded: " << waypoints.size() << " waypoints from '"
+                                                                 << config.csvPath << "' anchored at " << lat << ", "
+                                                                 << lon)
   return SafeReturnPath(config, std::move(waypoints));
 }
 

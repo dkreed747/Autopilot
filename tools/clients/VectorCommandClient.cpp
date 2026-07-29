@@ -2,10 +2,10 @@
 
 #include <cmath>
 
-#include "autopilot/guidance/MissionRoute.hpp"
+#include "InternalTypes.h"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
-#include "InternalTypes.h"
+#include "autopilot/guidance/MissionRoute.hpp"
 
 namespace arlcore::autopilot::tools {
 
@@ -13,93 +13,66 @@ using arlcore::io::CycloneReader;
 using arlcore::io::CycloneSender;
 using arlcore::io::ReadStatus;
 using arlcore::io::SendStatus;
-using StatusEnum = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::
-    CommandStatusEnumType;
+using StatusEnum = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::CommandStatusEnumType;
 
 //! \brief Build the UMAA command for a setpoint: a true-north HEADING direction
 //! requirement, a required ground speed, an optional depth/ASF elevation, and
 //! an optional end time.
-static void fillVectorCommand(
-    const VectorSetpoint& setpoint,
-    UMAA::MO::GlobalVectorControl::GlobalVectorCommandType* cmd) {
+static void fillVectorCommand(const VectorSetpoint& setpoint,
+                              UMAA::MO::GlobalVectorControl::GlobalVectorCommandType* cmd) {
   UMAA::Common::Orientation::DirectionTrueNorthRequirementVariantType dir;
   dir.direction().direction(setpoint.headingRad);
-  cmd->direction()
-      .DirectionRequirementVariantTypeSubtypes()
-      .DirectionTrueNorthRequirementVariantVariant(dir);
-  cmd->directionMode() = UMAA::Common::MaritimeEnumeration::
-      DirectionModeEnumModule::DirectionModeEnumType::HEADING;
+  cmd->direction().DirectionRequirementVariantTypeSubtypes().DirectionTrueNorthRequirementVariantVariant(dir);
+  cmd->directionMode() = UMAA::Common::MaritimeEnumeration::DirectionModeEnumModule::DirectionModeEnumType::HEADING;
 
   UMAA::Common::Speed::GroundSpeedRequirementVariantType speed;
   speed.speed().speed(setpoint.speedMps);
-  cmd->speed()
-      .SpeedRequirementVariantTypeSubtypes()
-      .GroundSpeedRequirementVariantVariant(speed);
+  cmd->speed().SpeedRequirementVariantTypeSubtypes().GroundSpeedRequirementVariantVariant(speed);
 
   if (setpoint.elevValueM.has_value()) {
     UMAA::Common::Measurement::ElevationRequirementVariantType elev;
     if (setpoint.elevFrame == "asf") {
-      elev.ElevationRequirementVariantTypeSubtypes()
-          .AltitudeASFRequirementVariantVariant(
-              UMAA::Common::Measurement::AltitudeASFRequirementVariantType());
-      elev.ElevationRequirementVariantTypeSubtypes()
-          .AltitudeASFRequirementVariantVariant()
-          .altitude()
-          .altitude(setpoint.elevValueM.value());
+      elev.ElevationRequirementVariantTypeSubtypes().AltitudeASFRequirementVariantVariant(
+          UMAA::Common::Measurement::AltitudeASFRequirementVariantType());
+      elev.ElevationRequirementVariantTypeSubtypes().AltitudeASFRequirementVariantVariant().altitude().altitude(
+          setpoint.elevValueM.value());
     } else {
-      elev.ElevationRequirementVariantTypeSubtypes()
-          .DepthRequirementVariantVariant(
-              UMAA::Common::Measurement::DepthRequirementVariantType());
-      elev.ElevationRequirementVariantTypeSubtypes()
-          .DepthRequirementVariantVariant()
-          .depth()
-          .depth(setpoint.elevValueM.value());
+      elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant(
+          UMAA::Common::Measurement::DepthRequirementVariantType());
+      elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant().depth().depth(
+          setpoint.elevValueM.value());
     }
     cmd->elevation() = elev;
   } else {
     cmd->elevation().reset();
   }
 
-  if (setpoint.timeoutS.has_value() &&
-      std::isfinite(setpoint.timeoutS.value()) &&
-      setpoint.timeoutS.value() > 0.0) {
+  if (setpoint.timeoutS.has_value() && std::isfinite(setpoint.timeoutS.value()) && setpoint.timeoutS.value() > 0.0) {
     UMAA::Common::Measurement::DateTime endTime = arlcore::umaa::getTimestamp();
-    endTime.seconds() +=
-        static_cast<int64_t>(std::ceil(setpoint.timeoutS.value()));
+    endTime.seconds() += static_cast<int64_t>(std::ceil(setpoint.timeoutS.value()));
     cmd->endTime() = endTime;
   } else {
     cmd->endTime().reset();
   }
 }
 
-VectorCommandClient::VectorCommandClient(
-    const dds::domain::DomainParticipant& participant,
-    const dds::pub::qos::DataWriterQos& wqos,
-    const dds::sub::qos::DataReaderQos& rqos,
-    const arlcore::NumericGuid& destinationId, const ClientIdentity& identity)
+VectorCommandClient::VectorCommandClient(const dds::domain::DomainParticipant& participant,
+                                         const dds::pub::qos::DataWriterQos& wqos,
+                                         const dds::sub::qos::DataReaderQos& rqos,
+                                         const arlcore::NumericGuid& destinationId, const ClientIdentity& identity)
     : cmdSender_(std::make_shared<CycloneSender<CommandType>>(
-          participant,
-          UMAA::MO::GlobalVectorControl::GlobalVectorCommandTypeTopic, wqos)),
+          participant, UMAA::MO::GlobalVectorControl::GlobalVectorCommandTypeTopic, wqos)),
       ackReader_(std::make_shared<CycloneReader<AckType>>(
-          participant,
-          UMAA::MO::GlobalVectorControl::GlobalVectorCommandAckReportTypeTopic,
-          rqos)),
+          participant, UMAA::MO::GlobalVectorControl::GlobalVectorCommandAckReportTypeTopic, rqos)),
       statusReader_(std::make_shared<CycloneReader<StatusType>>(
-          participant,
-          UMAA::MO::GlobalVectorControl::GlobalVectorCommandStatusTypeTopic,
-          rqos)),
+          participant, UMAA::MO::GlobalVectorControl::GlobalVectorCommandStatusTypeTopic, rqos)),
       execReader_(std::make_shared<CycloneReader<ExecType>>(
-          participant,
-          UMAA::MO::GlobalVectorControl::
-              GlobalVectorExecutionStatusReportTypeTopic,
-          rqos)),
+          participant, UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportTypeTopic, rqos)),
       identity_(identity),
       destinationId_(destinationId) {}
 
-arlcore::NumericGuid VectorCommandClient::start(
-    const VectorSetpoint& setpoint) {
-  const arlcore::NumericGuid sessionId =
-      arlcore::UuidFactory::getInstance().generateGuid();
+arlcore::NumericGuid VectorCommandClient::start(const VectorSetpoint& setpoint) {
+  const arlcore::NumericGuid sessionId = arlcore::UuidFactory::getInstance().generateGuid();
   cmd_ = CommandType();
   fillVectorCommand(setpoint, &cmd_);
   cmd_.sessionID() = sessionId.getGuid();
@@ -150,8 +123,7 @@ std::vector<MissionStatusUpdate> VectorCommandClient::pollStatus() {
     update.status = statusName(status.commandStatus());
     update.reason = statusReasonName(status.commandStatusReason());
     update.logMessage = status.logMessage();
-    update.terminal = status.commandStatus() == StatusEnum::COMPLETED ||
-                      status.commandStatus() == StatusEnum::FAILED ||
+    update.terminal = status.commandStatus() == StatusEnum::COMPLETED || status.commandStatus() == StatusEnum::FAILED ||
                       status.commandStatus() == StatusEnum::CANCELED;
     if (update.terminal) {
       terminal_ = true;
@@ -195,9 +167,7 @@ std::optional<flt64_t> VectorCommandClient::execAgeS() const {
   if (!lastExec_.has_value()) {
     return std::nullopt;
   }
-  return std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() -
-                                       execAt_)
-      .count();
+  return std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - execAt_).count();
 }
 
 }  // namespace arlcore::autopilot::tools

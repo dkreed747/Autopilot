@@ -1,8 +1,8 @@
 #ifndef AUTOPILOT_TOOLS_CLIENTS_CLIENTIDENTITY_HPP_
 #define AUTOPILOT_TOOLS_CLIENTS_CLIENTIDENTITY_HPP_
 
-#include "autopilot/config/AutopilotConfig.hpp"
 #include "NumericGuid.h"
+#include "autopilot/config/AutopilotConfig.hpp"
 
 namespace arlcore::autopilot::tools {
 

@@ -20,8 +20,7 @@ class ICommandModeGate {
 
   //! \brief LOCAL iff the source's parentID equals this platform's id; REMOTE
   //! otherwise, including sources with an unset parentID.
-  virtual CommandClass classify(
-      const UMAA::Common::IdentifierType& source) const = 0;
+  virtual CommandClass classify(const UMAA::Common::IdentifierType& source) const = 0;
 
   //! \brief Whether a command of this class must fail validation right now:
   //! always in MANUAL, and when out-of-mode under the

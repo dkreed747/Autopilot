@@ -1,13 +1,13 @@
 #ifndef AUTOPILOT_CORE_NAVSTATE_HPP_
 #define AUTOPILOT_CORE_NAVSTATE_HPP_
 
+#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
+#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
+#include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 #include <chrono>
 #include <mutex>
 #include <optional>
 
-#include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
-#include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
-#include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 #include "InternalTypes.h"
 
 namespace arlcore::autopilot {
@@ -54,8 +54,8 @@ class NavState {
     if (!pose_.has_value()) {
       return std::nullopt;
     }
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - poseReceivedAt_).count();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - poseReceivedAt_)
+        .count();
   }
 
   //! \brief Current ground speed if reported, else 0.

@@ -7,8 +7,8 @@
 #include <limits>
 #include <random>
 
-#include "Logger.h"
 #include "InternalTypes.h"
+#include "Logger.h"
 
 namespace arlcore::autopilot {
 
@@ -18,14 +18,11 @@ struct Node {
   DubinsPath edge;  // path from parent to this node (unset for the root)
   flt64_t cost = 0.0;
 
-  Node(const Dubins2DPose& p, int32_t par, const DubinsPath& e, flt64_t c)
-      : pose(p), parent(par), edge(e), cost(c) {}
+  Node(const Dubins2DPose& p, int32_t par, const DubinsPath& e, flt64_t c) : pose(p), parent(par), edge(e), cost(c) {}
   explicit Node(const Dubins2DPose& p) : pose(p), edge(*DubinsPath::solve(p, p, 1.0)) {}
 };
 
-static flt64_t euclidean(const Dubins2DPose& a, const Dubins2DPose& b) {
-  return std::hypot(a.x - b.x, a.y - b.y);
-}
+static flt64_t euclidean(const Dubins2DPose& a, const Dubins2DPose& b) { return std::hypot(a.x - b.x, a.y - b.y); }
 
 //! \brief Indices of the k nodes nearest to `pose`, Euclidean-prefiltered from 3k candidates.
 static std::vector<int32_t> nearIndices(const std::vector<Node>& nodes, const Dubins2DPose& pose, int32_t k) {
@@ -41,13 +38,11 @@ static std::vector<int32_t> nearIndices(const std::vector<Node>& nodes, const Du
   return idx;
 }
 
-std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& start,
-                                                         const Dubins2DPose& goal,
-                                                         const ZoneSet& zones,
-                                                         const DubinsRrtParams& params,
+std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& start, const Dubins2DPose& goal,
+                                                         const ZoneSet& zones, const DubinsRrtParams& params,
                                                          uint32_t seedSalt) {
-  const auto deadline = std::chrono::steady_clock::now() +
-      std::chrono::microseconds(static_cast<int64_t>(params.timeBudgetMs * 1000.0));
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::microseconds(static_cast<int64_t>(params.timeBudgetMs * 1000.0));
   std::mt19937 rng(params.seed ^ seedSalt);
 
   // Sampling domain: the keep-in intersection when one exists, else the start/goal AABB padded
@@ -159,15 +154,14 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
   }
 
   if (goalLinks.empty()) {
-    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Dubins-RRT*: no compliant path to the goal within budget ("
-      << nodes.size() << " nodes)")
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "Dubins-RRT*: no compliant path to the goal within budget (" << nodes.size() << " nodes)")
     return std::nullopt;
   }
 
   // Best-first over goal connections; each candidate chain is re-validated at the fine step
   // before being accepted (rewiring may have changed upstream edges since the link was made).
-  std::sort(goalLinks.begin(), goalLinks.end(),
-            [](const GoalLink& a, const GoalLink& b) { return a.cost < b.cost; });
+  std::sort(goalLinks.begin(), goalLinks.end(), [](const GoalLink& a, const GoalLink& b) { return a.cost < b.cost; });
   for (const GoalLink& link : goalLinks) {
     const flt64_t chainCost = nodes[link.from].cost + link.edge.lengthM();
 
@@ -182,8 +176,9 @@ std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& sta
       continue;
     }
     std::reverse(chain.begin(), chain.end());
-    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Dubins-RRT*: found compliant path of " << chain.size()
-      << " segment(s), " << chainCost << " m (" << nodes.size() << " nodes)")
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Dubins-RRT*: found compliant path of " << chain.size() << " segment(s), "
+                                                                               << chainCost << " m (" << nodes.size()
+                                                                               << " nodes)")
     return chain;
   }
 

@@ -4,9 +4,9 @@
 #include <chrono>
 #include <cstdint>
 
+#include "InternalTypes.h"
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/safety/ZoneGeometry.hpp"
-#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 

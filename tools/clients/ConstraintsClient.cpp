@@ -4,10 +4,10 @@
 #include <cstdio>
 #include <utility>
 
-#include "autopilot/guidance/MissionRoute.hpp"
+#include "InternalTypes.h"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
-#include "InternalTypes.h"
+#include "autopilot/guidance/MissionRoute.hpp"
 
 namespace arlcore::autopilot::tools {
 
@@ -36,10 +36,8 @@ using UMAA::MM::ConditionalStateReport::ConditionalStateReportType;
 std::string formatUuid(const arlcore::NumericGuid& guid) {
   const std::array<uint8_t, 16> b = guid.getGuid();
   char out[37];
-  std::snprintf(out, sizeof(out),
-                "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
-                b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
+  std::snprintf(out, sizeof(out), "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", b[0], b[1],
+                b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
   return std::string(out);
 }
 
@@ -51,11 +49,9 @@ static arlcore::NumericGuid parseOrMint(const std::string& id) {
 }
 
 ConstraintsClient::ConstraintsClient(const dds::domain::DomainParticipant& participant,
-                                     const dds::pub::qos::DataWriterQos& wqos,
-                                     const dds::sub::qos::DataReaderQos& rqos,
+                                     const dds::pub::qos::DataWriterQos& wqos, const dds::sub::qos::DataReaderQos& rqos,
                                      const dds::sub::qos::DataReaderQos& largeSetRqos,
-                                     const arlcore::NumericGuid& destinationId,
-                    const ClientIdentity& identity)
+                                     const arlcore::NumericGuid& destinationId, const ClientIdentity& identity)
     : zoneWriter_(std::make_shared<CycloneSender<WaterZoneConditionalType>>(
           participant, UMAA::MM::Conditional::WaterZoneConditionalTypeTopic, wqos)),
       speedWriter_(std::make_shared<CycloneSender<SpeedConditionalType>>(
@@ -71,8 +67,7 @@ ConstraintsClient::ConstraintsClient(const dds::domain::DomainParticipant& parti
       reportReader_(std::make_shared<CycloneReader<ConditionalReportType>>(
           participant, UMAA::MM::ConditionalReport::ConditionalReportTypeTopic, rqos)),
       setReader_(std::make_shared<CycloneReader<SetElement>>(
-          participant, UMAA::MM::ConditionalReport::ConditionalReportTypeConditionalsSetElementTopic,
-          largeSetRqos)),
+          participant, UMAA::MM::ConditionalReport::ConditionalReportTypeConditionalsSetElementTopic, largeSetRqos)),
       zoneCache_(std::make_shared<CycloneReader<WaterZoneConditionalType>>(
           participant, UMAA::MM::Conditional::WaterZoneConditionalTypeTopic, rqos)),
       speedCache_(std::make_shared<CycloneReader<SpeedConditionalType>>(
@@ -80,8 +75,7 @@ ConstraintsClient::ConstraintsClient(const dds::domain::DomainParticipant& parti
       depthCache_(std::make_shared<CycloneReader<DepthConditionalType>>(
           participant, UMAA::MM::Conditional::DepthConditionalTypeTopic, rqos)),
       ackReader_(std::make_shared<CycloneReader<ActiveConstraintsCommandAckReportType>>(
-          participant, UMAA::MM::ActiveConstraintsControl::ActiveConstraintsCommandAckReportTypeTopic,
-          rqos)),
+          participant, UMAA::MM::ActiveConstraintsControl::ActiveConstraintsCommandAckReportTypeTopic, rqos)),
       addStatusReader_(std::make_shared<CycloneReader<ConditionalAddCommandStatusType>>(
           participant, UMAA::MM::ConditionalControl::ConditionalAddCommandStatusTypeTopic, rqos)),
       deleteStatusReader_(std::make_shared<CycloneReader<ConditionalDeleteCommandStatusType>>(
@@ -94,8 +88,7 @@ ConstraintsClient::ConstraintsClient(const dds::domain::DomainParticipant& parti
       destinationId_(destinationId) {}
 
 void ConstraintsClient::sendAdd(const arlcore::NumericGuid& conditionalId, const std::string& name,
-                                const std::string& topic, const arlcore::NumericGuid& specId,
-                                const DateTime& stamp) {
+                                const std::string& topic, const arlcore::NumericGuid& specId, const DateTime& stamp) {
   ConditionalType generic;
   generic.conditionalID(conditionalId.getGuid());
   generic.name(name);
@@ -121,17 +114,15 @@ static void setElevationBound(UMAA::Common::Measurement::ElevationVariantType* b
         UMAA::Common::Measurement::AltitudeASFVariantType());
     bound->ElevationVariantTypeSubtypes().AltitudeASFVariantVariant().altitude(value);
   } else {
-    bound->ElevationVariantTypeSubtypes().DepthVariantVariant(
-        UMAA::Common::Measurement::DepthVariantType());
+    bound->ElevationVariantTypeSubtypes().DepthVariantVariant(UMAA::Common::Measurement::DepthVariantType());
     bound->ElevationVariantTypeSubtypes().DepthVariantVariant().depth(value);
   }
 }
 
-std::string ConstraintsClient::upsertZone(const std::string& id, const std::string& name,
-                                          bool keepIn,
-                                          const std::vector<std::array<flt64_t, 2>>& polygonLatLon,
-                                          flt64_t ceilingM, const std::string& ceilingFrame,
-                                          flt64_t floorM, const std::string& floorFrame) {
+std::string ConstraintsClient::upsertZone(const std::string& id, const std::string& name, bool keepIn,
+                                          const std::vector<std::array<flt64_t, 2>>& polygonLatLon, flt64_t ceilingM,
+                                          const std::string& ceilingFrame, flt64_t floorM,
+                                          const std::string& floorFrame) {
   const arlcore::NumericGuid conditionalId = parseOrMint(id);
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const DateTime stamp = arlcore::umaa::getTimestamp();
@@ -156,8 +147,8 @@ std::string ConstraintsClient::upsertZone(const std::string& id, const std::stri
   return formatUuid(conditionalId);
 }
 
-std::string ConstraintsClient::upsertSpeed(const std::string& id, const std::string& name,
-                                           const std::string& op, flt64_t valueMps) {
+std::string ConstraintsClient::upsertSpeed(const std::string& id, const std::string& name, const std::string& op,
+                                           flt64_t valueMps) {
   const arlcore::NumericGuid conditionalId = parseOrMint(id);
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const DateTime stamp = arlcore::umaa::getTimestamp();
@@ -169,8 +160,8 @@ std::string ConstraintsClient::upsertSpeed(const std::string& id, const std::str
   return formatUuid(conditionalId);
 }
 
-std::string ConstraintsClient::upsertDepth(const std::string& id, const std::string& name,
-                                           const std::string& op, flt64_t valueM) {
+std::string ConstraintsClient::upsertDepth(const std::string& id, const std::string& name, const std::string& op,
+                                           flt64_t valueM) {
   const arlcore::NumericGuid conditionalId = parseOrMint(id);
   const arlcore::NumericGuid specId = arlcore::UuidFactory::getInstance().generateGuid();
   const DateTime stamp = arlcore::umaa::getTimestamp();
@@ -203,8 +194,7 @@ bool ConstraintsClient::removeConstraint(const std::string& id) {
 bool ConstraintsClient::setActive(const std::vector<std::string>& ids) {
   ActiveConstraintsCommandType cmd;
   for (const std::string& id : ids) {
-    cmd.constraintConditionalIDs().push_back(
-        arlcore::UuidFactory::getInstance().parseGuidFromString(id).getGuid());
+    cmd.constraintConditionalIDs().push_back(arlcore::UuidFactory::getInstance().parseGuidFromString(id).getGuid());
   }
   cmd.timeStamp(arlcore::umaa::getTimestamp());
   cmd.source().id(identity_.sourceId.getGuid());
@@ -266,21 +256,21 @@ void ConstraintsClient::poll() {
   // Command status streams (any commander's; shown as console activity).
   ConditionalAddCommandStatusType addStatus;
   while (addStatusReader_->read(&addStatus) == ReadStatus::SUCCESS) {
-    lastEvent_ = ConstraintEvent{"add", statusName(addStatus.commandStatus()),
-                                 statusReasonName(addStatus.commandStatusReason()),
-                                 std::string(addStatus.logMessage())};
+    lastEvent_ =
+        ConstraintEvent{"add", statusName(addStatus.commandStatus()), statusReasonName(addStatus.commandStatusReason()),
+                        std::string(addStatus.logMessage())};
   }
   ConditionalDeleteCommandStatusType deleteStatus;
   while (deleteStatusReader_->read(&deleteStatus) == ReadStatus::SUCCESS) {
-    lastEvent_ = ConstraintEvent{"delete", statusName(deleteStatus.commandStatus()),
-                                 statusReasonName(deleteStatus.commandStatusReason()),
-                                 std::string(deleteStatus.logMessage())};
+    lastEvent_ =
+        ConstraintEvent{"delete", statusName(deleteStatus.commandStatus()),
+                        statusReasonName(deleteStatus.commandStatusReason()), std::string(deleteStatus.logMessage())};
   }
   ActiveConstraintsCommandStatusType activeStatus;
   while (activeStatusReader_->read(&activeStatus) == ReadStatus::SUCCESS) {
-    lastEvent_ = ConstraintEvent{"active", statusName(activeStatus.commandStatus()),
-                                 statusReasonName(activeStatus.commandStatusReason()),
-                                 std::string(activeStatus.logMessage())};
+    lastEvent_ =
+        ConstraintEvent{"active", statusName(activeStatus.commandStatus()),
+                        statusReasonName(activeStatus.commandStatusReason()), std::string(activeStatus.logMessage())};
   }
 
   rebuildRecords();
@@ -319,10 +309,8 @@ void ConstraintsClient::rebuildRecords() {
           record.floorFrame = "asf";
         }
         for (const auto& shape : spec->zone()) {
-          if (shape.ShapeVariantTypeSubtypes()._d() ==
-              UMAA::MM::BaseType::ShapeVariantTypeEnum::POLYGONVARIANT_D) {
-            for (const auto& point :
-                 shape.ShapeVariantTypeSubtypes().PolygonVariantVariant().referencePoints()) {
+          if (shape.ShapeVariantTypeSubtypes()._d() == UMAA::MM::BaseType::ShapeVariantTypeEnum::POLYGONVARIANT_D) {
+            for (const auto& point : shape.ShapeVariantTypeSubtypes().PolygonVariantVariant().referencePoints()) {
               record.polygon.push_back({point.geodeticLatitude(), point.geodeticLongitude()});
             }
             break;  // the console edits single-polygon zones
@@ -334,16 +322,18 @@ void ConstraintsClient::rebuildRecords() {
       if (const auto spec = speedCache_.getSpecialization(conditional); spec.has_value()) {
         record.value = spec->speed();
         record.op = spec->conditionalOp() == ConditionalOperatorEnumType::GREATER_THAN ||
-                    spec->conditionalOp() == ConditionalOperatorEnumType::GREATER_THAN_OR_EQUAL_TO
-                        ? "gte" : "lte";
+                            spec->conditionalOp() == ConditionalOperatorEnumType::GREATER_THAN_OR_EQUAL_TO
+                        ? "gte"
+                        : "lte";
       }
     } else if (topic == UMAA::MM::Conditional::DepthConditionalTypeTopic) {
       record.type = "depth";
       if (const auto spec = depthCache_.getSpecialization(conditional); spec.has_value()) {
         record.value = spec->depth();
         record.op = spec->conditionalOp() == ConditionalOperatorEnumType::GREATER_THAN ||
-                    spec->conditionalOp() == ConditionalOperatorEnumType::GREATER_THAN_OR_EQUAL_TO
-                        ? "gte" : "lte";
+                            spec->conditionalOp() == ConditionalOperatorEnumType::GREATER_THAN_OR_EQUAL_TO
+                        ? "gte"
+                        : "lte";
       }
     } else {
       record.type = "other";

@@ -2,6 +2,7 @@
 #define AUTOPILOT_GUIDANCE_CONTROLVECTOR_HPP_
 
 #include <optional>
+
 #include "InternalTypes.h"
 
 namespace arlcore::autopilot {

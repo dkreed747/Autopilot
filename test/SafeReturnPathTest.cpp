@@ -6,7 +6,6 @@
 
 #include "autopilot/safety/SafeReturnPath.hpp"
 
-
 static const char* kCsvPath = "srp_test_mission.csv";
 
 static void writeCsv(const std::string& contents) {
@@ -22,7 +21,6 @@ static arlcore::autopilot::SrpConfig configWithCsv() {
   config.originLonDeg = -76.5;
   return config;
 }
-
 
 class SafeReturnPathTest : public ::testing::Test {
  protected:

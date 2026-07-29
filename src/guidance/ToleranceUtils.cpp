@@ -2,19 +2,18 @@
 
 #include <cmath>
 
-#include "autopilot/guidance/AngleMath.hpp"
-#include "Logger.h"
 #include "InternalTypes.h"
+#include "Logger.h"
+#include "autopilot/guidance/AngleMath.hpp"
 
 namespace arlcore::autopilot::tolerance {
 
+using UMAA::Common::Measurement::ElevationRequirementVariantTypeEnum;
 using UMAA::Common::Orientation::DirectionRequirementVariantTypeEnum;
 using UMAA::Common::Speed::SpeedRequirementVariantTypeEnum;
 using UMAA::Common::Speed::VariableSpeedVariantTypeEnum;
-using UMAA::Common::Measurement::ElevationRequirementVariantTypeEnum;
 
-std::optional<DirectionValue> extractDirection(
-    const UMAA::Common::Orientation::DirectionRequirementVariantType& dir) {
+std::optional<DirectionValue> extractDirection(const UMAA::Common::Orientation::DirectionRequirementVariantType& dir) {
   const auto& sub = dir.DirectionRequirementVariantTypeSubtypes();
   DirectionValue out;
   switch (sub._d()) {
@@ -45,8 +44,7 @@ std::optional<DirectionValue> extractDirection(
   }
 }
 
-std::optional<SpeedValue> extractSpeed(
-    const UMAA::Common::Speed::SpeedRequirementVariantType& speed) {
+std::optional<SpeedValue> extractSpeed(const UMAA::Common::Speed::SpeedRequirementVariantType& speed) {
   const auto& sub = speed.SpeedRequirementVariantTypeSubtypes();
   SpeedValue out;
   switch (sub._d()) {
@@ -55,8 +53,8 @@ std::optional<SpeedValue> extractSpeed(
       out.speedMps = req.speed();
       if (req.speedTolerance().has_value()) {
         // Absolute limits of allowable values per the IDL.
-        out.allowable = ValueRange{req.speedTolerance().value().lowerlimit(),
-                                   req.speedTolerance().value().upperlimit()};
+        out.allowable =
+            ValueRange{req.speedTolerance().value().lowerlimit(), req.speedTolerance().value().upperlimit()};
       }
       return out;
     }
@@ -64,8 +62,8 @@ std::optional<SpeedValue> extractSpeed(
       const auto& req = sub.WaterSpeedRequirementVariantVariant().speed();
       out.speedMps = req.speed();
       if (req.speedTolerance().has_value()) {
-        out.allowable = ValueRange{req.speedTolerance().value().lowerlimit(),
-                                   req.speedTolerance().value().upperlimit()};
+        out.allowable =
+            ValueRange{req.speedTolerance().value().lowerlimit(), req.speedTolerance().value().upperlimit()};
       }
       return out;
     }
@@ -75,8 +73,7 @@ std::optional<SpeedValue> extractSpeed(
   }
 }
 
-std::optional<SpeedValue> extractSpeed(
-    const UMAA::Common::Speed::VariableSpeedVariantType& speed) {
+std::optional<SpeedValue> extractSpeed(const UMAA::Common::Speed::VariableSpeedVariantType& speed) {
   const auto& sub = speed.VariableSpeedVariantTypeSubtypes();
   switch (sub._d()) {
     case VariableSpeedVariantTypeEnum::REQUIREDSPEEDVARIANT_D:
@@ -99,8 +96,8 @@ std::optional<ElevationValue> extractElevation(
       out.valueM = req.depth();
       out.frame = ElevationFrame::DEPTH;
       if (req.depthTolerance().has_value()) {
-        out.allowable = ValueRange{req.depthTolerance().value().lowerLimit(),
-                                   req.depthTolerance().value().upperlimit()};
+        out.allowable =
+            ValueRange{req.depthTolerance().value().lowerLimit(), req.depthTolerance().value().upperlimit()};
       }
       return out;
     }
@@ -109,8 +106,8 @@ std::optional<ElevationValue> extractElevation(
       out.valueM = req.altitude();
       out.frame = ElevationFrame::ALTITUDE_MSL;
       if (req.altitudeTolerance().has_value()) {
-        out.allowable = ValueRange{req.altitudeTolerance().value().lowerLimit(),
-                                   req.altitudeTolerance().value().upperlimit()};
+        out.allowable =
+            ValueRange{req.altitudeTolerance().value().lowerLimit(), req.altitudeTolerance().value().upperlimit()};
       }
       return out;
     }
@@ -119,8 +116,8 @@ std::optional<ElevationValue> extractElevation(
       out.valueM = req.altitude();
       out.frame = ElevationFrame::ALTITUDE_AGL;
       if (req.altitudeTolerance().has_value()) {
-        out.allowable = ValueRange{req.altitudeTolerance().value().lowerLimit(),
-                                   req.altitudeTolerance().value().upperlimit()};
+        out.allowable =
+            ValueRange{req.altitudeTolerance().value().lowerLimit(), req.altitudeTolerance().value().upperlimit()};
       }
       return out;
     }
@@ -129,8 +126,8 @@ std::optional<ElevationValue> extractElevation(
       out.valueM = req.altitude();
       out.frame = ElevationFrame::ALTITUDE_ASF;
       if (req.altitudeTolerance().has_value()) {
-        out.allowable = ValueRange{req.altitudeTolerance().value().lowerLimit(),
-                                   req.altitudeTolerance().value().upperlimit()};
+        out.allowable =
+            ValueRange{req.altitudeTolerance().value().lowerLimit(), req.altitudeTolerance().value().upperlimit()};
       }
       return out;
     }
@@ -139,8 +136,8 @@ std::optional<ElevationValue> extractElevation(
       out.valueM = req.altitude();
       out.frame = ElevationFrame::ALTITUDE_GEODETIC;
       if (req.altitudeTolerance().has_value()) {
-        out.allowable = ValueRange{req.altitudeTolerance().value().lowerLimit(),
-                                   req.altitudeTolerance().value().upperlimit()};
+        out.allowable =
+            ValueRange{req.altitudeTolerance().value().lowerLimit(), req.altitudeTolerance().value().upperlimit()};
       }
       return out;
     }
@@ -161,8 +158,7 @@ AttitudeValue extractYaw(const UMAA::Common::Orientation::Orientation3DNEDRequir
   return out;
 }
 
-std::optional<flt64_t> extractTrackToleranceM(
-    const UMAA::Common::Distance::DistanceRequirementType& trackTolerance) {
+std::optional<flt64_t> extractTrackToleranceM(const UMAA::Common::Distance::DistanceRequirementType& trackTolerance) {
   // The track tolerance's distance field is the allowed cross-track distance from the line.
   return trackTolerance.distance();
 }

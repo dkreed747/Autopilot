@@ -1,12 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <GeographicLib/LocalCartesian.hpp>
 #include <cmath>
 
-#include <GeographicLib/LocalCartesian.hpp>
-
-#include "autopilot/safety/ZoneMap.hpp"
 #include "InternalTypes.h"
-
+#include "autopilot/safety/ZoneMap.hpp"
 
 constexpr flt64_t kLat = 39.0;
 constexpr flt64_t kLon = -76.5;
@@ -21,9 +19,8 @@ static arlcore::autopilot::GeoPoint at(flt64_t east, flt64_t north) {
 }
 
 //! A square keep-out/keep-in zone [0,size]x[0,size] in the test frame.
-static arlcore::autopilot::ZoneRecord squareZone(
-    arlcore::autopilot::ZoneKind kind, flt64_t size,
-    arlcore::autopilot::ElevationBand band = {}) {
+static arlcore::autopilot::ZoneRecord squareZone(arlcore::autopilot::ZoneKind kind, flt64_t size,
+                                                 arlcore::autopilot::ElevationBand band = {}) {
   arlcore::autopilot::ZoneRecord zone;
   zone.kind = kind;
   zone.band = band;
@@ -33,8 +30,8 @@ static arlcore::autopilot::ZoneRecord squareZone(
   return zone;
 }
 
-static arlcore::autopilot::ConstraintSnapshot snapshotWith(
-    std::vector<arlcore::autopilot::ZoneRecord> zones, uint64_t revision = 1) {
+static arlcore::autopilot::ConstraintSnapshot snapshotWith(std::vector<arlcore::autopilot::ZoneRecord> zones,
+                                                           uint64_t revision = 1) {
   arlcore::autopilot::ConstraintSnapshot snapshot;
   snapshot.revision = revision;
   snapshot.zones = std::move(zones);
@@ -44,7 +41,6 @@ static arlcore::autopilot::ConstraintSnapshot snapshotWith(
 static arlcore::autopilot::ZonesConfig defaultZonesConfig() {
   return arlcore::autopilot::ZonesConfig{};  // 5 m margin, 2 m hysteresis, 2 m elevation margin, 32 segments
 }
-
 
 TEST(ZoneMapTest, ClassifyAgainstKeepOut) {
   // GIVEN: an empty zone map
@@ -59,7 +55,7 @@ TEST(ZoneMapTest, ClassifyAgainstKeepOut) {
   EXPECT_EQ(map.revision(), 1u);
 
   EXPECT_EQ(map.classify(at(50.0, 50.0), 0.0), arlcore::autopilot::ZoneCompliance::VIOLATION);
-  EXPECT_EQ(map.classify(at(-1.0, 50.0), 0.0), arlcore::autopilot::ZoneCompliance::MARGINAL);   // < 2 m hysteresis
+  EXPECT_EQ(map.classify(at(-1.0, 50.0), 0.0), arlcore::autopilot::ZoneCompliance::MARGINAL);  // < 2 m hysteresis
   EXPECT_EQ(map.classify(at(-50.0, 50.0), 0.0), arlcore::autopilot::ZoneCompliance::COMPLIANT);
 
   EXPECT_TRUE(map.pointCompliant(at(-50.0, 50.0), 0.0, 5.0));
@@ -80,10 +76,8 @@ TEST(ZoneMapTest, ClassifyAgainstKeepIn) {
 TEST(ZoneMapTest, ElevationBandGatesZones) {
   // GIVEN: a keep-out whose zone covers depths 10..20 m only
   arlcore::autopilot::ElevationBand band;
-  band.ceiling = arlcore::autopilot::ElevationBound{
-      arlcore::autopilot::ElevationBound::Frame::DEPTH, 10.0};
-  band.floor = arlcore::autopilot::ElevationBound{
-      arlcore::autopilot::ElevationBound::Frame::DEPTH, 20.0};
+  band.ceiling = arlcore::autopilot::ElevationBound{arlcore::autopilot::ElevationBound::Frame::DEPTH, 10.0};
+  band.floor = arlcore::autopilot::ElevationBound{arlcore::autopilot::ElevationBound::Frame::DEPTH, 20.0};
   arlcore::autopilot::ZoneMap map(defaultZonesConfig());
   map.ingest(snapshotWith({squareZone(arlcore::autopilot::ZoneKind::KEEP_OUT, 100.0, band)}));
 
@@ -101,10 +95,8 @@ TEST(ZoneMapTest, AsfFloorBoundGatesByAltitudeAboveSeaFloor) {
   // GIVEN: the common mixed-frame band: ceiling at depth 0 (the surface) with the floor 5 m above
   // the sea floor — the zone covers the whole water column except a near-bottom corridor
   arlcore::autopilot::ElevationBand band;
-  band.ceiling = arlcore::autopilot::ElevationBound{
-      arlcore::autopilot::ElevationBound::Frame::DEPTH, 0.0};
-  band.floor = arlcore::autopilot::ElevationBound{
-      arlcore::autopilot::ElevationBound::Frame::ASF, 5.0};
+  band.ceiling = arlcore::autopilot::ElevationBound{arlcore::autopilot::ElevationBound::Frame::DEPTH, 0.0};
+  band.floor = arlcore::autopilot::ElevationBound{arlcore::autopilot::ElevationBound::Frame::ASF, 5.0};
   arlcore::autopilot::ZoneMap map(defaultZonesConfig());
   map.ingest(snapshotWith({squareZone(arlcore::autopilot::ZoneKind::KEEP_OUT, 100.0, band)}));
 
@@ -121,10 +113,8 @@ TEST(ZoneMapTest, AsfFloorBoundGatesByAltitudeAboveSeaFloor) {
 TEST(ZoneMapTest, AsfCeilingBoundGates) {
   // GIVEN: a near-bottom zone: from 10 m above the floor down to the floor itself
   arlcore::autopilot::ElevationBand band;
-  band.ceiling = arlcore::autopilot::ElevationBound{
-      arlcore::autopilot::ElevationBound::Frame::ASF, 10.0};
-  band.floor = arlcore::autopilot::ElevationBound{
-      arlcore::autopilot::ElevationBound::Frame::ASF, 0.0};
+  band.ceiling = arlcore::autopilot::ElevationBound{arlcore::autopilot::ElevationBound::Frame::ASF, 10.0};
+  band.floor = arlcore::autopilot::ElevationBound{arlcore::autopilot::ElevationBound::Frame::ASF, 0.0};
   arlcore::autopilot::ZoneMap map(defaultZonesConfig());
   map.ingest(snapshotWith({squareZone(arlcore::autopilot::ZoneKind::KEEP_OUT, 100.0, band)}));
 
@@ -157,8 +147,7 @@ TEST(ZoneMapTest, ActiveSetProjectsIntoCallerFrame) {
   const GeographicLib::LocalCartesian plannerFrame(plannerOrigin.latDeg, plannerOrigin.lonDeg, 0.0);
 
   // WHEN: projecting the active set into the planner frame
-  const arlcore::autopilot::ZoneSet set =
-      map.activeSet(plannerFrame, arlcore::autopilot::ElevationEnvelope{0.0, 0.0});
+  const arlcore::autopilot::ZoneSet set = map.activeSet(plannerFrame, arlcore::autopilot::ElevationEnvelope{0.0, 0.0});
 
   // THEN: the same geometry appears, offset into the caller frame
   ASSERT_EQ(set.size(), 1u);
@@ -248,6 +237,6 @@ TEST(ZoneMapTest, RotatedEllipseOrientation) {
 
   // WHEN: classifying 150 m east and 150 m north of the center
   // THEN: the major axis reaches east but the minor axis does not reach north
-  EXPECT_EQ(map.classify(at(150.0, 0.0), 0.0), arlcore::autopilot::ZoneCompliance::VIOLATION);   // along major (east)
-  EXPECT_EQ(map.classify(at(0.0, 150.0), 0.0), arlcore::autopilot::ZoneCompliance::COMPLIANT);   // along minor (north)
+  EXPECT_EQ(map.classify(at(150.0, 0.0), 0.0), arlcore::autopilot::ZoneCompliance::VIOLATION);  // along major (east)
+  EXPECT_EQ(map.classify(at(0.0, 150.0), 0.0), arlcore::autopilot::ZoneCompliance::COMPLIANT);  // along minor (north)
 }

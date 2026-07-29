@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include "autopilot/guidance/MissionRoute.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
+#include "autopilot/guidance/MissionRoute.hpp"
 
 namespace arlcore::autopilot::tools {
 
@@ -13,19 +13,16 @@ using arlcore::io::CycloneReader;
 using arlcore::io::CycloneSender;
 using arlcore::io::ReadStatus;
 using arlcore::io::SendStatus;
-using CommandStatusEnumType =
-    UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::CommandStatusEnumType;
+using CommandStatusEnumType = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::CommandStatusEnumType;
 
 WaypointMissionClient::WaypointMissionClient(const dds::domain::DomainParticipant& participant,
                                              const dds::pub::qos::DataWriterQos& wqos,
                                              const dds::sub::qos::DataReaderQos& rqos,
-                                             const arlcore::NumericGuid& destinationId,
-                                             const ClientIdentity& identity)
+                                             const arlcore::NumericGuid& destinationId, const ClientIdentity& identity)
     : cmdSender_(std::make_shared<CycloneSender<CommandType>>(
           participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeTopic, wqos)),
       elementSender_(std::make_shared<CycloneSender<ListElement>>(
-          participant,
-          UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeWaypointsListElementTopic, wqos)),
+          participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeWaypointsListElementTopic, wqos)),
       statusReader_(std::make_shared<CycloneReader<CommandStatusType>>(
           participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandStatusTypeTopic, rqos)),
       ackReader_(std::make_shared<CycloneReader<CommandAckType>>(

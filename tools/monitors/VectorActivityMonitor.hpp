@@ -12,8 +12,8 @@
 #include <string>
 
 #include "CycloneReader.h"
-#include "NumericGuid.h"
 #include "InternalTypes.h"
+#include "NumericGuid.h"
 
 namespace arlcore::autopilot::tools {
 
@@ -31,9 +31,7 @@ struct ObservedVector {
   std::string lastStatus;
   std::string lastReason;
   bool terminal = false;
-  std::optional<
-      UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportType>
-      execStatus;
+  std::optional<UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportType> execStatus;
   std::chrono::steady_clock::time_point lastSeen;
   std::chrono::steady_clock::time_point execSeen;
 };
@@ -44,21 +42,16 @@ struct ObservedVector {
 class VectorActivityMonitor {
  public:
   using CommandType = UMAA::MO::GlobalVectorControl::GlobalVectorCommandType;
-  using StatusType =
-      UMAA::MO::GlobalVectorControl::GlobalVectorCommandStatusType;
-  using ExecType =
-      UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportType;
+  using StatusType = UMAA::MO::GlobalVectorControl::GlobalVectorCommandStatusType;
+  using ExecType = UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportType;
 
-  VectorActivityMonitor(const dds::domain::DomainParticipant& participant,
-                        const dds::sub::qos::DataReaderQos& rqos);
+  VectorActivityMonitor(const dds::domain::DomainParticipant& participant, const dds::sub::qos::DataReaderQos& rqos);
 
   //! \brief Drain all readers and reconcile the observed-vector table (once per
   //! poller tick).
   void poll();
 
-  const std::map<arlcore::NumericGuid, ObservedVector>& vectors() const {
-    return vectors_;
-  }
+  const std::map<arlcore::NumericGuid, ObservedVector>& vectors() const { return vectors_; }
 
  private:
   std::shared_ptr<arlcore::io::CycloneReader<CommandType>> cmdReader_;

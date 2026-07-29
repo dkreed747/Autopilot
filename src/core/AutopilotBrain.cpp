@@ -4,16 +4,15 @@
 #include <optional>
 #include <vector>
 
-#include "autopilot/guidance/AngleMath.hpp"
+#include "InternalTypes.h"
 #include "Logger.h"
+#include "autopilot/guidance/AngleMath.hpp"
 #include "autopilot/guidance/PlannerParamsFactory.hpp"
 #include "autopilot/guidance/ToleranceUtils.hpp"
-#include "InternalTypes.h"
 
 namespace arlcore::autopilot {
 
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
-
 
 static std::optional<flt64_t> poseElevation(const GlobalPoseReportType& p, ElevationFrame frame) {
   switch (frame) {
@@ -30,11 +29,8 @@ static std::optional<flt64_t> poseElevation(const GlobalPoseReportType& p, Eleva
   }
 }
 
-AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const AutopilotConfig& config) :
-    nav_(nav),
-    vehicle_(vehicle),
-    config_(config),
-    arbiter_(config.arbitration) {
+AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const AutopilotConfig& config)
+    : nav_(nav), vehicle_(vehicle), config_(config), arbiter_(config.arbitration) {
   // Static side of the output clamp (own constraint settings merged with the platform's speed
   // capability); dynamic active constraints merge in per emit.
   staticClampLimits_.minSpeedMps = config_.constraints.minSpeedMps;
@@ -42,8 +38,8 @@ AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const Au
   staticClampLimits_.minDepthM = config_.constraints.minDepthM;
   staticClampLimits_.maxDepthM = config_.constraints.maxDepthM;
   const std::optional<flt64_t>& capSpeed = config_.platformCapabilities.surface.maxForwardSpeedMps;
-  if (capSpeed.has_value() && (!staticClampLimits_.maxSpeedMps.has_value() ||
-                               capSpeed.value() < staticClampLimits_.maxSpeedMps.value())) {
+  if (capSpeed.has_value() &&
+      (!staticClampLimits_.maxSpeedMps.has_value() || capSpeed.value() < staticClampLimits_.maxSpeedMps.value())) {
     staticClampLimits_.maxSpeedMps = capSpeed;
   }
 }
@@ -59,12 +55,11 @@ void AutopilotBrain::setZoneMap(const ZoneMap* zoneMap) {
   planner_.setZones(zoneMap);
   safePlanner_.setZones(zoneMap);
   if (zoneMap != nullptr) {
-    vectorGuidance_ = std::make_unique<VectorZoneGuidance>(
-        config_.vectorAvoidance, derivePlannerParams().turnRadiusM, zoneMap->config().safetyMarginM);
+    vectorGuidance_ = std::make_unique<VectorZoneGuidance>(config_.vectorAvoidance, derivePlannerParams().turnRadiusM,
+                                                           zoneMap->config().safetyMarginM);
     const CapabilityLimits& surf = config_.platformCapabilities.surface;
     const flt64_t cruise = surf.cruisingSpeedMps.value_or(surf.maxForwardSpeedMps.value_or(1.5));
-    recovery_ = std::make_unique<RecoveryGuidance>(config_.recovery, cruise,
-                                                   zoneMap->config().safetyMarginM);
+    recovery_ = std::make_unique<RecoveryGuidance>(config_.recovery, cruise, zoneMap->config().safetyMarginM);
   } else {
     vectorGuidance_.reset();
     recovery_.reset();
@@ -86,8 +81,9 @@ bool AutopilotBrain::activateSafeRoute(
   recovering_ = false;
   const std::optional<GlobalPoseReportType> pose = nav_->pose();
   if (!pose.has_value()) {
-    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Safe route requested without a navigation fix; "
-      "holding zero speed instead")
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
+                   "Safe route requested without a navigation fix; "
+                   "holding zero speed instead")
     safeHold_ = true;
     return false;
   }
@@ -97,8 +93,9 @@ bool AutopilotBrain::activateSafeRoute(
     // Safe mode often engages while the vehicle is IN violation (no zone-compliant path out
     // exists); reaching the safe route trumps zone margins, so retry zone-blind rather than
     // parking the vehicle in the violating region.
-    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Safe route is zone-blocked from the current position; "
-      "replanning zone-blind (the SRP takes precedence over zone margins)")
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "Safe route is zone-blocked from the current position; "
+                  "replanning zone-blind (the SRP takes precedence over zone margins)")
     safePlanner_.setZones(nullptr);
     safePlanner_.plan(waypoints, pose.value(), derivePlannerParams());
   }
@@ -109,8 +106,8 @@ bool AutopilotBrain::activateSafeRoute(
     return false;
   }
   safeHold_ = false;
-  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: SAFE mode running a "
-    << waypoints.size() << "-waypoint safe route")
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                "Autopilot brain: SAFE mode running a " << waypoints.size() << "-waypoint safe route")
   return true;
 }
 
@@ -163,11 +160,11 @@ bool AutopilotBrain::beginRecovery() {
   }
   const GeoPoint at{pose->position().geodeticLatitude(), pose->position().geodeticLongitude()};
   const flt64_t depth = pose->depth().has_value() ? pose->depth().value() : 0.0;
-  const std::optional<flt64_t> asf = pose->altitudeASF().has_value()
-      ? std::optional<flt64_t>(pose->altitudeASF().value()) : std::nullopt;
+  const std::optional<flt64_t> asf =
+      pose->altitudeASF().has_value() ? std::optional<flt64_t>(pose->altitudeASF().value()) : std::nullopt;
   const bool found = recovery_->begin(at, depth, asf, *zoneMap_);
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: zone recovery engaged"
-    << (found ? "" : " (no target found; holding zero speed while grace runs)"))
+                                         << (found ? "" : " (no target found; holding zero speed while grace runs)"))
   return found;
 }
 
@@ -182,8 +179,8 @@ bool AutopilotBrain::recoveryComplete() {
   }
   const GeoPoint at{pose->position().geodeticLatitude(), pose->position().geodeticLongitude()};
   const flt64_t depth = pose->depth().has_value() ? pose->depth().value() : 0.0;
-  const std::optional<flt64_t> asf = pose->altitudeASF().has_value()
-      ? std::optional<flt64_t>(pose->altitudeASF().value()) : std::nullopt;
+  const std::optional<flt64_t> asf =
+      pose->altitudeASF().has_value() ? std::optional<flt64_t>(pose->altitudeASF().value()) : std::nullopt;
   return recovery_->complete(at, depth, asf, *zoneMap_);
 }
 
@@ -240,8 +237,8 @@ void AutopilotBrain::emitControl(const ControlVector& cv) {
     lastSpeedClamped_ = result.speedClamped;
     lastElevationClamped_ = result.elevationClamped;
     if (result.speedClamped || result.elevationClamped) {
-      UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Constraint clamp engaged (speed=" << result.speedClamped
-        << ", elevation=" << result.elevationClamped << ")")
+      UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Constraint clamp engaged (speed=" << result.speedClamped << ", elevation="
+                                                                            << result.elevationClamped << ")")
     } else {
       UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Constraint clamp released")
     }
@@ -252,12 +249,9 @@ void AutopilotBrain::emitControl(const ControlVector& cv) {
   vehicle_->sendControlVector(result.cv);
 }
 
-PlannerParams AutopilotBrain::derivePlannerParams() const {
-  return arlcore::autopilot::derivePlannerParams(config_);
-}
+PlannerParams AutopilotBrain::derivePlannerParams() const { return arlcore::autopilot::derivePlannerParams(config_); }
 
-void AutopilotBrain::setVectorSetpoint(
-    const UMAA::MO::GlobalVectorControl::GlobalVectorCommandType& cmd) {
+void AutopilotBrain::setVectorSetpoint(const UMAA::MO::GlobalVectorControl::GlobalVectorCommandType& cmd) {
   std::scoped_lock lock(mtx_);
   activeVector_ = cmd;
   mode_ = DriveSource::VECTOR;
@@ -282,8 +276,7 @@ bool AutopilotBrain::setWaypointSetpoint(
   waypointProgress_ = planner_.progress();
   plannedConstraintRevision_ = constraintSource_ != nullptr ? constraintSource_->revision() : 0;
   mode_ = DriveSource::WAYPOINT;
-  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: waypoint route installed ("
-    << waypoints.size() << " waypoints)")
+  UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: waypoint route installed (" << waypoints.size() << " waypoints)")
   return true;
 }
 
@@ -316,8 +309,9 @@ void AutopilotBrain::enforceNavStaleness() {
   hold.headingRad = pose.has_value() ? pose->attitude().yaw().yaw() : 0.0;
   hold.speedMps = 0.0;
   emitControl(hold);
-  UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Navigation stale (" << ageMs.value()
-    << " ms > " << config_.loop.navStalenessTimeoutMs << " ms); commanding zero-speed hold")
+  UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Navigation stale (" << ageMs.value() << " ms > "
+                                                          << config_.loop.navStalenessTimeoutMs
+                                                          << " ms); commanding zero-speed hold")
 }
 
 void AutopilotBrain::onNavUpdate() {
@@ -351,8 +345,8 @@ void AutopilotBrain::updateRecoveryControl(const GlobalPoseReportType& pose) {
   if (recovery_ && zoneMap_ != nullptr) {
     const GeoPoint at{pose.position().geodeticLatitude(), pose.position().geodeticLongitude()};
     const flt64_t depth = pose.depth().has_value() ? pose.depth().value() : 0.0;
-    const std::optional<flt64_t> asf = pose.altitudeASF().has_value()
-        ? std::optional<flt64_t>(pose.altitudeASF().value()) : std::nullopt;
+    const std::optional<flt64_t> asf =
+        pose.altitudeASF().has_value() ? std::optional<flt64_t>(pose.altitudeASF().value()) : std::nullopt;
     const std::optional<ControlVector> cv = recovery_->tick(at, depth, asf, *zoneMap_);
     if (cv.has_value()) {
       emitControl(cv.value());
@@ -392,21 +386,18 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
   // Tangent-bug zone avoidance: the commanded heading is overridden while it would carry the
   // vehicle into (or out of) an active zone within the lookahead.
   bool avoiding = false;
-  if (vectorGuidance_ && zoneMap_ != nullptr && zoneMap_->hasZones() &&
-      zoneMap_->anchor().has_value()) {
+  if (vectorGuidance_ && zoneMap_ != nullptr && zoneMap_->hasZones() && zoneMap_->anchor().has_value()) {
     const flt64_t depthM = pose.depth().has_value() ? pose.depth().value() : 0.0;
-    const std::optional<flt64_t> asfM = pose.altitudeASF().has_value()
-        ? std::optional<flt64_t>(pose.altitudeASF().value()) : std::nullopt;
-    const ZoneSet zones = zoneMap_->activeSet(zoneMap_->anchor().value(),
-                                              ElevationEnvelope::atPoint(depthM, asfM));
+    const std::optional<flt64_t> asfM =
+        pose.altitudeASF().has_value() ? std::optional<flt64_t>(pose.altitudeASF().value()) : std::nullopt;
+    const ZoneSet zones = zoneMap_->activeSet(zoneMap_->anchor().value(), ElevationEnvelope::atPoint(depthM, asfM));
     if (!zones.empty()) {
       flt64_t xE = 0.0;
       flt64_t yN = 0.0;
       flt64_t z = 0.0;
-      zoneMap_->anchor()->Forward(pose.position().geodeticLatitude(),
-                                  pose.position().geodeticLongitude(), 0.0, xE, yN, z);
-      cv.headingRad = vectorGuidance_->steer(cv.headingRad, Vec2{xE, yN},
-                                             nav_->groundSpeedMps(), zones);
+      zoneMap_->anchor()->Forward(pose.position().geodeticLatitude(), pose.position().geodeticLongitude(), 0.0, xE, yN,
+                                  z);
+      cv.headingRad = vectorGuidance_->steer(cv.headingRad, Vec2{xE, yN}, nav_->groundSpeedMps(), zones);
       avoiding = vectorGuidance_->avoidanceActive();
     }
   }
@@ -416,16 +407,16 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
   // Achieved-flag evaluation against the commanded tolerances (or configured defaults).
   VectorProgress prog;
   prog.valid = true;
-  prog.directionAchieved = dir.has_value() &&
-      tolerance::directionAchieved(dir.value(), poseYaw, config_.vectorTolerances.directionRad);
+  prog.directionAchieved =
+      dir.has_value() && tolerance::directionAchieved(dir.value(), poseYaw, config_.vectorTolerances.directionRad);
 
-  prog.speedAchieved = sp.has_value() &&
-      tolerance::speedAchieved(sp.value(), nav_->groundSpeedMps(), config_.vectorTolerances.speedMps);
+  prog.speedAchieved =
+      sp.has_value() && tolerance::speedAchieved(sp.value(), nav_->groundSpeedMps(), config_.vectorTolerances.speedMps);
 
   if (elev.has_value()) {
     const std::optional<flt64_t> cur = poseElevation(pose, elev->frame);
-    prog.elevationAchieved = cur.has_value() &&
-        tolerance::elevationAchieved(elev.value(), cur.value(), config_.vectorTolerances.elevationM);
+    prog.elevationAchieved =
+        cur.has_value() && tolerance::elevationAchieved(elev.value(), cur.value(), config_.vectorTolerances.elevationM);
   } else {
     prog.elevationAchieved = true;
   }
@@ -447,7 +438,7 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
                config_.vectorTolerances.failureDelayS) {
       prog.hardViolation = true;
       UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Vector command hard tolerance violated for more than "
-        << config_.vectorTolerances.failureDelayS << " s")
+                                             << config_.vectorTolerances.failureDelayS << " s")
     }
   }
 

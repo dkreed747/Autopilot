@@ -4,13 +4,12 @@
 #include <cmath>
 #include <limits>
 
-#include "Logger.h"
 #include "InternalTypes.h"
+#include "Logger.h"
 
 namespace arlcore::autopilot {
 
-VectorZoneGuidance::VectorZoneGuidance(const VectorAvoidanceConfig& config, flt64_t turnRadiusM,
-                                       flt64_t safetyMarginM)
+VectorZoneGuidance::VectorZoneGuidance(const VectorAvoidanceConfig& config, flt64_t turnRadiusM, flt64_t safetyMarginM)
     : config_(config), turnRadiusM_(std::max(turnRadiusM, 1.0)), safetyMarginM_(safetyMarginM) {}
 
 void VectorZoneGuidance::reset() {
@@ -23,8 +22,7 @@ flt64_t VectorZoneGuidance::lookaheadM(flt64_t sogMps) const {
                   turnRadiusM_ + config_.lookaheadSpeedS * std::max(sogMps, 0.0));
 }
 
-flt64_t VectorZoneGuidance::steer(flt64_t commandedAz, const Vec2& vehicle, flt64_t sogMps,
-                                 const ZoneSet& zones) {
+flt64_t VectorZoneGuidance::steer(flt64_t commandedAz, const Vec2& vehicle, flt64_t sogMps, const ZoneSet& zones) {
   if (zones.empty()) {
     reset();
     return commandedAz;
@@ -32,8 +30,7 @@ flt64_t VectorZoneGuidance::steer(flt64_t commandedAz, const Vec2& vehicle, flt6
 
   const flt64_t lookahead = lookaheadM(sogMps);
   const Vec2 wantDir{std::sin(commandedAz), std::cos(commandedAz)};
-  const bool commandedBlocked =
-      zones.raycastFirstHit(vehicle, wantDir, safetyMarginM_, lookahead).has_value();
+  const bool commandedBlocked = zones.raycastFirstHit(vehicle, wantDir, safetyMarginM_, lookahead).has_value();
 
   if (state_ == State::MOTION_TO_HEADING) {
     if (!commandedBlocked) {
@@ -49,7 +46,8 @@ flt64_t VectorZoneGuidance::steer(flt64_t commandedAz, const Vec2& vehicle, flt6
     followStart_ = std::chrono::steady_clock::now();
     clearTicks_ = 0;
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Vector avoidance: commanded heading blocked within "
-      << lookahead << " m; following zone boundary " << (followRight_ ? "clockwise" : "counter-clockwise"))
+                                           << lookahead << " m; following zone boundary "
+                                           << (followRight_ ? "clockwise" : "counter-clockwise"))
   }
 
   const ClearanceInfo info = zones.clearanceInfo(vehicle);
@@ -76,15 +74,14 @@ flt64_t VectorZoneGuidance::steer(flt64_t commandedAz, const Vec2& vehicle, flt6
 
   // Leave the episode once the commanded heading has stayed clear (to an extended lookahead)
   // for a streak of ticks, a minimum dwell has passed, and the standoff is honored.
-  const bool exitClear = !zones.raycastFirstHit(vehicle, wantDir, safetyMarginM_,
-                                                lookahead * config_.exitClearFactor).has_value();
+  const bool exitClear =
+      !zones.raycastFirstHit(vehicle, wantDir, safetyMarginM_, lookahead * config_.exitClearFactor).has_value();
   if (exitClear && info.clearanceM >= safetyMarginM_) {
     ++clearTicks_;
   } else {
     clearTicks_ = 0;
   }
-  const flt64_t dwellS = std::chrono::duration<flt64_t>(
-      std::chrono::steady_clock::now() - followStart_).count();
+  const flt64_t dwellS = std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - followStart_).count();
   if (clearTicks_ >= config_.exitClearTicks && dwellS >= config_.minFollowS) {
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Vector avoidance: commanded heading clear; resuming")
     state_ = State::MOTION_TO_HEADING;

@@ -5,8 +5,8 @@
 #include <optional>
 #include <vector>
 
-#include "autopilot/core/AutopilotBrain.hpp"
 #include "InternalTypes.h"
+#include "autopilot/core/AutopilotBrain.hpp"
 
 //! Captures every control vector the brain emits.
 class BrainTestMockVehicle : public arlcore::autopilot::IVehicleControl {
@@ -14,14 +14,12 @@ class BrainTestMockVehicle : public arlcore::autopilot::IVehicleControl {
   BrainTestMockVehicle() {
     ON_CALL(*this, initialize()).WillByDefault(::testing::Return(true));
     ON_CALL(*this, sendControlVector(::testing::_))
-        .WillByDefault(::testing::Invoke(
-            [this](const arlcore::autopilot::ControlVector& cv) {
-              last = cv;
-              ++sendCount;
-              return true;
-            }));
-    ON_CALL(*this, isManualEngaged())
-        .WillByDefault(::testing::ReturnPointee(&manualEngaged));
+        .WillByDefault(::testing::Invoke([this](const arlcore::autopilot::ControlVector& cv) {
+          last = cv;
+          ++sendCount;
+          return true;
+        }));
+    ON_CALL(*this, isManualEngaged()).WillByDefault(::testing::ReturnPointee(&manualEngaged));
   }
 
   MOCK_METHOD(bool, initialize, (), (override));
@@ -37,8 +35,7 @@ class BrainTestMockConstraintSource : public arlcore::autopilot::IConstraintSour
  public:
   BrainTestMockConstraintSource() {
     ON_CALL(*this, snapshot()).WillByDefault(::testing::ReturnPointee(&snapshot_));
-    ON_CALL(*this, revision())
-        .WillByDefault(::testing::Invoke([this] { return snapshot_.revision; }));
+    ON_CALL(*this, revision()).WillByDefault(::testing::Invoke([this] { return snapshot_.revision; }));
   }
 
   MOCK_METHOD(arlcore::autopilot::ConstraintSnapshot, snapshot, (), (const, override));
@@ -71,8 +68,7 @@ static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType vectorCommand(
     UMAA::Common::Measurement::ElevationRequirementVariantType elev;
     elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant(
         UMAA::Common::Measurement::DepthRequirementVariantType());
-    elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant().depth()
-        .depth(depthM.value());
+    elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant().depth().depth(depthM.value());
     cmd.elevation() = elev;
   }
   return cmd;
@@ -122,7 +118,7 @@ TEST_F(AutopilotBrainSafetyTest, ManualEngagedSuppressesAllActuation) {
   vehicle_.manualEngaged = true;
   brain_->onNavUpdate();
   brain_->clearSetpoint(arlcore::autopilot::DriveSource::VECTOR);  // would normally emit a zero-speed hold
-  brain_->activateSafeHold();                                     // even safe mode must not actuate
+  brain_->activateSafeHold();                                      // even safe mode must not actuate
 
   // THEN: nothing reached the platform while manual was engaged
   EXPECT_EQ(vehicle_.sendCount, sendsBefore);

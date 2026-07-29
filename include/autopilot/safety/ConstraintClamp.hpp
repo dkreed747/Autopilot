@@ -3,9 +3,9 @@
 
 #include <optional>
 
-#include "autopilot/safety/ConstraintTypes.hpp"
-#include "autopilot/guidance/ControlVector.hpp"
 #include "InternalTypes.h"
+#include "autopilot/guidance/ControlVector.hpp"
+#include "autopilot/safety/ConstraintTypes.hpp"
 
 namespace arlcore::autopilot {
 

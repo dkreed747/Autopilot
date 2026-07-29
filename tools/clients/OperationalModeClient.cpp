@@ -1,9 +1,9 @@
 #include "clients/OperationalModeClient.hpp"
 
-#include "autopilot/guidance/MissionRoute.hpp"
+#include "InternalTypes.h"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
-#include "InternalTypes.h"
+#include "autopilot/guidance/MissionRoute.hpp"
 
 namespace arlcore::autopilot::tools {
 
@@ -11,12 +11,10 @@ using arlcore::io::CycloneReader;
 using arlcore::io::CycloneSender;
 using arlcore::io::ReadStatus;
 using arlcore::io::SendStatus;
-using ModeControlEnum = UMAA::Common::MaritimeEnumeration::
-    OperationalModeControlEnumModule::OperationalModeControlEnumType;
-using ModeReportEnum = UMAA::Common::MaritimeEnumeration::
-    OperationalModeEnumModule::OperationalModeEnumType;
-using StatusEnum = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::
-    CommandStatusEnumType;
+using ModeControlEnum =
+    UMAA::Common::MaritimeEnumeration::OperationalModeControlEnumModule::OperationalModeControlEnumType;
+using ModeReportEnum = UMAA::Common::MaritimeEnumeration::OperationalModeEnumModule::OperationalModeEnumType;
+using StatusEnum = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::CommandStatusEnumType;
 
 static std::optional<ModeControlEnum> parseModeName(const std::string& mode) {
   if (mode == "STANDBY") {
@@ -45,40 +43,27 @@ static std::string reportModeName(ModeReportEnum mode) {
   }
 }
 
-OperationalModeClient::OperationalModeClient(
-    const dds::domain::DomainParticipant& participant,
-    const dds::pub::qos::DataWriterQos& wqos,
-    const dds::sub::qos::DataReaderQos& rqos,
-    const arlcore::NumericGuid& destinationId, const ClientIdentity& identity)
+OperationalModeClient::OperationalModeClient(const dds::domain::DomainParticipant& participant,
+                                             const dds::pub::qos::DataWriterQos& wqos,
+                                             const dds::sub::qos::DataReaderQos& rqos,
+                                             const arlcore::NumericGuid& destinationId, const ClientIdentity& identity)
     : cmdSender_(std::make_shared<CycloneSender<CommandType>>(
-          participant,
-          UMAA::MM::OperationalModeControl::OperationalModeCommandTypeTopic,
-          wqos)),
+          participant, UMAA::MM::OperationalModeControl::OperationalModeCommandTypeTopic, wqos)),
       ackReader_(std::make_shared<CycloneReader<AckType>>(
-          participant,
-          UMAA::MM::OperationalModeControl::
-              OperationalModeCommandAckReportTypeTopic,
-          rqos)),
+          participant, UMAA::MM::OperationalModeControl::OperationalModeCommandAckReportTypeTopic, rqos)),
       statusReader_(std::make_shared<CycloneReader<StatusType>>(
-          participant,
-          UMAA::MM::OperationalModeControl::
-              OperationalModeCommandStatusTypeTopic,
-          rqos)),
+          participant, UMAA::MM::OperationalModeControl::OperationalModeCommandStatusTypeTopic, rqos)),
       reportReader_(std::make_shared<CycloneReader<ReportType>>(
-          participant,
-          UMAA::MM::OperationalModeStatus::OperationalModeReportTypeTopic,
-          rqos)),
+          participant, UMAA::MM::OperationalModeStatus::OperationalModeReportTypeTopic, rqos)),
       identity_(identity),
       destinationId_(destinationId) {}
 
-std::optional<arlcore::NumericGuid> OperationalModeClient::command(
-    const std::string& mode) {
+std::optional<arlcore::NumericGuid> OperationalModeClient::command(const std::string& mode) {
   const std::optional<ModeControlEnum> requested = parseModeName(mode);
   if (!requested.has_value()) {
     return std::nullopt;
   }
-  const arlcore::NumericGuid sessionId =
-      arlcore::UuidFactory::getInstance().generateGuid();
+  const arlcore::NumericGuid sessionId = arlcore::UuidFactory::getInstance().generateGuid();
   cmd_ = CommandType();
   cmd_.operationalMode() = requested.value();
   cmd_.sessionID() = sessionId.getGuid();
@@ -116,10 +101,8 @@ void OperationalModeClient::poll() {
     if (arlcore::NumericGuid(status.sessionID()) != sessionId_.value()) {
       continue;
     }
-    lastStatus_ =
-        ModeStatusEntry{statusName(status.commandStatus()),
-                        statusReasonName(status.commandStatusReason()),
-                        std::string(status.logMessage())};
+    lastStatus_ = ModeStatusEntry{statusName(status.commandStatus()), statusReasonName(status.commandStatusReason()),
+                                  std::string(status.logMessage())};
     const bool terminal = status.commandStatus() == StatusEnum::COMPLETED ||
                           status.commandStatus() == StatusEnum::FAILED ||
                           status.commandStatus() == StatusEnum::CANCELED;
@@ -136,9 +119,7 @@ std::optional<flt64_t> OperationalModeClient::reportAgeS() const {
   if (!reportedMode_.has_value()) {
     return std::nullopt;
   }
-  return std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() -
-                                       reportAt_)
-      .count();
+  return std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - reportAt_).count();
 }
 
 }  // namespace arlcore::autopilot::tools
