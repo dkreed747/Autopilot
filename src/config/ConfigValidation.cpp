@@ -1,5 +1,6 @@
 #include "autopilot/config/ConfigValidation.hpp"
 
+#include <cmath>
 #include <fstream>
 #include <regex>
 #include <sstream>
@@ -44,11 +45,89 @@ static void requirePositiveIfSet(Collector* c, const char* key, const std::optio
   }
 }
 
+static void requireFinite(Collector* c, const char* key, flt64_t value) {
+  if (!std::isfinite(value)) {
+    c->error(std::string(key) + " is not a finite number");
+  }
+}
+
+static void requireFiniteIfSet(Collector* c, const char* key, const std::optional<flt64_t>& value) {
+  if (value.has_value() && !std::isfinite(value.value())) {
+    c->error(std::string(key) + " is not a finite number");
+  }
+}
+
 }  // namespace detail
 
 bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* errors,
                     std::vector<std::string>* warnings) {
   detail::Collector c(errors, warnings);
+
+  // NaN/inf pass every range comparison below (no ordering with anything), so finiteness is
+  // screened first for every floating-point field.
+  detail::requireFinite(&c, "operational_mode.idle_revert_s", config.operationalMode.idleRevertS);
+  detail::requireFinite(&c, "tolerances.vector.direction_rad", config.vectorTolerances.directionRad);
+  detail::requireFinite(&c, "tolerances.vector.speed_mps", config.vectorTolerances.speedMps);
+  detail::requireFinite(&c, "tolerances.vector.elevation_m", config.vectorTolerances.elevationM);
+  detail::requireFinite(&c, "tolerances.vector.failure_delay_s", config.vectorTolerances.failureDelayS);
+  detail::requireFinite(&c, "tolerances.waypoint_defaults.position_m", config.waypointTolerances.positionM);
+  detail::requireFinite(&c, "tolerances.waypoint_defaults.yaw_rad", config.waypointTolerances.yawRad);
+  detail::requireFinite(&c, "tolerances.waypoint_defaults.elevation_m", config.waypointTolerances.elevationM);
+  detail::requireFinite(&c, "planner.lead_distance_m", config.planner.leadDistanceM);
+  detail::requireFinite(&c, "planner.turn_radius_margin", config.planner.turnRadiusMargin);
+  detail::requireFinite(&c, "planner.sample_step_m", config.planner.sampleStepM);
+  detail::requireFinite(&c, "planner.xte.kp_scale", config.planner.xte.kpScale);
+  detail::requireFinite(&c, "planner.xte.ki", config.planner.xte.ki);
+  detail::requireFinite(&c, "planner.xte.integrator_limit_rad", config.planner.xte.integratorLimitRad);
+  detail::requireFinite(&c, "planner.xte.integrator_gate_m", config.planner.xte.integratorGateM);
+  detail::requireFinite(&c, "planner.xte.correction_limit_rad", config.planner.xte.correctionLimitRad);
+  detail::requireFinite(&c, "planner.xte.lead_time_s", config.planner.xte.leadTimeS);
+  detail::requireFinite(&c, "planner.rrt.goal_bias", config.planner.rrt.goalBias);
+  detail::requireFinite(&c, "planner.rrt.edge_check_step_m", config.planner.rrt.edgeCheckStepM);
+  detail::requireFinite(&c, "planner.rrt.final_check_step_m", config.planner.rrt.finalCheckStepM);
+  detail::requireFiniteIfSet(&c, "constraints.max_speed_mps", config.constraints.maxSpeedMps);
+  detail::requireFiniteIfSet(&c, "constraints.min_speed_mps", config.constraints.minSpeedMps);
+  detail::requireFiniteIfSet(&c, "constraints.max_depth_m", config.constraints.maxDepthM);
+  detail::requireFiniteIfSet(&c, "constraints.min_depth_m", config.constraints.minDepthM);
+  detail::requireFinite(&c, "zones.safety_margin_m", config.zones.safetyMarginM);
+  detail::requireFinite(&c, "zones.compliance_hysteresis_m", config.zones.complianceHysteresisM);
+  detail::requireFinite(&c, "zones.elevation_margin_m", config.zones.elevationMarginM);
+  detail::requireFinite(&c, "vector_avoidance.lookahead_rho_factor", config.vectorAvoidance.lookaheadRhoFactor);
+  detail::requireFinite(&c, "vector_avoidance.lookahead_speed_s", config.vectorAvoidance.lookaheadSpeedS);
+  detail::requireFinite(&c, "vector_avoidance.exit_clear_factor", config.vectorAvoidance.exitClearFactor);
+  detail::requireFinite(&c, "vector_avoidance.min_follow_s", config.vectorAvoidance.minFollowS);
+  detail::requireFinite(&c, "recovery.speed_mps", config.recovery.speedMps);
+  detail::requireFinite(&c, "recovery.complete_hold_s", config.recovery.completeHoldS);
+  detail::requireFinite(&c, "safety.grace_period_s", config.safety.gracePeriodS);
+  detail::requireFiniteIfSet(&c, "safety.grace_overrides.zone_s", config.safety.graceZoneS);
+  detail::requireFiniteIfSet(&c, "safety.grace_overrides.speed_s", config.safety.graceSpeedS);
+  detail::requireFiniteIfSet(&c, "safety.grace_overrides.elevation_s", config.safety.graceElevationS);
+  detail::requireFinite(&c, "safety.clear_hold_s", config.safety.clearHoldS);
+  detail::requireFiniteIfSet(&c, "safety.safe_mode.srp.origin_lat_deg", config.safety.safeMode.srp.originLatDeg);
+  detail::requireFiniteIfSet(&c, "safety.safe_mode.srp.origin_lon_deg", config.safety.safeMode.srp.originLonDeg);
+  detail::requireFinite(&c, "safety.safe_mode.srp.hold_radius_m", config.safety.safeMode.srp.holdRadiusM);
+  detail::requireFinite(&c, "safety.safe_mode.srp.reposition_speed_mps", config.safety.safeMode.srp.repositionSpeedMps);
+  detail::requireFiniteIfSet(&c, "safety.safe_mode.srp.safe_elevation_m", config.safety.safeMode.srp.safeElevationM);
+  detail::requireFinite(&c, "vehicle_control.sim.cycle_rate_hz", config.simVehicle.cycleRateHz);
+  detail::requireFinite(&c, "vehicle_control.sim.initial_latitude_deg", config.simVehicle.initialLatitudeDeg);
+  detail::requireFinite(&c, "vehicle_control.sim.initial_longitude_deg", config.simVehicle.initialLongitudeDeg);
+  detail::requireFinite(&c, "vehicle_control.sim.initial_heading_rad", config.simVehicle.initialHeadingRad);
+  detail::requireFinite(&c, "vehicle_control.sim.accel_mps2", config.simVehicle.accelMps2);
+  detail::requireFinite(&c, "vehicle_control.sim.floor_depth_m", config.simVehicle.floorDepthM);
+  detail::requireFinite(&c, "vehicle_control.sim.current_east_mps", config.simVehicle.currentEastMps);
+  detail::requireFinite(&c, "vehicle_control.sim.current_north_mps", config.simVehicle.currentNorthMps);
+  detail::requireFinite(&c, "platform_capabilities.min_water_depth_m", config.platformCapabilities.minWaterDepthM);
+  for (const auto& [name, limits] :
+       {std::pair<const char*, const CapabilityLimits*>{"surface", &config.platformCapabilities.surface},
+        std::pair<const char*, const CapabilityLimits*>{"underwater", &config.platformCapabilities.underwater}}) {
+    const std::string prefix = std::string("platform_capabilities.") + name;
+    detail::requireFiniteIfSet(&c, (prefix + ".max_forward_speed_mps").c_str(), limits->maxForwardSpeedMps);
+    detail::requireFiniteIfSet(&c, (prefix + ".max_reverse_speed_mps").c_str(), limits->maxReverseSpeedMps);
+    detail::requireFiniteIfSet(&c, (prefix + ".cruising_speed_mps").c_str(), limits->cruisingSpeedMps);
+    detail::requireFiniteIfSet(&c, (prefix + ".max_turn_rate_rps").c_str(), limits->maxTurnRateRps);
+    detail::requireFiniteIfSet(&c, (prefix + ".min_speed_in_medium_mps").c_str(), limits->minSpeedInMediumMps);
+    detail::requireFiniteIfSet(&c, (prefix + ".max_depth_change_rate_mps").c_str(), limits->maxDepthChangeRateMps);
+  }
 
   if (config.dds.domainId < 0 || config.dds.domainId > 232) {
     c.error("dds.domain_id", config.dds.domainId, "must be in [0, 232]");

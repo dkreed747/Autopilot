@@ -1,8 +1,10 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "InternalTypes.h"
@@ -188,4 +190,37 @@ TEST_F(AutopilotBrainSafetyTest, ZeroSpeedHoldNeverRaisedByMinSpeed) {
   // THEN: the hold stays at zero speed
   ASSERT_TRUE(vehicle_.last.has_value());
   EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 0.0);
+}
+
+TEST_F(AutopilotBrainSafetyTest, StalePoseCommandsZeroSpeedHold) {
+  // GIVEN: an active vector command with a 1 ms staleness budget and an aging pose
+  arlcore::autopilot::AutopilotConfig config = testConfig();
+  config.loop.navStalenessTimeoutMs = 1;
+  brain_ = std::make_unique<arlcore::autopilot::AutopilotBrain>(&nav_, &vehicle_, config);
+  brain_->setVectorSetpoint(vectorCommand(1.0, 3.0));
+  brain_->onNavUpdate();
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  vehicle_.last.reset();
+
+  // WHEN: the staleness guard runs with no fresh pose
+  brain_->enforceNavStaleness();
+
+  // THEN: a zero-speed hold is commanded
+  ASSERT_TRUE(vehicle_.last.has_value());
+  EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 0.0);
+}
+
+TEST_F(AutopilotBrainSafetyTest, StalePoseGuardSkipsIdleVehicle) {
+  // GIVEN: no command installed (mode NONE) and an aging pose
+  arlcore::autopilot::AutopilotConfig config = testConfig();
+  config.loop.navStalenessTimeoutMs = 1;
+  brain_ = std::make_unique<arlcore::autopilot::AutopilotBrain>(&nav_, &vehicle_, config);
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  vehicle_.last.reset();
+
+  // WHEN: the staleness guard runs
+  brain_->enforceNavStaleness();
+
+  // THEN: nothing is commanded (there is nothing to hold against)
+  EXPECT_FALSE(vehicle_.last.has_value());
 }
