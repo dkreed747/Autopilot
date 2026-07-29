@@ -4,10 +4,8 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 //! \brief The smaller of two optional upper bounds (nullopt = unbounded).
-std::optional<double> mergeMax(const std::optional<double>& a, const std::optional<double>& b) {
+static std::optional<double> mergeMax(const std::optional<double>& a, const std::optional<double>& b) {
   if (a.has_value() && b.has_value()) {
     return std::min(a.value(), b.value());
   }
@@ -15,14 +13,12 @@ std::optional<double> mergeMax(const std::optional<double>& a, const std::option
 }
 
 //! \brief The larger of two optional lower bounds (nullopt = unbounded).
-std::optional<double> mergeMin(const std::optional<double>& a, const std::optional<double>& b) {
+static std::optional<double> mergeMin(const std::optional<double>& a, const std::optional<double>& b) {
   if (a.has_value() && b.has_value()) {
     return std::max(a.value(), b.value());
   }
   return a.has_value() ? a : b;
 }
-
-}  // namespace
 
 ClampResult applyConstraintClamps(const ControlVector& cv, const ConstraintSnapshot& snapshot,
                                   const ClampLimits& staticLimits) {

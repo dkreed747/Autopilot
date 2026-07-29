@@ -25,12 +25,11 @@ using UMAA::MM::BaseType::ShapeVariantType;
 using UMAA::MM::BaseType::ShapeVariantTypeEnum;
 using UMAA::MM::ConditionalStateReport::ConditionalStateReportType;
 
-namespace {
 
 //! \brief Convert a UMAA elevation bound to an evaluable zone bound. Depth is canonical, MSL
 //! altitude negates to depth, and above-sea-floor keeps its own frame (evaluated against the
 //! vehicle's altitudeASF). AGL/geodetic frames have no evaluable equivalent -> nullopt.
-std::optional<ElevationBound> toElevationBound(const ElevationVariantTypeUnion& elevation) {
+static std::optional<ElevationBound> toElevationBound(const ElevationVariantTypeUnion& elevation) {
   switch (elevation._d()) {
     case ElevationVariantTypeEnum::DEPTHVARIANT_D:
       return ElevationBound{ElevationBound::Frame::DEPTH, elevation.DepthVariantVariant().depth()};
@@ -47,7 +46,7 @@ std::optional<ElevationBound> toElevationBound(const ElevationVariantTypeUnion& 
 
 //! \brief Convert a WaterZoneConditional into the app's zone record. Returns nullopt when the
 //! zone carries no usable shape.
-std::optional<ZoneRecord> convertWaterZone(const WaterZoneConditional& zone) {
+static std::optional<ZoneRecord> convertWaterZone(const WaterZoneConditional& zone) {
   ZoneRecord record;
   record.conditionalId = zone.getConditionalId();
   record.kind = zone.getConditionalWaterZoneKind() == WaterZoneKindEnumType::INSIDE
@@ -108,13 +107,13 @@ std::optional<ZoneRecord> convertWaterZone(const WaterZoneConditional& zone) {
   return record;
 }
 
-bool isUpperBoundOp(ConditionalOperatorEnumType op) {
+static bool isUpperBoundOp(ConditionalOperatorEnumType op) {
   return op == ConditionalOperatorEnumType::LESS_THAN ||
          op == ConditionalOperatorEnumType::LESS_THAN_OR_EQUAL_TO;
 }
 
 //! \brief Fold a bound conditional (speed/depth) into the snapshot's min/max fields.
-void foldBound(ConditionalOperatorEnumType op, double value,
+static void foldBound(ConditionalOperatorEnumType op, double value,
                std::optional<double>* minOut, std::optional<double>* maxOut) {
   if (isUpperBoundOp(op)) {
     *maxOut = maxOut->has_value() ? std::min(maxOut->value(), value) : value;
@@ -122,8 +121,6 @@ void foldBound(ConditionalOperatorEnumType op, double value,
     *minOut = minOut->has_value() ? std::max(minOut->value(), value) : value;
   }
 }
-
-}  // namespace
 
 ConstraintSupervisor::ConstraintSupervisor(const AutopilotConfig& config, NavState* nav, ZoneMap* zoneMap,
     std::shared_ptr<arlcore::io::SenderBase<ConditionalStateReportType>> stateReportSender,

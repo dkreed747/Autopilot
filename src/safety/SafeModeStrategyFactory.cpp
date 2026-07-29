@@ -12,7 +12,6 @@
 
 namespace arlcore::autopilot {
 
-namespace {
 
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 
@@ -124,8 +123,6 @@ class SrpMissionStrategy : public ISafeModeStrategy {
   Phase phase_ = Phase::RUNNING;
   bool released_ = false;
 };
-
-}  // namespace
 
 std::unique_ptr<ISafeModeStrategy> makeSafeModeStrategy(const SafetyConfig& config,
                                                        const std::optional<SafeReturnPath>& srp) {

@@ -55,12 +55,12 @@
 #include "clients/WaypointMissionClient.hpp"
 #include "autopilot/config/YamlConfigLoader.hpp"
 
+// clang-format off
 // httplib drags in <netdb.h>, whose NO_DATA/NO_ADDRESS macros collide with the SDK's
 // ReadStatus enumerators — keep it (and anything after it) below the project headers.
 #include <httplib.h>          // NOLINT(build/include_order) vendored third-party/httplib
 #include <nlohmann/json.hpp>  // NOLINT(build/include_order) vendored third-party/nlohmann
-
-namespace {
+// clang-format on
 
 using arlcore::autopilot::AutopilotConfig;
 using arlcore::autopilot::MissionWaypoint;
@@ -85,7 +85,7 @@ using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 using UMAA::SA::SpeedStatus::SpeedReportType;
 using UMAA::SA::VelocityStatus::VelocityReportType;
 
-std::string guidToString(const arlcore::NumericGuid& guid) {
+static std::string guidToString(const arlcore::NumericGuid& guid) {
   std::ostringstream oss;
   oss << guid;
   return oss.str();
@@ -284,7 +284,7 @@ class ConsoleState {
 
 //! \brief Parse the GUI's mission JSON into route waypoints. Throws json exceptions on
 //! malformed input (reported as a 400 by the handler).
-std::vector<MissionWaypoint> parseMission(const json& body) {
+static std::vector<MissionWaypoint> parseMission(const json& body) {
   std::vector<MissionWaypoint> route;
   for (const auto& w : body.at("waypoints")) {
     MissionWaypoint wp;
@@ -306,7 +306,7 @@ std::vector<MissionWaypoint> parseMission(const json& body) {
 
 //! \brief The GUI's own record of a waypoint (echoed back in state so every client sees the
 //! active mission, not just the one that created it).
-json waypointsToJson(const std::vector<MissionWaypoint>& route) {
+static json waypointsToJson(const std::vector<MissionWaypoint>& route) {
   json arr = json::array();
   for (const auto& wp : route) {
     json w;
@@ -325,7 +325,7 @@ json waypointsToJson(const std::vector<MissionWaypoint>& route) {
 }
 
 //! \brief Plan the ideal Dubins route for a candidate mission from the given start pose.
-json previewPath(const std::vector<MissionWaypoint>& route, const GlobalPoseReportType& start,
+static json previewPath(const std::vector<MissionWaypoint>& route, const GlobalPoseReportType& start,
                  const AutopilotConfig& config) {
   std::vector<GlobalWaypointType> waypoints;
   for (const auto& wp : route) {
@@ -342,7 +342,7 @@ json previewPath(const std::vector<MissionWaypoint>& route, const GlobalPoseRepo
 
 //! \brief The GUI-facing constraints block: the autopilot's constraint list, the applied
 //! active set (from the standing ack), and the latest command activity.
-json constraintsJson(const ConstraintsClient& client) {
+static json constraintsJson(const ConstraintsClient& client) {
   json j;
   j["enabled"] = true;
   j["active_known"] = client.activeKnown();
@@ -385,7 +385,7 @@ json constraintsJson(const ConstraintsClient& client) {
 }
 
 //! \brief Validate the GUI's constraint JSON; throws std::runtime_error on bad input.
-void validateConstraintBody(const json& body) {
+static void validateConstraintBody(const json& body) {
   const std::string type = body.at("type").get<std::string>();
   if (type == "keep_in" || type == "keep_out") {
     const auto& polygon = body.at("polygon");
@@ -432,7 +432,7 @@ void validateConstraintBody(const json& body) {
   }
 }
 
-GlobalPoseReportType fallbackStartPose(const AutopilotConfig& config) {
+static GlobalPoseReportType fallbackStartPose(const AutopilotConfig& config) {
   GlobalPoseReportType pose;
   pose.position().geodeticLatitude(config.simVehicle.initialLatitudeDeg);
   pose.position().geodeticLongitude(config.simVehicle.initialLongitudeDeg);
@@ -447,7 +447,7 @@ constexpr double kRcServerWatchdogS = 1.0;  // browser-silence threshold before 
 
 //! \brief Classify a bus command's origin: the console itself, this platform's onboard
 //! autonomy, or any other (remote) commander. A nil autopilot platform id can never match.
-std::string classifySource(const arlcore::NumericGuid& sourceId,
+static std::string classifySource(const arlcore::NumericGuid& sourceId,
                            const arlcore::NumericGuid& sourceParentId,
                            const ClientIdentity& console,
                            const arlcore::NumericGuid& autopilotPlatformId) {
@@ -461,7 +461,7 @@ std::string classifySource(const arlcore::NumericGuid& sourceId,
 }
 
 //! \brief The GUI-facing operational-mode block.
-json operationalModeJson(const OperationalModeClient& client) {
+static json operationalModeJson(const OperationalModeClient& client) {
   json j;
   if (client.reportedMode().has_value()) {
     j["mode"] = client.reportedMode().value();
@@ -480,7 +480,7 @@ json operationalModeJson(const OperationalModeClient& client) {
 
 //! \brief The GUI-facing block for the console's own vector session (history appended by
 //! ConsoleState::snapshot).
-json vectorJson(VectorCommandClient& client, bool rcEngaged) {
+static json vectorJson(VectorCommandClient& client, bool rcEngaged) {
   json v;
   v["active"] = client.active();
   v["rc_active"] = rcEngaged;
@@ -515,7 +515,7 @@ json vectorJson(VectorCommandClient& client, bool rcEngaged) {
 }
 
 //! \brief Seconds until a UMAA end time passes (negative = already past).
-double secondsUntil(const UMAA::Common::Measurement::DateTime& endTime) {
+static double secondsUntil(const UMAA::Common::Measurement::DateTime& endTime) {
   const UMAA::Common::Measurement::DateTime now = arlcore::umaa::getTimestamp();
   return static_cast<double>(endTime.seconds() - now.seconds()) +
          (static_cast<double>(endTime.nanoseconds()) - static_cast<double>(now.nanoseconds())) * 1e-9;
@@ -523,7 +523,7 @@ double secondsUntil(const UMAA::Common::Measurement::DateTime& endTime) {
 
 //! \brief Every waypoint mission and vector command observed on the bus, classified per
 //! commander so the GUI can color them.
-json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorActivityMonitor& vecMonitor,
+static json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorActivityMonitor& vecMonitor,
                  const ClientIdentity& console, const arlcore::NumericGuid& autopilotPlatformId) {
   const auto now = std::chrono::steady_clock::now();
   json traffic;
@@ -600,7 +600,7 @@ json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorActivityM
 }
 
 //! \brief The static platform-limits block (from config, computed once).
-json platformJson(const AutopilotConfig& config) {
+static json platformJson(const AutopilotConfig& config) {
   json p;
   p["max_speed_mps"] = config.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
   if (config.platformCapabilities.underwaterEnabled &&
@@ -613,7 +613,7 @@ json platformJson(const AutopilotConfig& config) {
 
 //! \brief The speed ceiling for console-issued vector commands: the surface limit, tightened
 //! by the underwater limit when a submerged elevation is commanded.
-double vectorSpeedLimit(const AutopilotConfig& config, bool submerged) {
+static double vectorSpeedLimit(const AutopilotConfig& config, bool submerged) {
   double limit = config.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
   if (submerged && config.platformCapabilities.underwaterEnabled &&
       config.platformCapabilities.underwater.maxForwardSpeedMps.has_value()) {
@@ -623,7 +623,7 @@ double vectorSpeedLimit(const AutopilotConfig& config, bool submerged) {
 }
 
 //! \brief Parse + validate the GUI's vector JSON; throws std::runtime_error on bad input.
-VectorSetpoint parseVectorBody(const json& body, const AutopilotConfig& config) {
+static VectorSetpoint parseVectorBody(const json& body, const AutopilotConfig& config) {
   VectorSetpoint sp;
   const double headingDeg = body.at("heading_deg").get<double>();
   const double speedMps = body.at("speed_mps").get<double>();
@@ -658,8 +658,6 @@ VectorSetpoint parseVectorBody(const json& body, const AutopilotConfig& config) 
   sp.speedMps = (limit > 0.0) ? std::min(speedMps, limit) : speedMps;
   return sp;
 }
-
-}  // namespace
 
 int main(int argc, char** argv) {
   const std::string configPath = (argc > 1) ? argv[1] : "autopilot.yaml";
@@ -804,7 +802,7 @@ int main(int argc, char** argv) {
   // Each SSE client pins a worker thread for its whole connection. A large pool plus a hard
   // cap on concurrent streams keeps workers free for the control endpoints — /api/rc
   // heartbeats starving here would trip the deadman and stop the vehicle mid-drive.
-  server.new_task_queue = [] { return new httplib::ThreadPool(16); };
+  server.new_task_queue = [] { return new httplib::ThreadPool(16); };  // NOLINT: httplib takes ownership of the raw pointer
   constexpr int kMaxSseClients = 8;
   auto sseClients = std::make_shared<std::atomic<int>>(0);
   if (!server.set_mount_point("/", webRoot)) {

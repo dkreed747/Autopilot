@@ -10,8 +10,6 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 struct Node {
   Dubins2DPose pose;
   int parent = -1;
@@ -23,12 +21,12 @@ struct Node {
   explicit Node(const Dubins2DPose& p) : pose(p), edge(*DubinsPath::solve(p, p, 1.0)) {}
 };
 
-double euclidean(const Dubins2DPose& a, const Dubins2DPose& b) {
+static double euclidean(const Dubins2DPose& a, const Dubins2DPose& b) {
   return std::hypot(a.x - b.x, a.y - b.y);
 }
 
 //! \brief Indices of the k nodes nearest to `pose`, Euclidean-prefiltered from 3k candidates.
-std::vector<int> nearIndices(const std::vector<Node>& nodes, const Dubins2DPose& pose, int k) {
+static std::vector<int> nearIndices(const std::vector<Node>& nodes, const Dubins2DPose& pose, int k) {
   std::vector<int> idx(nodes.size());
   for (std::size_t i = 0; i < nodes.size(); ++i) {
     idx[i] = static_cast<int>(i);
@@ -40,8 +38,6 @@ std::vector<int> nearIndices(const std::vector<Node>& nodes, const Dubins2DPose&
   idx.resize(keep);
   return idx;
 }
-
-}  // namespace
 
 std::optional<std::vector<DubinsPath>> planDubinsRrtStar(const Dubins2DPose& start,
                                                          const Dubins2DPose& goal,

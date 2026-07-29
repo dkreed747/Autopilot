@@ -7,12 +7,10 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 constexpr double kTwoPi = 2.0 * M_PI;
 
 //! \brief Normalize an angle into [0, 2*pi).
-double mod2pi(double theta) {
+static double mod2pi(double theta) {
   double v = std::fmod(theta, kTwoPi);
   if (v < 0.0) {
     v += kTwoPi;
@@ -37,7 +35,7 @@ struct Word {
 // The six Shkel-Lumelsky closed forms. Inputs: alpha/beta are the start/goal headings in
 // the frame whose +x axis points from start to goal position; d is the normalized distance.
 
-Word wordLSL(double alpha, double beta, double d) {
+static Word wordLSL(double alpha, double beta, double d) {
   Word w{{SegType::LEFT, SegType::STRAIGHT, SegType::LEFT}};
   const double sa = std::sin(alpha), sb = std::sin(beta), ca = std::cos(alpha), cb = std::cos(beta);
   const double pSq = 2.0 + d * d - 2.0 * std::cos(alpha - beta) + 2.0 * d * (sa - sb);
@@ -52,7 +50,7 @@ Word wordLSL(double alpha, double beta, double d) {
   return w;
 }
 
-Word wordRSR(double alpha, double beta, double d) {
+static Word wordRSR(double alpha, double beta, double d) {
   Word w{{SegType::RIGHT, SegType::STRAIGHT, SegType::RIGHT}};
   const double sa = std::sin(alpha), sb = std::sin(beta), ca = std::cos(alpha), cb = std::cos(beta);
   const double pSq = 2.0 + d * d - 2.0 * std::cos(alpha - beta) + 2.0 * d * (sb - sa);
@@ -67,7 +65,7 @@ Word wordRSR(double alpha, double beta, double d) {
   return w;
 }
 
-Word wordLSR(double alpha, double beta, double d) {
+static Word wordLSR(double alpha, double beta, double d) {
   Word w{{SegType::LEFT, SegType::STRAIGHT, SegType::RIGHT}};
   const double sa = std::sin(alpha), sb = std::sin(beta), ca = std::cos(alpha), cb = std::cos(beta);
   const double pSq = -2.0 + d * d + 2.0 * std::cos(alpha - beta) + 2.0 * d * (sa + sb);
@@ -83,7 +81,7 @@ Word wordLSR(double alpha, double beta, double d) {
   return w;
 }
 
-Word wordRSL(double alpha, double beta, double d) {
+static Word wordRSL(double alpha, double beta, double d) {
   Word w{{SegType::RIGHT, SegType::STRAIGHT, SegType::LEFT}};
   const double sa = std::sin(alpha), sb = std::sin(beta), ca = std::cos(alpha), cb = std::cos(beta);
   const double pSq = -2.0 + d * d + 2.0 * std::cos(alpha - beta) - 2.0 * d * (sa + sb);
@@ -99,7 +97,7 @@ Word wordRSL(double alpha, double beta, double d) {
   return w;
 }
 
-Word wordRLR(double alpha, double beta, double d) {
+static Word wordRLR(double alpha, double beta, double d) {
   Word w{{SegType::RIGHT, SegType::LEFT, SegType::RIGHT}};
   const double sa = std::sin(alpha), sb = std::sin(beta), ca = std::cos(alpha), cb = std::cos(beta);
   const double tmp = (6.0 - d * d + 2.0 * std::cos(alpha - beta) + 2.0 * d * (sa - sb)) / 8.0;
@@ -115,7 +113,7 @@ Word wordRLR(double alpha, double beta, double d) {
   return w;
 }
 
-Word wordLRL(double alpha, double beta, double d) {
+static Word wordLRL(double alpha, double beta, double d) {
   Word w{{SegType::LEFT, SegType::RIGHT, SegType::LEFT}};
   const double sa = std::sin(alpha), sb = std::sin(beta), ca = std::cos(alpha), cb = std::cos(beta);
   const double tmp = (6.0 - d * d + 2.0 * std::cos(alpha - beta) + 2.0 * d * (sb - sa)) / 8.0;
@@ -132,7 +130,7 @@ Word wordLRL(double alpha, double beta, double d) {
 }
 
 //! \brief Advance a pose along one segment by arc length s (meters).
-Dubins2DPose advance(const Dubins2DPose& from, SegType type, double sM, double rho) {
+static Dubins2DPose advance(const Dubins2DPose& from, SegType type, double sM, double rho) {
   Dubins2DPose out = from;
   switch (type) {
     case SegType::LEFT: {
@@ -156,8 +154,6 @@ Dubins2DPose advance(const Dubins2DPose& from, SegType type, double sM, double r
   }
   return out;
 }
-
-}  // namespace
 
 std::optional<DubinsPath> DubinsPath::solve(const Dubins2DPose& start, const Dubins2DPose& goal, double rhoM) {
   if (!std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(start.theta) ||

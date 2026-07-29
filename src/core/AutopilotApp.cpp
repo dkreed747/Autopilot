@@ -28,14 +28,13 @@ using arlcore::umaa::services::SpeedReportConsumer;
 using arlcore::umaa::services::VelocityReportConsumer;
 using arlcore::umaa::services::ReportProvider;
 
-namespace {
-arlcore::NumericGuid parseId(const std::string& uuid) {
+static arlcore::NumericGuid parseId(const std::string& uuid) {
   return arlcore::UuidFactory::getInstance().parseGuidFromString(uuid);
 }
 
 //! \brief A source ID must be a well-formed UUID string; anything else would silently
 //! produce a garbage GUID and commands addressed to the configured ID would never match.
-bool validSourceId(const std::string& uuid, const char* name) {
+static bool validSourceId(const std::string& uuid, const char* name) {
   static const std::regex kUuidPattern(
       "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
   if (std::regex_match(uuid, kUuidPattern)) {
@@ -44,7 +43,6 @@ bool validSourceId(const std::string& uuid, const char* name) {
   UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "identity." << name << " is not a valid UUID: '" << uuid << "'")
   return false;
 }
-}  // namespace
 
 bool AutopilotApp::initialize(const AutopilotConfig& config) {
   config_ = config;

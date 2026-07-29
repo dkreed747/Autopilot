@@ -19,17 +19,15 @@ using arlcore::umaa::services::IncomingCommandBehavior;
 using arlcore::umaa::LargeListStatus;
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 
-namespace {
 //! \brief A DateTime `secondsAhead` seconds in the future (clamped to now for non-finite or
 //! negative inputs).
-UMAA::Common::Measurement::DateTime timestampPlus(double secondsAhead) {
+static UMAA::Common::Measurement::DateTime timestampPlus(double secondsAhead) {
   UMAA::Common::Measurement::DateTime t = arlcore::umaa::getTimestamp();
   if (std::isfinite(secondsAhead) && secondsAhead > 0.0) {
     t.seconds() += static_cast<int64_t>(secondsAhead);
   }
   return t;
 }
-}  // namespace
 
 WaypointControlServiceProvider::WaypointControlServiceProvider(
     const arlcore::NumericGuid& source, std::shared_ptr<WaypointControlServiceProviderIo> io,

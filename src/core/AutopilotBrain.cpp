@@ -13,9 +13,8 @@ namespace arlcore::autopilot {
 
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 
-namespace {
 
-std::optional<double> poseElevation(const GlobalPoseReportType& p, ElevationFrame frame) {
+static std::optional<double> poseElevation(const GlobalPoseReportType& p, ElevationFrame frame) {
   switch (frame) {
     case ElevationFrame::DEPTH:
       return p.depth().has_value() ? std::optional<double>(p.depth().value()) : std::nullopt;
@@ -29,8 +28,6 @@ std::optional<double> poseElevation(const GlobalPoseReportType& p, ElevationFram
       return std::nullopt;
   }
 }
-
-}  // namespace
 
 AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const AutopilotConfig& config) :
     nav_(nav),

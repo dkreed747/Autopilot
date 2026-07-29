@@ -6,15 +6,13 @@
 #include "Logger.h"
 #include "autopilot/config/YamlConfigLoader.hpp"
 
-namespace {
-arlcore::autopilot::AutopilotApp* g_app = nullptr;
+static arlcore::autopilot::AutopilotApp* g_app = nullptr;
 
-void handleSignal(int /*signal*/) {
+static void handleSignal(int /*signal*/) {
   if (g_app != nullptr) {
     g_app->stop();
   }
 }
-}  // namespace
 
 //! \brief Autopilot entry point: load config from YAML, construct the AutopilotConfig, hand it
 //! to AutopilotApp::initialize(), then run the control loop.

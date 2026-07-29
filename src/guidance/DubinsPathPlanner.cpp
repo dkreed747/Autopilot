@@ -16,22 +16,21 @@ namespace arlcore::autopilot {
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 
-namespace {
 
-double poseLat(const GlobalPoseReportType& p) { return p.position().geodeticLatitude(); }
-double poseLon(const GlobalPoseReportType& p) { return p.position().geodeticLongitude(); }
-double poseYaw(const GlobalPoseReportType& p) { return p.attitude().yaw().yaw(); }
+static double poseLat(const GlobalPoseReportType& p) { return p.position().geodeticLatitude(); }
+static double poseLon(const GlobalPoseReportType& p) { return p.position().geodeticLongitude(); }
+static double poseYaw(const GlobalPoseReportType& p) { return p.attitude().yaw().yaw(); }
 
-double wpLat(const GlobalWaypointType& w) { return w.position().value().geodeticLatitude(); }
-double wpLon(const GlobalWaypointType& w) { return w.position().value().geodeticLongitude(); }
+static double wpLat(const GlobalWaypointType& w) { return w.position().value().geodeticLatitude(); }
+static double wpLon(const GlobalWaypointType& w) { return w.position().value().geodeticLongitude(); }
 
 //! \brief Azimuth (true north, clockwise) <-> math angle (+x east, counterclockwise).
 //! The mapping is its own inverse.
-double azToMath(double azRad) { return wrapPi(M_PI_2 - azRad); }
-double mathToAz(double mathRad) { return wrapPi(M_PI_2 - mathRad); }
+static double azToMath(double azRad) { return wrapPi(M_PI_2 - azRad); }
+static double mathToAz(double mathRad) { return wrapPi(M_PI_2 - mathRad); }
 
 //! \brief Current pose elevation in the requested frame, if available.
-std::optional<double> poseElevation(const GlobalPoseReportType& p, ElevationFrame frame) {
+static std::optional<double> poseElevation(const GlobalPoseReportType& p, ElevationFrame frame) {
   switch (frame) {
     case ElevationFrame::DEPTH:
       return p.depth().has_value() ? std::optional<double>(p.depth().value()) : std::nullopt;
@@ -49,7 +48,7 @@ std::optional<double> poseElevation(const GlobalPoseReportType& p, ElevationFram
 }
 
 //! \brief Capture-gate half-width for a waypoint (its position tolerance or the default).
-double gateHalfWidthM(const GlobalWaypointType& wp, const PlannerParams& params) {
+static double gateHalfWidthM(const GlobalWaypointType& wp, const PlannerParams& params) {
   if (wp.position().tolerance().has_value()) {
     return wp.position().tolerance().value().limit();
   }
@@ -58,12 +57,10 @@ double gateHalfWidthM(const GlobalWaypointType& wp, const PlannerParams& params)
 
 //! \brief The waypoint's commanded speed (0 when the variant is unsupported; validation in
 //! the provider rejects such routes before they reach the planner).
-double waypointSpeedMps(const GlobalWaypointType& wp) {
+static double waypointSpeedMps(const GlobalWaypointType& wp) {
   const std::optional<SpeedValue> sp = tolerance::extractSpeed(wp.speed());
   return sp.has_value() ? sp->speedMps : 0.0;
 }
-
-}  // namespace
 
 DubinsPathPlanner::Leg::Leg(std::vector<DubinsPath> chain, double runway, double endAz)
     : paths(std::move(chain)), runwayM(runway), endAzimuthRad(endAz) {

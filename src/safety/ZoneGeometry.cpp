@@ -8,18 +8,16 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 constexpr double EPS = 1e-9;
 
-double dot(const Vec2& a, const Vec2& b) { return a.x * b.x + a.y * b.y; }
-double norm(const Vec2& a) { return std::sqrt(dot(a, a)); }
-Vec2 sub(const Vec2& a, const Vec2& b) { return {a.x - b.x, a.y - b.y}; }
-Vec2 add(const Vec2& a, const Vec2& b) { return {a.x + b.x, a.y + b.y}; }
-Vec2 scale(const Vec2& a, double s) { return {a.x * s, a.y * s}; }
+static double dot(const Vec2& a, const Vec2& b) { return a.x * b.x + a.y * b.y; }
+static double norm(const Vec2& a) { return std::sqrt(dot(a, a)); }
+static Vec2 sub(const Vec2& a, const Vec2& b) { return {a.x - b.x, a.y - b.y}; }
+static Vec2 add(const Vec2& a, const Vec2& b) { return {a.x + b.x, a.y + b.y}; }
+static Vec2 scale(const Vec2& a, double s) { return {a.x * s, a.y * s}; }
 
 //! \brief Nearest point to `p` on segment a->b.
-Vec2 closestOnSegment(const Vec2& p, const Vec2& a, const Vec2& b) {
+static Vec2 closestOnSegment(const Vec2& p, const Vec2& a, const Vec2& b) {
   const Vec2 ab = sub(b, a);
   const double len2 = dot(ab, ab);
   if (len2 < EPS) {
@@ -30,15 +28,13 @@ Vec2 closestOnSegment(const Vec2& p, const Vec2& a, const Vec2& b) {
 }
 
 //! \brief Twice the signed area of the polygon (positive when counter-clockwise).
-double signedArea2(const std::vector<Vec2>& v) {
+static double signedArea2(const std::vector<Vec2>& v) {
   double area2 = 0.0;
   for (std::size_t i = 0, j = v.size() - 1; i < v.size(); j = i++) {
     area2 += (v[j].x * v[i].y - v[i].x * v[j].y);
   }
   return area2;
 }
-
-}  // namespace
 
 LocalPolygon::LocalPolygon(std::vector<Vec2> vertices) : vertices_(std::move(vertices)) {
   if (vertices_.size() < 3) {

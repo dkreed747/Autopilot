@@ -42,16 +42,12 @@ std::string formatUuid(const arlcore::NumericGuid& guid) {
   return std::string(out);
 }
 
-namespace {
-
-arlcore::NumericGuid parseOrMint(const std::string& id) {
+static arlcore::NumericGuid parseOrMint(const std::string& id) {
   if (id.empty()) {
     return arlcore::UuidFactory::getInstance().generateGuid();
   }
   return arlcore::UuidFactory::getInstance().parseGuidFromString(id);
 }
-
-}  // namespace
 
 ConstraintsClient::ConstraintsClient(const dds::domain::DomainParticipant& participant,
                                      const dds::pub::qos::DataWriterQos& wqos,
@@ -116,11 +112,9 @@ void ConstraintsClient::sendAdd(const arlcore::NumericGuid& conditionalId, const
   addSender_->send(cmd);
 }
 
-namespace {
-
 //! \brief Fill a UMAA elevation bound in the requested frame ("depth" | "asf").
-void setElevationBound(UMAA::Common::Measurement::ElevationVariantType* bound, double value,
-                       const std::string& frame) {
+static void setElevationBound(UMAA::Common::Measurement::ElevationVariantType* bound, double value,
+                              const std::string& frame) {
   if (frame == "asf") {
     bound->ElevationVariantTypeSubtypes().AltitudeASFVariantVariant(
         UMAA::Common::Measurement::AltitudeASFVariantType());
@@ -131,8 +125,6 @@ void setElevationBound(UMAA::Common::Measurement::ElevationVariantType* bound, d
     bound->ElevationVariantTypeSubtypes().DepthVariantVariant().depth(value);
   }
 }
-
-}  // namespace
 
 std::string ConstraintsClient::upsertZone(const std::string& id, const std::string& name,
                                           bool keepIn,

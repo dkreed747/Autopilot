@@ -9,11 +9,9 @@
 
 namespace arlcore::autopilot {
 
-namespace {
-
 //! \brief Read a scalar from node[key] into *out if present and non-null.
 template <class T>
-void readScalar(const YAML::Node& node, const char* key, T* out) {
+static void readScalar(const YAML::Node& node, const char* key, T* out) {
   if (!node) {
     return;
   }
@@ -25,7 +23,7 @@ void readScalar(const YAML::Node& node, const char* key, T* out) {
 
 //! \brief Read a scalar into an std::optional if present.
 template <class T>
-void readOptional(const YAML::Node& node, const char* key, std::optional<T>* out) {
+static void readOptional(const YAML::Node& node, const char* key, std::optional<T>* out) {
   if (!node) {
     return;
   }
@@ -35,7 +33,7 @@ void readOptional(const YAML::Node& node, const char* key, std::optional<T>* out
   }
 }
 
-void readCapabilityLimits(const YAML::Node& node, CapabilityLimits* out) {
+static void readCapabilityLimits(const YAML::Node& node, CapabilityLimits* out) {
   readOptional(node, "max_forward_speed_mps", &out->maxForwardSpeedMps);
   readOptional(node, "max_reverse_speed_mps", &out->maxReverseSpeedMps);
   readOptional(node, "cruising_speed_mps", &out->cruisingSpeedMps);
@@ -43,8 +41,6 @@ void readCapabilityLimits(const YAML::Node& node, CapabilityLimits* out) {
   readOptional(node, "min_speed_in_medium_mps", &out->minSpeedInMediumMps);
   readOptional(node, "max_depth_change_rate_mps", &out->maxDepthChangeRateMps);
 }
-
-}  // namespace
 
 bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
   if (out == nullptr) {

@@ -40,8 +40,6 @@
 #include "clients/WaypointMissionClient.hpp"
 #include "autopilot/config/YamlConfigLoader.hpp"
 
-namespace {
-
 using arlcore::autopilot::MissionWaypoint;
 using arlcore::autopilot::tools::WaypointMissionClient;
 using arlcore::io::CycloneReader;
@@ -49,8 +47,6 @@ using arlcore::io::ReadStatus;
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 using UMAA::SA::SpeedStatus::SpeedReportType;
-
-}  // namespace
 
 int main(int argc, char** argv) {
   const std::string configPath = (argc > 1) ? argv[1] : "autopilot.yaml";
