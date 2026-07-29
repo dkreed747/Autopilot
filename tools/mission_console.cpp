@@ -647,7 +647,19 @@ static VectorSetpoint parseVectorBody(const json& body, const AutopilotConfig& c
 
 int main(int argc, char** argv) {
   const std::string configPath = (argc > 1) ? argv[1] : "autopilot.yaml";
-  const int32_t port = (argc > 2) ? std::stoi(argv[2]) : 8080;
+  int32_t port = 8080;
+  if (argc > 2) {
+    try {
+      port = std::stoi(argv[2]);
+    } catch (const std::exception&) {
+      port = -1;
+    }
+    if (port < 1 || port > 65535) {
+      std::cerr << "Usage: mission_console [config.yaml] [port] [webroot] -- invalid port '"
+                << argv[2] << "'" << std::endl;
+      return 2;
+    }
+  }
   const std::string webRoot = (argc > 3) ? argv[3] : "web";
 
   AutopilotConfig config;
