@@ -17,40 +17,40 @@ namespace arlcore::autopilot {
 class NavState {
  public:
   void setPose(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose) {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     pose_ = pose;
     poseReceivedAt_ = std::chrono::steady_clock::now();
   }
   void setSpeed(const UMAA::SA::SpeedStatus::SpeedReportType& speed) {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     speed_ = speed;
   }
   void setVelocity(const UMAA::SA::VelocityStatus::VelocityReportType& velocity) {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     velocity_ = velocity;
   }
 
   std::optional<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType> pose() const {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     return pose_;
   }
   std::optional<UMAA::SA::SpeedStatus::SpeedReportType> speed() const {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     return speed_;
   }
   std::optional<UMAA::SA::VelocityStatus::VelocityReportType> velocity() const {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     return velocity_;
   }
 
   bool hasPose() const {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     return pose_.has_value();
   }
 
   //! \brief Milliseconds since the newest pose was received (nullopt before the first fix).
   std::optional<int64_t> poseAgeMs() const {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     if (!pose_.has_value()) {
       return std::nullopt;
     }
@@ -60,7 +60,7 @@ class NavState {
 
   //! \brief Current ground speed if reported, else 0.
   double groundSpeedMps() const {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     if (speed_.has_value() && speed_->speedOverGround().has_value()) {
       return speed_->speedOverGround().value();
     }

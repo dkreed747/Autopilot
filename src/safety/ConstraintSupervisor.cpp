@@ -140,12 +140,12 @@ ConstraintSupervisor::ConstraintSupervisor(const AutopilotConfig& config, NavSta
 }
 
 void ConstraintSupervisor::onConditionalSetChanged(const ConditionalList& all) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   allConditionals_ = all;
 }
 
 void ConstraintSupervisor::onActiveSetChanged(const ConditionalList& active) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   activeConditionals_ = active;
   activeDirty_ = true;
 }
@@ -159,14 +159,14 @@ void ConstraintSupervisor::attachSafety(AutopilotBrain* brain,
 }
 
 ConstraintSupervisor::SafetyState ConstraintSupervisor::safetyState() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return state_;
 }
 
 void ConstraintSupervisor::update() {
   bool rebuild = false;
   {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     rebuild = activeDirty_;
     activeDirty_ = false;
   }
@@ -208,7 +208,7 @@ void ConstraintSupervisor::enterSafeMode(const char* why) {
 
 void ConstraintSupervisor::refreshSafeModePlan() {
   {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     if (state_ != SafetyState::SAFE_MODE) {
       return;
     }
@@ -229,7 +229,7 @@ void ConstraintSupervisor::updateSafety() {
 
   ConditionalList active;
   {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     active = activeConditionals_;
   }
 
@@ -238,7 +238,7 @@ void ConstraintSupervisor::updateSafety() {
     // shift the reference timestamps forward by the elapsed interval.
     if (lastSafetyTick_.has_value()) {
       const auto dt = now - lastSafetyTick_.value();
-      std::lock_guard<std::mutex> lock(mtx_);
+      std::scoped_lock lock(mtx_);
       for (auto& [id, tracker] : trackers_) {
         tracker.confirmedAt += dt;
         if (tracker.compliantSince.has_value()) {
@@ -267,7 +267,7 @@ void ConstraintSupervisor::updateSafety() {
   std::optional<std::chrono::steady_clock::time_point> earliestDeadline;
 
   {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   std::set<arlcore::NumericGuid> activeIds;
   for (const auto& conditional : active) {
     if (!conditional) {
@@ -351,14 +351,14 @@ void ConstraintSupervisor::updateSafety() {
   double allClearS = 0.0;
   SafetyState state = SafetyState::MONITORING;
   {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     state = state_;
     if (allCompliantSince_.has_value()) {
       allClearS = std::chrono::duration<double>(now - allCompliantSince_.value()).count();
     }
   }
   const auto setState = [this](SafetyState next) {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     state_ = next;
   };
 
@@ -403,7 +403,7 @@ void ConstraintSupervisor::updateSafety() {
 void ConstraintSupervisor::rebuildSnapshot() {
   ConditionalList active;
   {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     active = activeConditionals_;
   }
 
@@ -430,7 +430,7 @@ void ConstraintSupervisor::rebuildSnapshot() {
     }
   }
 
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   next.revision = ++revision_;
   snapshot_ = next;
   if (zoneMap_ != nullptr) {
@@ -450,7 +450,7 @@ void ConstraintSupervisor::publishStateReports() {
   }
   ConditionalList all;
   {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     all = allConditionals_;
   }
 
@@ -487,17 +487,17 @@ void ConstraintSupervisor::publishStateReports() {
 }
 
 ConstraintSnapshot ConstraintSupervisor::snapshot() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return snapshot_;
 }
 
 uint64_t ConstraintSupervisor::revision() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return snapshot_.revision;
 }
 
 bool ConstraintSupervisor::commandsAllowed() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   // Recovery and safe mode both hold the vehicle; only MONITORING accepts new commands.
   return brain_ == nullptr || state_ == SafetyState::MONITORING;
 }

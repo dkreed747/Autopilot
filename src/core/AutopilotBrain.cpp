@@ -51,12 +51,12 @@ AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const Au
 }
 
 void AutopilotBrain::setConstraintSource(const IConstraintSource* source) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   constraintSource_ = source;
 }
 
 void AutopilotBrain::setZoneMap(const ZoneMap* zoneMap) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   zoneMap_ = zoneMap;
   planner_.setZones(zoneMap);
   safePlanner_.setZones(zoneMap);
@@ -82,7 +82,7 @@ void AutopilotBrain::emitHold(const std::optional<GlobalPoseReportType>& pose) {
 
 bool AutopilotBrain::activateSafeRoute(
     const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   arbiter_.acquire(DriveSource::SAFE);
   mode_ = DriveSource::SAFE;
   recovering_ = false;
@@ -117,7 +117,7 @@ bool AutopilotBrain::activateSafeRoute(
 }
 
 void AutopilotBrain::activateSafeHold() {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   arbiter_.acquire(DriveSource::SAFE);
   mode_ = DriveSource::SAFE;
   recovering_ = false;
@@ -127,22 +127,22 @@ void AutopilotBrain::activateSafeHold() {
 }
 
 WaypointProgress AutopilotBrain::safeProgress() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return safePlanner_.progress();
 }
 
 bool AutopilotBrain::safeRouteComplete() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return !safeHold_ && safePlanner_.routeComplete();
 }
 
 bool AutopilotBrain::safeRouteFailed() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return !safeHold_ && safePlanner_.failed();
 }
 
 void AutopilotBrain::clearSafeMode() {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   if (mode_ != DriveSource::SAFE) {
     return;
   }
@@ -154,7 +154,7 @@ void AutopilotBrain::clearSafeMode() {
 }
 
 bool AutopilotBrain::beginRecovery() {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   if (!recovery_ || zoneMap_ == nullptr) {
     return false;
   }
@@ -174,7 +174,7 @@ bool AutopilotBrain::beginRecovery() {
 }
 
 bool AutopilotBrain::recoveryComplete() {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   if (!recovery_ || zoneMap_ == nullptr) {
     return false;
   }
@@ -190,7 +190,7 @@ bool AutopilotBrain::recoveryComplete() {
 }
 
 void AutopilotBrain::endRecovery() {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   if (!recovering_) {
     return;
   }
@@ -206,7 +206,7 @@ void AutopilotBrain::endRecovery() {
 }
 
 void AutopilotBrain::abortRecovery() {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   recovering_ = false;
   if (recovery_) {
     recovery_->end();
@@ -214,7 +214,7 @@ void AutopilotBrain::abortRecovery() {
 }
 
 bool AutopilotBrain::recovering() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return recovering_;
 }
 
@@ -260,7 +260,7 @@ PlannerParams AutopilotBrain::derivePlannerParams() const {
 
 void AutopilotBrain::setVectorSetpoint(
     const UMAA::MO::GlobalVectorControl::GlobalVectorCommandType& cmd) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   activeVector_ = cmd;
   mode_ = DriveSource::VECTOR;
   vectorProgress_ = VectorProgress{};
@@ -274,7 +274,7 @@ void AutopilotBrain::setVectorSetpoint(
 
 bool AutopilotBrain::setWaypointSetpoint(
     const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   const std::optional<GlobalPoseReportType> pose = nav_->pose();
   if (!pose.has_value()) {
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Cannot plan waypoint route without a navigation fix")
@@ -290,7 +290,7 @@ bool AutopilotBrain::setWaypointSetpoint(
 }
 
 void AutopilotBrain::clearSetpoint(DriveSource src) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   if (mode_ == src) {
     mode_ = DriveSource::NONE;
     // Bring the vehicle to a stop: without this a canceled/failed/preempted command would
@@ -305,7 +305,7 @@ void AutopilotBrain::clearSetpoint(DriveSource src) {
 }
 
 void AutopilotBrain::enforceNavStaleness() {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   if (mode_ == DriveSource::NONE) {
     return;
   }
@@ -323,7 +323,7 @@ void AutopilotBrain::enforceNavStaleness() {
 }
 
 void AutopilotBrain::onNavUpdate() {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   const std::optional<GlobalPoseReportType> pose = nav_->pose();
   if (!pose.has_value()) {
     return;
@@ -474,17 +474,17 @@ void AutopilotBrain::updateWaypointControl(const GlobalPoseReportType& pose) {
 }
 
 VectorProgress AutopilotBrain::vectorProgress() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return vectorProgress_;
 }
 
 WaypointProgress AutopilotBrain::waypointProgress() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return waypointProgress_;
 }
 
 DriveSource AutopilotBrain::mode() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return mode_;
 }
 

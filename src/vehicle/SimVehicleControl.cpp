@@ -60,7 +60,7 @@ bool SimVehicleControl::initialize() {
     return false;
   }
   {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     xEastM_ = 0.0;
     yNorthM_ = 0.0;
     headingRad_ = simConfig_.initialHeadingRad;
@@ -99,7 +99,7 @@ void SimVehicleControl::runLoop() {
 }
 
 bool SimVehicleControl::sendControlVector(const ControlVector& cv) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   setpoint_ = cv;
   controlVectorCount_++;
   UMAA_LOG_DEBUG(util::SYSTEM_LOGGER, "SimVehicleControl setpoint: heading(rad)=" << cv.headingRad
@@ -113,7 +113,7 @@ void SimVehicleControl::stepOnce(double dtS) {
     return;
   }
   {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
 
     // Act on the latest setpoint (hold current heading at zero speed when none arrived yet).
     const double targetHeading = setpoint_.has_value() ? setpoint_->headingRad : headingRad_;
@@ -168,7 +168,7 @@ void SimVehicleControl::publishReports() {
   double depth = 0.0;
   double yawRate = 0.0;
   {
-    std::lock_guard<std::mutex> lock(mtx_);
+    std::scoped_lock lock(mtx_);
     frame_.Reverse(xEastM_, yNorthM_, 0.0, lat, lon, h);
     heading = headingRad_;
     speed = speedMps_;
@@ -201,17 +201,17 @@ void SimVehicleControl::publishReports() {
 }
 
 std::optional<ControlVector> SimVehicleControl::lastControlVector() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return setpoint_;
 }
 
 uint64_t SimVehicleControl::controlVectorCount() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return controlVectorCount_;
 }
 
 SimVehicleControl::SimState SimVehicleControl::state() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   SimState s;
   double h = 0.0;
   frame_.Reverse(xEastM_, yNorthM_, 0.0, s.latitudeDeg, s.longitudeDeg, h);

@@ -22,7 +22,7 @@ int DrivingResourceArbiter::priorityOf(DriveSource who, CommandClass cls) const 
 }
 
 bool DrivingResourceArbiter::canDrive(DriveSource who, CommandClass cls) const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   if (holder_ == DriveSource::NONE || holder_ == who) {
     return true;
   }
@@ -30,7 +30,7 @@ bool DrivingResourceArbiter::canDrive(DriveSource who, CommandClass cls) const {
 }
 
 bool DrivingResourceArbiter::acquire(DriveSource who, CommandClass cls) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   if (holder_ == who) {
     // Re-acquire by the holder (e.g. a new session of a different class): reprice the grant.
     holderPriority_ = priorityOf(who, cls);
@@ -57,7 +57,7 @@ bool DrivingResourceArbiter::acquire(DriveSource who, CommandClass cls) {
 }
 
 void DrivingResourceArbiter::release(DriveSource who) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   if (holder_ == who) {
     holder_ = DriveSource::NONE;
     holderPriority_ = -1;
@@ -66,17 +66,17 @@ void DrivingResourceArbiter::release(DriveSource who) {
 }
 
 DriveSource DrivingResourceArbiter::currentHolder() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return holder_;
 }
 
 bool DrivingResourceArbiter::ownsResource(DriveSource who) const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return holder_ == who;
 }
 
 bool DrivingResourceArbiter::wasRevoked(DriveSource who) const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::scoped_lock lock(mtx_);
   return revoked_.count(who) > 0;
 }
 

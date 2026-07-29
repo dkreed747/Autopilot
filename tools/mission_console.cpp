@@ -95,33 +95,33 @@ std::string guidToString(const arlcore::NumericGuid& guid) {
 class ConsoleState {
  public:
   void updatePose(const GlobalPoseReportType& pose) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     pose_ = pose;
     lastPoseAt_ = std::chrono::steady_clock::now();
   }
   void updateSpeed(const SpeedReportType& speed) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     speed_ = speed;
   }
   void updateVelocity(const VelocityReportType& vel) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     velocity_ = vel;
   }
   void updateExecStatus(const GlobalWaypointExecutionStatusReportType& exec) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     execStatus_ = exec;
     lastExecAt_ = std::chrono::steady_clock::now();
   }
   void pushCommandStatus(const std::string& status, const std::string& reason,
                          const std::string& message) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     statusHistory_.push_back({status, reason, message});
     while (statusHistory_.size() > 25) {
       statusHistory_.pop_front();
     }
   }
   void setMission(const std::string& sessionId, const json& waypoints, const json& preview) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sessionId_ = sessionId;
     missionWaypoints_ = waypoints;
     previewPath_ = preview;
@@ -129,53 +129,53 @@ class ConsoleState {
     execStatus_.reset();
   }
   void setAck(bool ack) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     ackReceived_ = ack;
   }
   void setActive(bool active) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     missionActive_ = active;
   }
   void setConstraints(json constraints) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     constraints_ = std::move(constraints);
   }
   void setPlatform(json platform) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     platform_ = std::move(platform);
   }
   void setOperationalMode(json opMode) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     operationalMode_ = std::move(opMode);
   }
   void setVector(json vector) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     vector_ = std::move(vector);
   }
   void setTraffic(json traffic) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     traffic_ = std::move(traffic);
   }
   void pushVectorStatus(const std::string& status, const std::string& reason,
                         const std::string& message) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     vectorStatusHistory_.push_back({status, reason, message});
     while (vectorStatusHistory_.size() > 25) {
       vectorStatusHistory_.pop_front();
     }
   }
   void clearVectorStatusHistory() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     vectorStatusHistory_.clear();
   }
 
   std::optional<GlobalPoseReportType> latestPose() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     return pose_;
   }
 
   json snapshot() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     json j;
     j["telemetry"] = json::object();
     if (pose_.has_value()) {
@@ -752,7 +752,7 @@ int main(int argc, char** argv) {
         state.updateVelocity(vel);
       }
       {
-        std::lock_guard<std::mutex> lock(clientMutex);
+        std::scoped_lock lock(clientMutex);
         for (const auto& update : client.pollStatus()) {
           state.pushCommandStatus(update.status, update.reason, update.logMessage);
         }
@@ -846,7 +846,7 @@ int main(int argc, char** argv) {
         res.set_content(R"({"error":"mission has no waypoints"})", "application/json");
         return;
       }
-      std::lock_guard<std::mutex> lock(clientMutex);
+      std::scoped_lock lock(clientMutex);
       if (client.active()) {
         res.status = 409;
         res.set_content(R"({"error":"a mission is already active"})", "application/json");
@@ -870,7 +870,7 @@ int main(int argc, char** argv) {
   });
 
   server.Post("/api/mission/cancel", [&](const httplib::Request&, httplib::Response& res) {
-    std::lock_guard<std::mutex> lock(clientMutex);
+    std::scoped_lock lock(clientMutex);
     if (!client.active()) {
       res.status = 409;
       res.set_content(R"({"error":"no active mission"})", "application/json");
@@ -903,7 +903,7 @@ int main(int argc, char** argv) {
     try {
       const json body = json::parse(req.body);
       const std::string mode = body.at("mode").get<std::string>();
-      std::lock_guard<std::mutex> lock(clientMutex);
+      std::scoped_lock lock(clientMutex);
       const auto session = modeClient->command(mode);
       if (!session.has_value()) {
         res.status = 400;
@@ -922,7 +922,7 @@ int main(int argc, char** argv) {
     try {
       const json body = json::parse(req.body);
       const VectorSetpoint sp = parseVectorBody(body, config);
-      std::lock_guard<std::mutex> lock(clientMutex);
+      std::scoped_lock lock(clientMutex);
       if (rcEngaged) {
         res.status = 409;
         res.set_content(R"({"error":"remote control is engaged"})", "application/json");
@@ -941,7 +941,7 @@ int main(int argc, char** argv) {
   });
 
   server.Post("/api/vector/cancel", [&](const httplib::Request&, httplib::Response& res) {
-    std::lock_guard<std::mutex> lock(clientMutex);
+    std::scoped_lock lock(clientMutex);
     if (!vectorClient.active()) {
       res.status = 409;
       res.set_content(R"({"error":"no active vector command"})", "application/json");
@@ -958,7 +958,7 @@ int main(int argc, char** argv) {
     try {
       const json body = json::parse(req.body);
       const bool activate = body.at("active").get<bool>();
-      std::lock_guard<std::mutex> lock(clientMutex);
+      std::scoped_lock lock(clientMutex);
       if (!activate) {
         if (rcEngaged && vectorClient.active() && vectorClient.lastSetpoint().has_value()) {
           VectorSetpoint stop = vectorClient.lastSetpoint().value();
@@ -1009,7 +1009,7 @@ int main(int argc, char** argv) {
       const std::string type = body.at("type").get<std::string>();
       const std::string id = body.value("id", "");
       const std::string name = body.value("name", type);
-      std::lock_guard<std::mutex> lock(clientMutex);
+      std::scoped_lock lock(clientMutex);
       std::string newId;
       if (type == "keep_in" || type == "keep_out") {
         std::vector<std::array<double, 2>> polygon;
@@ -1043,7 +1043,7 @@ int main(int argc, char** argv) {
       return;
     }
     try {
-      std::lock_guard<std::mutex> lock(clientMutex);
+      std::scoped_lock lock(clientMutex);
       const bool ok = constraintsClient->removeConstraint(req.matches[1]);
       res.set_content(json{{"deleted", ok}}.dump(), "application/json");
     } catch (const std::exception& e) {
@@ -1064,7 +1064,7 @@ int main(int argc, char** argv) {
       for (const auto& id : body.at("ids")) {
         ids.push_back(id.get<std::string>());
       }
-      std::lock_guard<std::mutex> lock(clientMutex);
+      std::scoped_lock lock(clientMutex);
       const bool ok = constraintsClient->setActive(ids);
       res.set_content(json{{"commanded", ok}}.dump(), "application/json");
     } catch (const std::exception& e) {
