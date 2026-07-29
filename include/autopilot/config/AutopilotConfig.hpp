@@ -97,6 +97,17 @@ struct RrtConfig {
   flt64_t finalCheckStepM = 1.0;  // fine recheck of the accepted path
 };
 
+//! \brief Cross-track tracking-law tuning. Defaults reproduce the legacy pure-P behavior;
+//! ki > 0 nulls the standing offset a lateral current or trim leaves behind.
+struct XteConfig {
+  flt64_t kpScale = 1.0;              // P gain scale: correction = atan2(kp*xte, turn_radius)
+  flt64_t ki = 0.0;                   // integral gain, rad per meter-second (0 = pure P)
+  flt64_t integratorLimitRad = 0.35;  // |integral| clamp (~20 deg of crab)
+  flt64_t integratorGateM = 5.0;      // integrate only while |xte| is inside the gate
+  flt64_t correctionLimitRad = 1.2;   // total correction clamp
+  flt64_t leadTimeS = 1.0;            // tangent phase-lead seconds
+};
+
 struct PlannerConfig {
   flt64_t leadDistanceM = 50.0;
   flt64_t turnRadiusMargin = 1.25;  // planned radius = margin * (speed / max turn rate)
@@ -104,6 +115,8 @@ struct PlannerConfig {
   int32_t maxMissesPerWaypoint = 3;
   bool elevationCountsAsMiss = true;
   int32_t maxReplans = 10;
+  flt64_t sampleStepM = 2.0;  // path polyline sampling resolution
+  XteConfig xte;
   RrtConfig rrt;
 };
 
@@ -212,8 +225,10 @@ struct SimVehicleConfig {
   flt64_t initialLatitudeDeg = 39.0;
   flt64_t initialLongitudeDeg = -76.5;
   flt64_t initialHeadingRad = 0.0;
-  flt64_t accelMps2 = 1.0;     // surge acceleration/deceleration limit
-  flt64_t floorDepthM = 60.0;  // sea-floor depth below the surface (for depth/ASF simulation)
+  flt64_t accelMps2 = 1.0;       // surge acceleration/deceleration limit
+  flt64_t floorDepthM = 60.0;    // sea-floor depth below the surface (for depth/ASF simulation)
+  flt64_t currentEastMps = 0.0;  // uniform water current (drift) for exercising the XTE integral
+  flt64_t currentNorthMps = 0.0;
 };
 
 //! \brief Top-level configuration produced by YamlConfigLoader and consumed by

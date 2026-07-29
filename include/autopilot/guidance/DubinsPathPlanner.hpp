@@ -12,6 +12,7 @@
 
 #include "InternalTypes.h"
 #include "autopilot/guidance/ControlVector.hpp"
+#include "autopilot/guidance/CrossTrackController.hpp"
 #include "autopilot/guidance/DubinsPath.hpp"
 #include "autopilot/guidance/DubinsRrtStar.hpp"
 #include "autopilot/guidance/ProgressTypes.hpp"
@@ -31,11 +32,13 @@ struct PlannerParams {
   flt64_t elevCaptureM = 1.0;        // default elevation capture tolerance
   int32_t maxMissesPerWaypoint = 3;  // misses before the route fails
   bool elevationCountsAsMiss = true;
-  int32_t maxReplans = 10;        // guard against endless replanning (spirals excluded)
-  flt64_t sampleStepM = 2.0;      // path polyline sampling resolution
-  flt64_t maxDepthRateMps = 0.0;  // platform depth-change limit (0 = unknown/surface-only)
-  flt64_t zoneMarginM = 5.0;      // required clearance from active zone boundaries
-  DubinsRrtParams rrt;            // fallback planner tuning (rho/margin filled per leg)
+  int32_t maxReplans = 10;           // guard against endless replanning (spirals excluded)
+  flt64_t sampleStepM = 2.0;         // path polyline sampling resolution
+  flt64_t maxDepthRateMps = 0.0;     // platform depth-change limit (0 = unknown/surface-only)
+  flt64_t zoneMarginM = 5.0;         // required clearance from active zone boundaries
+  flt64_t leadTimeS = 1.0;           // tangent phase-lead seconds ahead of the progress pointer
+  CrossTrackController::Params xte;  // cross-track PI tuning (ki = 0 -> legacy pure P)
+  DubinsRrtParams rrt;               // fallback planner tuning (rho/margin filled per leg)
 };
 
 //! \brief Drives a vehicle through a series of 3D waypoints along true Dubins paths, each leg
@@ -68,9 +71,14 @@ class DubinsPathPlanner {
             const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& start, const PlannerParams& params);
 
   //! \brief Produce a control vector for the current pose and advance capture/miss/replan
-  //! state. Call once per navigation packet with the latest ground speed (feeds the
-  //! cross-track correction and the spiral approach budget).
-  ControlVector update(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose, flt64_t groundSpeedMps);
+  //! state. Call once per navigation packet with the latest ground speed and the elapsed
+  //! seconds since the previous packet (feeds the cross-track PI and the spiral budget;
+  //! pass 0 when unknown, which freezes the integral for that tick).
+  ControlVector update(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose, flt64_t groundSpeedMps,
+                       flt64_t dtS);
+
+  //! \brief The cross-track integrator state, for tests and diagnostics.
+  flt64_t xteIntegratorRad() const { return xteCtl_.integratorRad(); }
 
   //! \brief Latest progress snapshot (mapped into the UMAA waypoint execution status report).
   const WaypointProgress& progress() const { return progress_; }
@@ -184,6 +192,7 @@ class DubinsPathPlanner {
   std::size_t targetIndex_ = 0;
   std::optional<Leg> currentLeg_;
   flt64_t legProgressS_ = 0.0;             // monotonic arc-length progress along the current leg
+  CrossTrackController xteCtl_;            // reset at every leg boundary/replan
   std::optional<flt64_t> lastGateAlongM_;  // previous signed along-track distance to the gate
   bool routeComplete_ = false;
   bool failed_ = false;

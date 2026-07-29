@@ -128,7 +128,7 @@ static flt64_t previewMinClearance(const std::vector<std::pair<flt64_t, flt64_t>
 static void runMission(arlcore::autopilot::DubinsPathPlanner* planner, ConstrainedSimVehicle* vehicle, int32_t maxSteps,
                        flt64_t dtS = 0.5) {
   for (int32_t i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
-    const arlcore::autopilot::ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
+    const arlcore::autopilot::ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps, dtS);
     vehicle->step(cv, dtS);
   }
 }
@@ -175,7 +175,7 @@ TEST(ConstrainedPlannerTest, DirectLegDetoursAroundKeepOut) {
   // WHEN: the vehicle flies the mission
   flt64_t minFlownClearance = 1e18;
   for (int32_t i = 0; i < 3000 && !planner.routeComplete() && !planner.failed(); ++i) {
-    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
+    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
     vehicle.step(cv, 0.5);
     minFlownClearance = std::min(minFlownClearance, map.clearanceM(at(vehicle.xE, vehicle.yN), 0.0));
   }
@@ -222,7 +222,7 @@ TEST(ConstrainedPlannerTest, MidRouteConstraintChangeReplansCurrentLeg) {
   // THEN: the replanned remainder respects the new zone and the mission still completes
   flt64_t minFlownClearance = 1e18;
   for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); ++i) {
-    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
+    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
     vehicle.step(cv, 0.5);
     minFlownClearance = std::min(minFlownClearance, map.clearanceM(at(vehicle.xE, vehicle.yN), 0.0));
   }

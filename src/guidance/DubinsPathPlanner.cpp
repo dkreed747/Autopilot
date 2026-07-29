@@ -262,6 +262,7 @@ void DubinsPathPlanner::plan(const std::vector<GlobalWaypointType>& waypoints, c
   waypoints_ = waypoints;
   params_ = params;
   params_.sampleStepM = std::max(0.5, params_.sampleStepM);
+  xteCtl_.configure(params_.xte);
   missCounts_.assign(waypoints_.size(), 0);
   targetIndex_ = 0;
   routeComplete_ = waypoints_.empty();
@@ -269,6 +270,7 @@ void DubinsPathPlanner::plan(const std::vector<GlobalWaypointType>& waypoints, c
   replanCount_ = 0;
   hasLastPos_ = false;
   legProgressS_ = 0.0;
+  xteCtl_.reset();
   lastGateAlongM_.reset();
   elevApproachBudget_.reset();
   elevApproachesUsed_ = 0;
@@ -354,6 +356,7 @@ bool DubinsPathPlanner::replanCurrentLegFrom(const GlobalPoseReportType& pose) {
     return false;
   }
   legProgressS_ = 0.0;
+  xteCtl_.reset();
   lastGateAlongM_.reset();
   elevApproachBudget_.reset();
   elevApproachesUsed_ = 0;
@@ -423,6 +426,7 @@ void DubinsPathPlanner::advanceToNextWaypoint() {
   const flt64_t fromY = wpY_[targetIndex_];
   targetIndex_++;
   legProgressS_ = 0.0;
+  xteCtl_.reset();
   lastGateAlongM_.reset();
   elevApproachBudget_.reset();
   elevApproachesUsed_ = 0;
@@ -474,6 +478,7 @@ void DubinsPathPlanner::registerMiss(const Dubins2DPose& current) {
     return;
   }
   legProgressS_ = 0.0;
+  xteCtl_.reset();
   lastGateAlongM_.reset();
   elevApproachBudget_.reset();
   elevApproachesUsed_ = 0;
@@ -497,6 +502,7 @@ void DubinsPathPlanner::spiralReplan(const Dubins2DPose& current) {
     return;
   }
   legProgressS_ = 0.0;
+  xteCtl_.reset();
   lastGateAlongM_.reset();
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner spiral pass "
                                          << elevApproachesUsed_ << "/" << elevApproachBudget_.value_or(0)
@@ -595,7 +601,7 @@ void DubinsPathPlanner::updateDistanceMetrics(flt64_t xE, flt64_t yN, flt64_t di
   }
 }
 
-ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_t groundSpeedMps) {
+ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_t groundSpeedMps, flt64_t dtS) {
   progress_.valid = true;
   if (waypoints_.empty() || routeComplete_ || failed_) {
     progress_.routeComplete = routeComplete_;
@@ -624,6 +630,7 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_
       return hold;
     }
     legProgressS_ = 0.0;
+    xteCtl_.reset();
     lastGateAlongM_.reset();
     elevApproachBudget_.reset();
   }
@@ -670,10 +677,10 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_
   // correction atan(xte / turnRadius) that converges back onto the path within roughly one
   // turn radius without saturating the vehicle's turn authority.
   const flt64_t vMps = std::max(groundSpeedMps, 0.5);
-  const flt64_t tangentS = legProgressS_ + std::max(2.0 * step, 1.0 * vMps);
+  const flt64_t tangentS = legProgressS_ + std::max(2.0 * step, params_.leadTimeS * vMps);
   const Dubins2DPose tangentPoint = sampleExtended(leg, tangentS);
   const flt64_t pathAz = mathToAz(tangentPoint.theta);
-  const flt64_t correction = std::clamp(std::atan2(pathXteM, std::max(params_.turnRadiusM, 1.0)), -1.2, 1.2);
+  const flt64_t correction = xteCtl_.correction(pathXteM, params_.turnRadiusM, dtS);
 
   ControlVector cv;
   cv.headingRad = wrapPi(pathAz - correction);

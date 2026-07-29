@@ -123,7 +123,15 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
     readScalar(planner, "max_misses_per_waypoint", &out->planner.maxMissesPerWaypoint);
     readScalar(planner, "elevation_counts_as_miss", &out->planner.elevationCountsAsMiss);
     readScalar(planner, "max_replans", &out->planner.maxReplans);
+    readScalar(planner, "sample_step_m", &out->planner.sampleStepM);
     if (planner) {
+      const YAML::Node xte = planner["xte"];
+      readScalar(xte, "kp_scale", &out->planner.xte.kpScale);
+      readScalar(xte, "ki", &out->planner.xte.ki);
+      readScalar(xte, "integrator_limit_rad", &out->planner.xte.integratorLimitRad);
+      readScalar(xte, "integrator_gate_m", &out->planner.xte.integratorGateM);
+      readScalar(xte, "correction_limit_rad", &out->planner.xte.correctionLimitRad);
+      readScalar(xte, "lead_time_s", &out->planner.xte.leadTimeS);
       const YAML::Node rrt = planner["rrt"];
       readScalar(rrt, "seed", &out->planner.rrt.seed);
       readScalar(rrt, "max_iterations", &out->planner.rrt.maxIterations);
@@ -194,6 +202,8 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
       readScalar(sim, "initial_heading_rad", &out->simVehicle.initialHeadingRad);
       readScalar(sim, "accel_mps2", &out->simVehicle.accelMps2);
       readScalar(sim, "floor_depth_m", &out->simVehicle.floorDepthM);
+      readScalar(sim, "current_east_mps", &out->simVehicle.currentEastMps);
+      readScalar(sim, "current_north_mps", &out->simVehicle.currentNorthMps);
     }
 
     const YAML::Node specs = root["platform_specs"];

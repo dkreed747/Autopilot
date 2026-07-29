@@ -24,6 +24,13 @@ inline PlannerParams derivePlannerParams(const AutopilotConfig& config) {
   p.maxMissesPerWaypoint = config.planner.maxMissesPerWaypoint;
   p.elevationCountsAsMiss = config.planner.elevationCountsAsMiss;
   p.maxReplans = config.planner.maxReplans;
+  p.sampleStepM = config.planner.sampleStepM;
+  p.leadTimeS = config.planner.xte.leadTimeS;
+  p.xte.kpScale = config.planner.xte.kpScale;
+  p.xte.ki = config.planner.xte.ki;
+  p.xte.integratorLimitRad = config.planner.xte.integratorLimitRad;
+  p.xte.integratorGateM = config.planner.xte.integratorGateM;
+  p.xte.correctionLimitRad = config.planner.xte.correctionLimitRad;
 
   const CapabilityLimits& surf = config.platformCapabilities.surface;
   const std::optional<flt64_t> speed =

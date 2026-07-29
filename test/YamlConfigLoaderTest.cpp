@@ -332,3 +332,45 @@ TEST_F(YamlConfigLoaderTest, TypeMismatchedValueFailsLoad) {
   // THEN: the contained conversion error fails the load instead of aborting
   EXPECT_FALSE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 }
+
+TEST_F(YamlConfigLoaderTest, LoadsCrossTrackAndSimDriftFields) {
+  // GIVEN: a config file setting the planner xte block, sample step, and sim current
+  writeConfig(
+      "planner:\n"
+      "  sample_step_m: 1.5\n"
+      "  xte:\n"
+      "    kp_scale: 1.2\n"
+      "    ki: 0.04\n"
+      "    integrator_limit_rad: 0.3\n"
+      "    integrator_gate_m: 8.0\n"
+      "    correction_limit_rad: 1.0\n"
+      "    lead_time_s: 1.5\n"
+      "vehicle_control:\n"
+      "  sim:\n"
+      "    current_east_mps: 0.3\n"
+      "    current_north_mps: -0.1\n");
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: the config is loaded
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
+
+  // THEN: every field round-trips
+  EXPECT_DOUBLE_EQ(config.planner.sampleStepM, 1.5);
+  EXPECT_DOUBLE_EQ(config.planner.xte.kpScale, 1.2);
+  EXPECT_DOUBLE_EQ(config.planner.xte.ki, 0.04);
+  EXPECT_DOUBLE_EQ(config.planner.xte.integratorLimitRad, 0.3);
+  EXPECT_DOUBLE_EQ(config.planner.xte.integratorGateM, 8.0);
+  EXPECT_DOUBLE_EQ(config.planner.xte.correctionLimitRad, 1.0);
+  EXPECT_DOUBLE_EQ(config.planner.xte.leadTimeS, 1.5);
+  EXPECT_DOUBLE_EQ(config.simVehicle.currentEastMps, 0.3);
+  EXPECT_DOUBLE_EQ(config.simVehicle.currentNorthMps, -0.1);
+
+  // WHEN: defaults are loaded from an empty file
+  writeConfig("");
+  arlcore::autopilot::AutopilotConfig defaults;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &defaults));
+  // THEN: the xte defaults reproduce the legacy pure-P law
+  EXPECT_DOUBLE_EQ(defaults.planner.xte.ki, 0.0);
+  EXPECT_DOUBLE_EQ(defaults.planner.xte.kpScale, 1.0);
+  EXPECT_DOUBLE_EQ(defaults.planner.xte.correctionLimitRad, 1.2);
+}

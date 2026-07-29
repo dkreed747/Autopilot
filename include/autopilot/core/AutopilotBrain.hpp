@@ -134,6 +134,8 @@ class AutopilotBrain : public IAutopilot {
   // achieved, a persistent violation (longer than failureDelayS) fails the command.
   bool vectorEverAchieved_ = false;
   std::optional<std::chrono::steady_clock::time_point> vectorViolationSince_;
+  std::optional<std::chrono::steady_clock::time_point> lastNavTickAt_;
+  flt64_t navTickDtS_ = 0.0;  // elapsed seconds between nav ticks, for the XTE integral
 };
 
 }  // namespace arlcore::autopilot

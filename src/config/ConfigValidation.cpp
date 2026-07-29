@@ -155,6 +155,26 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
   if (p.maxReplans < 0) {
     c.error("planner.max_replans", p.maxReplans, "must be >= 0");
   }
+  if (p.sampleStepM <= 0.0) {
+    c.error("planner.sample_step_m", p.sampleStepM, "must be > 0");
+  } else if (p.sampleStepM > 10.0) {
+    c.warn("planner.sample_step_m above 10 m degrades the progress search and cross-track measurement");
+  }
+  if (p.xte.kpScale <= 0.0) {
+    c.error("planner.xte.kp_scale", p.xte.kpScale, "must be > 0");
+  }
+  if (p.xte.ki < 0.0) {
+    c.error("planner.xte.ki", p.xte.ki, "must be >= 0");
+  }
+  if (p.xte.integratorLimitRad < 0.0 || p.xte.integratorGateM < 0.0) {
+    c.error("planner.xte integrator limit/gate must be >= 0");
+  }
+  if (p.xte.correctionLimitRad <= 0.0) {
+    c.error("planner.xte.correction_limit_rad", p.xte.correctionLimitRad, "must be > 0");
+  }
+  if (p.xte.leadTimeS < 0.0) {
+    c.error("planner.xte.lead_time_s", p.xte.leadTimeS, "must be >= 0");
+  }
   const RrtConfig& rrt = p.rrt;
   if (rrt.maxIterations <= 0 || rrt.nearK <= 0) {
     c.error("planner.rrt.max_iterations/near_k must be > 0");

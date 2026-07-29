@@ -320,6 +320,9 @@ void AutopilotBrain::onNavUpdate() {
   if (!pose.has_value()) {
     return;
   }
+  const auto now = std::chrono::steady_clock::now();
+  navTickDtS_ = lastNavTickAt_.has_value() ? std::chrono::duration<flt64_t>(now - lastNavTickAt_.value()).count() : 0.0;
+  lastNavTickAt_ = now;
   // Recovery overrides whatever guidance is (or is not) active: an installed command stays
   // EXECUTING with its progress frozen, and an idle vehicle is still driven back to compliance.
   if (recovering_ && mode_ != DriveSource::SAFE) {
@@ -358,7 +361,7 @@ void AutopilotBrain::updateRecoveryControl(const GlobalPoseReportType& pose) {
 
 void AutopilotBrain::updateSafeControl(const GlobalPoseReportType& pose) {
   if (!safeHold_ && safePlanner_.hasRoute() && !safePlanner_.failed()) {
-    emitControl(safePlanner_.update(pose, nav_->groundSpeedMps()));
+    emitControl(safePlanner_.update(pose, nav_->groundSpeedMps(), navTickDtS_));
     return;
   }
   emitHold(pose);
@@ -452,7 +455,7 @@ void AutopilotBrain::updateWaypointControl(const GlobalPoseReportType& pose) {
     plannedConstraintRevision_ = constraintSource_->revision();
     planner_.onConstraintsChanged(pose);
   }
-  const ControlVector cv = planner_.update(pose, nav_->groundSpeedMps());
+  const ControlVector cv = planner_.update(pose, nav_->groundSpeedMps(), navTickDtS_);
   emitControl(cv);
 
   WaypointProgress prog = planner_.progress();

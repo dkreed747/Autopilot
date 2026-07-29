@@ -140,8 +140,8 @@ void SimVehicleControl::stepOnce(flt64_t dtS) {
       }
     }
 
-    xEastM_ += speedMps_ * dtS * std::sin(headingRad_);
-    yNorthM_ += speedMps_ * dtS * std::cos(headingRad_);
+    xEastM_ += (speedMps_ * std::sin(headingRad_) + simConfig_.currentEastMps) * dtS;
+    yNorthM_ += (speedMps_ * std::cos(headingRad_) + simConfig_.currentNorthMps) * dtS;
   }
   publishReports();
 }

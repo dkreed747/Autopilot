@@ -59,6 +59,7 @@ find_package(Threads REQUIRED)
 add_library(autopilot-core
   src/config/ConfigValidation.cpp
   src/config/YamlConfigLoader.cpp
+  src/guidance/CrossTrackController.cpp
   src/guidance/DubinsPath.cpp
   src/guidance/DubinsPathPlanner.cpp
   src/guidance/DubinsRrtStar.cpp
@@ -120,6 +121,7 @@ if(AUTOPILOT_BUILD_TESTS)
   add_executable(autopilot_test
     test/AutopilotBrainSafetyTest.cpp
     test/ConstrainedPlannerTest.cpp
+    test/CrossTrackControllerTest.cpp
     test/ConstraintClampTest.cpp
     test/ConstraintSupervisorTest.cpp
     test/DrivingResourceArbiterTest.cpp

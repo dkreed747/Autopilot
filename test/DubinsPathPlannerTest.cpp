@@ -26,6 +26,8 @@ struct PlannerSimVehicle {
   flt64_t maxTurnRateRps = 0.25;
   flt64_t maxDepthRateMps = 0.5;
   flt64_t floorDepthM = 60.0;
+  flt64_t driftEastMps = 0.0;  // uniform lateral current the controller cannot see
+  flt64_t driftNorthMps = 0.0;
   std::optional<flt64_t> depthM;
 
   GlobalPoseReportType pose() const {
@@ -49,8 +51,8 @@ struct PlannerSimVehicle {
     const flt64_t maxDelta = maxTurnRateRps * dtS;
     yawRad = arlcore::autopilot::wrapPi(yawRad + std::clamp(err, -maxDelta, maxDelta));
     speedMps = cv.speedMps;
-    xE += speedMps * dtS * std::sin(yawRad);
-    yN += speedMps * dtS * std::cos(yawRad);
+    xE += (speedMps * std::sin(yawRad) + driftEastMps) * dtS;
+    yN += (speedMps * std::cos(yawRad) + driftNorthMps) * dtS;
     if (depthM.has_value() && cv.elevationM.has_value()) {
       std::optional<flt64_t> targetDepth;
       if (cv.elevationFrame == arlcore::autopilot::ElevationFrame::DEPTH) {
@@ -133,7 +135,7 @@ static arlcore::autopilot::PlannerParams testParams() {
 static void runMission(arlcore::autopilot::DubinsPathPlanner* planner, PlannerSimVehicle* vehicle, int32_t maxSteps,
                        flt64_t dtS = 0.5) {
   for (int32_t i = 0; i < maxSteps && !planner->routeComplete() && !planner->failed(); i++) {
-    const arlcore::autopilot::ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps);
+    const arlcore::autopilot::ControlVector cv = planner->update(vehicle->pose(), vehicle->speedMps, dtS);
     vehicle->step(cv, dtS);
   }
 }
@@ -146,7 +148,7 @@ TEST(DubinsPathPlannerTest, EmptyRouteIsImmediatelyComplete) {
   planner.plan({}, vehicle.pose(), testParams());
   // THEN: the route is immediately complete and the planner commands zero speed
   EXPECT_TRUE(planner.routeComplete());
-  const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
+  const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
   EXPECT_DOUBLE_EQ(cv.speedMps, 0.0);
 }
 
@@ -171,7 +173,7 @@ TEST(DubinsPathPlannerTest, FollowsMultiWaypointRouteToCompletion) {
   EXPECT_FALSE(planner.failed());
   EXPECT_EQ(planner.progress().waypointsRemaining, 0);
   // After completion the planner must command zero speed.
-  const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
+  const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
   EXPECT_DOUBLE_EQ(cv.speedMps, 0.0);
 }
 
@@ -251,7 +253,7 @@ TEST(DubinsPathPlannerTest, ProgressMetricsAreSane) {
   planner.plan(route, vehicle.pose(), testParams());
 
   // WHEN: the first guidance update is taken
-  arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
+  arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
   const arlcore::autopilot::WaypointProgress first = planner.progress();
   // THEN: the initial progress metrics are valid and consistent with the geometry
   EXPECT_TRUE(first.valid);
@@ -261,7 +263,7 @@ TEST(DubinsPathPlannerTest, ProgressMetricsAreSane) {
 
   // WHEN: the vehicle flies 200 steps toward the first waypoint
   for (int32_t i = 0; i < 200; i++) {
-    cv = planner.update(vehicle.pose(), vehicle.speedMps);
+    cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
     vehicle.step(cv, 0.5);
   }
   // THEN: distances shrink and cumulative distance grows
@@ -346,7 +348,7 @@ TEST(DubinsPathPlannerTest, GateCaptureHappensAtTheWaypointPlane) {
   bool sawFirstCapture = false;
   flt64_t captureNorth = 0.0;
   for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
-    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
+    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
     if (!sawFirstCapture && planner.progress().waypointsRemaining == 1) {
       sawFirstCapture = true;
       captureNorth = vehicle.yN;
@@ -424,7 +426,7 @@ TEST(DubinsPathPlannerTest, CrossTrackErrorIsJudgedAgainstThePlannedPath) {
   // WHEN: the vehicle flies the mission while recording the maximum cross-track error
   flt64_t maxAbsXte = 0.0;
   for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
-    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
+    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.1);
     if (planner.progress().crossTrackErrorM.has_value()) {
       maxAbsXte = std::max(maxAbsXte, std::fabs(planner.progress().crossTrackErrorM.value()));
     }
@@ -443,10 +445,111 @@ TEST(DubinsPathPlannerTest, CommandsWaypointSpeedAndElevation) {
   planner.plan(route, vehicle.pose(), testParams());
 
   // WHEN: the first guidance update is taken
-  const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps);
+  const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
   // THEN: the control vector commands the waypoint's speed and depth
   EXPECT_DOUBLE_EQ(cv.speedMps, 3.5);
   ASSERT_TRUE(cv.elevationM.has_value());
   EXPECT_DOUBLE_EQ(cv.elevationM.value(), 25.0);
   EXPECT_EQ(cv.elevationFrame, arlcore::autopilot::ElevationFrame::DEPTH);
+}
+
+TEST(DubinsPathPlannerTest, PurePShowsSteadyOffsetUnderDrift) {
+  // GIVEN: a straight northbound leg flown through a 0.3 m/s eastward current with pure P
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  vehicle.driftEastMps = 0.3;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 600.0, 3.0)};
+  planner.plan(route, vehicle.pose(), testParams());
+
+  // WHEN: the vehicle flies the leg while the cross-track error is recorded past mid-leg
+  flt64_t sumXte = 0.0;
+  int32_t samples = 0;
+  for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
+    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
+    vehicle.step(cv, 0.5);
+    if (vehicle.yN > 300.0 && planner.progress().crossTrackErrorM.has_value()) {
+      sumXte += planner.progress().crossTrackErrorM.value();
+      samples++;
+    }
+  }
+  // THEN: the leg completes with a standing starboard offset the P law cannot null
+  //       (equilibrium ~ turnRadius * tan(asin(drift/speed)) ~ 2 m at R=20)
+  ASSERT_GT(samples, 50);
+  const flt64_t meanXte = sumXte / samples;
+  EXPECT_GT(meanXte, 1.0);
+  EXPECT_LT(meanXte, 3.5);
+}
+
+TEST(DubinsPathPlannerTest, PiNullsDriftWithoutOscillation) {
+  // GIVEN: the same drift scenario with the integral term enabled (ki = 0.05)
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  vehicle.driftEastMps = 0.3;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 600.0, 3.0)};
+  arlcore::autopilot::PlannerParams params = testParams();
+  params.xte.ki = 0.05;
+  planner.plan(route, vehicle.pose(), params);
+
+  // WHEN: the vehicle flies the leg while the settled cross-track error is recorded
+  flt64_t sumAbsXte = 0.0;
+  flt64_t maxAbsXte = 0.0;
+  int32_t samples = 0;
+  for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
+    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
+    vehicle.step(cv, 0.5);
+    if (vehicle.yN > 300.0 && planner.progress().crossTrackErrorM.has_value()) {
+      const flt64_t xte = std::fabs(planner.progress().crossTrackErrorM.value());
+      sumAbsXte += xte;
+      maxAbsXte = std::max(maxAbsXte, xte);
+      samples++;
+    }
+  }
+  // THEN: the integral nulls the offset without oscillating
+  ASSERT_GT(samples, 50);
+  EXPECT_LT(sumAbsXte / samples, 0.5);
+  EXPECT_LT(maxAbsXte, 1.0);
+}
+
+TEST(DubinsPathPlannerTest, IntegratorResetsOnReplan) {
+  // GIVEN: a PI-tracked leg flown through drift until the integrator has wound up
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  vehicle.driftEastMps = 0.3;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 600.0, 3.0)};
+  arlcore::autopilot::PlannerParams params = testParams();
+  params.xte.ki = 0.05;
+  planner.plan(route, vehicle.pose(), params);
+  for (int32_t i = 0; i < 200; i++) {
+    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
+    vehicle.step(cv, 0.5);
+  }
+  ASSERT_NE(planner.xteIntegratorRad(), 0.0);
+
+  // WHEN: the current leg is replanned from the live pose (constraint change / recovery handoff)
+  ASSERT_TRUE(planner.replanCurrentLegFrom(vehicle.pose()));
+
+  // THEN: the integrator restarts from zero for the new leg
+  EXPECT_EQ(planner.xteIntegratorRad(), 0.0);
+}
+
+TEST(DubinsPathPlannerTest, IntegratorStaysFrozenDuringGrossCapture) {
+  // GIVEN: a PI-tracked route whose vehicle is teleported far off the planned path
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 600.0, 3.0)};
+  arlcore::autopilot::PlannerParams params = testParams();
+  params.xte.ki = 0.05;
+  planner.plan(route, vehicle.pose(), params);
+  vehicle.xE = 100.0;  // 100 m starboard of the leg, far outside the 5 m integrator gate
+
+  // WHEN: guidance runs while the error is outside the integrator gate
+  for (int32_t i = 0; i < 40; i++) {
+    const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
+    vehicle.step(cv, 0.5);
+    if (planner.progress().crossTrackErrorM.has_value() &&
+        std::fabs(planner.progress().crossTrackErrorM.value()) > params.xte.integratorGateM) {
+      // THEN: the integrator does not wind up on capture error
+      EXPECT_EQ(planner.xteIntegratorRad(), 0.0);
+    }
+  }
 }
