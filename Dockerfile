@@ -31,8 +31,9 @@ RUN test -f umaa-cpp/CMakeLists.txt \
 RUN cmake --preset ${BUILD_PRESET} -DAUTOPILOT_BUILD_TESTS=OFF \
     && cmake --build --preset ${BUILD_PRESET}
 
-# Shared prefix: core lib + SDK lib + QoS/log4cxx/loopback configs + yaml,
-# the harvested third-party .so closure, and the CWD-relative symlinks.
+# Shared prefix: core lib + SDK lib + QoS/log4cxx/loopback configs + yaml, and
+# the harvested third-party .so closure. The CWD-relative symlinks are created
+# in the final stages: kaniko cannot re-save a cross-stage dir containing them.
 FROM build AS stage-common
 RUN cmake --install build --component runtime --prefix /staging \
     && cp -a /opt/umaa/lib64/libumaa_cyclone_cpp*.so* /staging/lib64/ \
@@ -41,10 +42,7 @@ RUN cmake --install build --component runtime --prefix /staging \
              /usr/local/lib64/liblog4cxx*.so* \
              /usr/local/lib64/libfmt*.so* \
              /staging/lib64/ \
-    && cp -a /usr/local/lib/libGeographicLib*.so* /staging/lib64/ \
-    && ln -s share/autopilot/autopilot.yaml /staging/autopilot.yaml \
-    && ln -s share/umaa-cpp/config/CYCLONE_QOS_PROFILES.xml /staging/CYCLONE_QOS_PROFILES.xml \
-    && ln -s share/umaa-cpp/config/log4cxx.xml /staging/log4cxx.xml
+    && cp -a /usr/local/lib/libGeographicLib*.so* /staging/lib64/
 
 FROM stage-common AS stage-autopilot
 RUN cmake --install build --component runtime-autopilot --prefix /staging \
@@ -56,7 +54,6 @@ COPY docker/entrypoint-console.sh /staging/entrypoint-console.sh
 RUN cmake --install build --component runtime-tools --prefix /staging \
     && cmake --install build --component runtime-console --prefix /staging \
     && chmod 0755 /staging/entrypoint-console.sh \
-    && ln -s share/autopilot/web /staging/web \
     && { LD_LIBRARY_PATH=/staging/lib64 ldd /staging/bin/mission_console | grep "not found" \
          && { echo "ERROR: unresolved shared libraries in mission_console" >&2; exit 1; } || true; }
 
@@ -83,6 +80,9 @@ WORKDIR /opt/autopilot
 FROM runtime-base AS autopilot
 COPY --from=stage-autopilot --chown=autopilot:autopilot /staging /opt/autopilot
 RUN ldconfig \
+    && ln -s share/autopilot/autopilot.yaml autopilot.yaml \
+    && ln -s share/umaa-cpp/config/CYCLONE_QOS_PROFILES.xml CYCLONE_QOS_PROFILES.xml \
+    && ln -s share/umaa-cpp/config/log4cxx.xml log4cxx.xml \
     && rc=0; timeout 20 bin/autopilot /nonexistent.yaml >/dev/null 2>&1 || rc=$?; \
     [ "${rc}" -eq 1 ] || { echo "ERROR: autopilot failed to load (rc=${rc})" >&2; exit 1; }
 USER autopilot
@@ -91,6 +91,10 @@ CMD ["/opt/autopilot/bin/autopilot", "autopilot.yaml"]
 FROM runtime-base AS mission-console
 COPY --from=stage-console --chown=autopilot:autopilot /staging /opt/autopilot
 RUN ldconfig \
+    && ln -s share/autopilot/autopilot.yaml autopilot.yaml \
+    && ln -s share/umaa-cpp/config/CYCLONE_QOS_PROFILES.xml CYCLONE_QOS_PROFILES.xml \
+    && ln -s share/umaa-cpp/config/log4cxx.xml log4cxx.xml \
+    && ln -s share/autopilot/web web \
     && rc=0; timeout 20 bin/mission_console /nonexistent.yaml >/dev/null 2>&1 || rc=$?; \
     [ "${rc}" -eq 1 ] || { echo "ERROR: mission_console failed to load (rc=${rc})" >&2; exit 1; }
 USER autopilot
@@ -100,6 +104,9 @@ CMD ["/opt/autopilot/entrypoint-console.sh"]
 FROM runtime-base AS mission-runner
 COPY --from=stage-runner --chown=autopilot:autopilot /staging /opt/autopilot
 RUN ldconfig \
+    && ln -s share/autopilot/autopilot.yaml autopilot.yaml \
+    && ln -s share/umaa-cpp/config/CYCLONE_QOS_PROFILES.xml CYCLONE_QOS_PROFILES.xml \
+    && ln -s share/umaa-cpp/config/log4cxx.xml log4cxx.xml \
     && mkdir -p mission-out && chown autopilot:autopilot mission-out \
     && rc=0; timeout 20 bin/mission_runner /nonexistent.yaml >/dev/null 2>&1 || rc=$?; \
     [ "${rc}" -eq 1 ] || { echo "ERROR: mission_runner failed to load (rc=${rc})" >&2; exit 1; }

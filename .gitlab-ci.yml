@@ -75,6 +75,7 @@ build-images:
     AUTH="$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')"
     printf '{"auths":{"%s":{"auth":"%s"}}}' "${CI_REGISTRY}" "${AUTH}" > /kaniko/.docker/config.json
     for target in autopilot mission-console mission-runner; do
+      rm -rf /kaniko/stages /kaniko/[0-9]* 2>/dev/null || true
       if [ "${target}" = "autopilot" ]; then DEST="${CI_REGISTRY_IMAGE}"; else DEST="${CI_REGISTRY_IMAGE}/${target}"; fi
       EXTRA=""
       for tag in ${EXTRA_TAGS}; do EXTRA="${EXTRA} --destination ${DEST}:${tag}"; done
