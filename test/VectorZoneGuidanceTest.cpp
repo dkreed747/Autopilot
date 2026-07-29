@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
-#include "AngleMath.h"
-#include "VectorZoneGuidance.h"
+#include "autopilot/guidance/AngleMath.hpp"
+#include "autopilot/safety/VectorZoneGuidance.hpp"
 
 namespace arlcore::autopilot {
 

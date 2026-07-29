@@ -29,16 +29,16 @@
 #include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
 #include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
 
-#include "AutopilotConfig.h"
+#include "autopilot/config/AutopilotConfig.hpp"
 #include "CycloneQosProviderWrapper.h"
 #include "CycloneReader.h"
 #include "CycloneUtilities.h"
-#include "DubinsPathPlanner.h"
-#include "MissionRoute.h"
-#include "PlannerParamsFactory.h"
+#include "autopilot/guidance/DubinsPathPlanner.hpp"
+#include "autopilot/guidance/MissionRoute.hpp"
+#include "autopilot/guidance/PlannerParamsFactory.hpp"
 #include "UuidFactory.h"
-#include "WaypointMissionClient.h"
-#include "YamlConfigLoader.h"
+#include "clients/WaypointMissionClient.hpp"
+#include "autopilot/config/YamlConfigLoader.hpp"
 
 namespace {
 

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "DrivingResourceArbiter.h"
+#include "autopilot/modes/DrivingResourceArbiter.hpp"
 
 namespace arlcore::autopilot {
 

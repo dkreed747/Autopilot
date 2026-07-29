@@ -7,9 +7,9 @@
 
 #include <GeographicLib/LocalCartesian.hpp>
 
-#include "AngleMath.h"
-#include "DubinsPathPlanner.h"
-#include "ZoneMap.h"
+#include "autopilot/guidance/AngleMath.hpp"
+#include "autopilot/guidance/DubinsPathPlanner.hpp"
+#include "autopilot/safety/ZoneMap.hpp"
 
 namespace arlcore::autopilot {
 

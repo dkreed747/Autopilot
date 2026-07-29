@@ -4,7 +4,7 @@
 
 #include <GeographicLib/LocalCartesian.hpp>
 
-#include "RecoveryGuidance.h"
+#include "autopilot/safety/RecoveryGuidance.hpp"
 
 namespace arlcore::autopilot {
 

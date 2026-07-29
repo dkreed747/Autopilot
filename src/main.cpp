@@ -1,10 +1,10 @@
 #include <csignal>
 #include <string>
 
-#include "AutopilotApp.h"
-#include "AutopilotConfig.h"
+#include "autopilot/core/AutopilotApp.hpp"
+#include "autopilot/config/AutopilotConfig.hpp"
 #include "Logger.h"
-#include "YamlConfigLoader.h"
+#include "autopilot/config/YamlConfigLoader.hpp"
 
 namespace {
 arlcore::autopilot::AutopilotApp* g_app = nullptr;

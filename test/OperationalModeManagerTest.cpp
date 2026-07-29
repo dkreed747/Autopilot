@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "NumericGuid.h"
-#include "OperationalModeManager.hpp"
+#include "autopilot/modes/OperationalModeManager.hpp"
 
 static arlcore::autopilot::OperationalModeConfig makeModeConfig(
     bool allowImplicit = true, bool failOutOfMode = true,

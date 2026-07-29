@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "ZoneGeometry.h"
+#include "autopilot/safety/ZoneGeometry.hpp"
 
 namespace arlcore::autopilot {
 

@@ -6,8 +6,8 @@
 
 #include <GeographicLib/LocalCartesian.hpp>
 
-#include "DubinsPathPlanner.h"
-#include "AngleMath.h"
+#include "autopilot/guidance/DubinsPathPlanner.hpp"
+#include "autopilot/guidance/AngleMath.hpp"
 
 namespace arlcore::autopilot {
 

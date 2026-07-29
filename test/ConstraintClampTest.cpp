@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "ConstraintClamp.h"
+#include "autopilot/safety/ConstraintClamp.hpp"
 
 namespace arlcore::autopilot {
 

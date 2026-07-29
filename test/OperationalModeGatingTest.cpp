@@ -6,14 +6,14 @@
 #include <utility>
 #include <vector>
 
-#include "AutopilotBrain.h"
+#include "autopilot/core/AutopilotBrain.hpp"
 #include "LocalReaderSender.h"
-#include "NavState.h"
-#include "OperationalModeManager.hpp"
+#include "autopilot/core/NavState.hpp"
+#include "autopilot/modes/OperationalModeManager.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
-#include "VectorControlServiceProvider.h"
-#include "WaypointControlServiceProvider.h"
+#include "autopilot/umaa/VectorControlServiceProvider.hpp"
+#include "autopilot/umaa/WaypointControlServiceProvider.hpp"
 
 using GatingStatus = UMAA::Common::MaritimeEnumeration::
     CommandStatusEnumModule::CommandStatusEnumType;

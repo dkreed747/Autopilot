@@ -4,8 +4,8 @@
 #include <fstream>
 #include <string>
 
-#include "AutopilotConfig.h"
-#include "YamlConfigLoader.h"
+#include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/config/YamlConfigLoader.hpp"
 
 namespace arlcore::autopilot {
 

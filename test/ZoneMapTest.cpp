@@ -4,7 +4,7 @@
 
 #include <GeographicLib/LocalCartesian.hpp>
 
-#include "ZoneMap.h"
+#include "autopilot/safety/ZoneMap.hpp"
 
 namespace arlcore::autopilot {
 

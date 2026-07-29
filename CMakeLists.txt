@@ -64,7 +64,7 @@ list(REMOVE_ITEM AUTOPILOT_LIB_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
 
 add_library(autopilot-lib STATIC ${AUTOPILOT_LIB_SOURCES})
 target_include_directories(autopilot-lib PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/autopilot)
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(autopilot-lib PUBLIC
   umaa-cpp::umaa-cpp
   umaa_cyclone_cpp::umaa_cyclone_cpp)
@@ -82,13 +82,13 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config/autopilot.yaml
 # command session client), used by the mission runner and the mission console.
 # ---------------------------------------------------------------------------
 add_library(mission-tools STATIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools/ClientIdentity.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools/ConstraintsClient.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools/OperationalModeClient.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools/VectorActivityMonitor.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools/VectorCommandClient.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools/WaypointActivityMonitor.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools/WaypointMissionClient.cpp)
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/clients/ClientIdentity.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/clients/ConstraintsClient.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/clients/OperationalModeClient.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/monitors/VectorActivityMonitor.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/clients/VectorCommandClient.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/monitors/WaypointActivityMonitor.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/clients/WaypointMissionClient.cpp)
 target_include_directories(mission-tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 target_link_libraries(mission-tools PUBLIC autopilot-lib)
 

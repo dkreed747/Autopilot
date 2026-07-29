@@ -3,7 +3,7 @@
 #include <optional>
 #include <vector>
 
-#include "AutopilotBrain.h"
+#include "autopilot/core/AutopilotBrain.hpp"
 
 namespace arlcore::autopilot {
 

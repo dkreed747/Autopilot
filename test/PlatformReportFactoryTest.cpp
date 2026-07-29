@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "PlatformReportFactory.hpp"
+#include "autopilot/umaa/PlatformReportFactory.hpp"
 
 TEST(PlatformReportFactoryTest, MapsEverySpecsField) {
   // GIVEN: a fully populated platform_specs config

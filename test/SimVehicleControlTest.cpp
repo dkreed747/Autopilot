@@ -3,9 +3,9 @@
 #include <cmath>
 #include <memory>
 
-#include "AngleMath.h"
+#include "autopilot/guidance/AngleMath.hpp"
 #include "LocalReaderSender.h"
-#include "SimVehicleControl.h"
+#include "autopilot/vehicle/SimVehicleControl.hpp"
 #include "UuidFactory.h"
 
 namespace arlcore::autopilot {

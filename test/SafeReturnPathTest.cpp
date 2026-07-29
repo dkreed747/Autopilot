@@ -4,7 +4,7 @@
 #include <fstream>
 #include <string>
 
-#include "SafeReturnPath.h"
+#include "autopilot/safety/SafeReturnPath.hpp"
 
 namespace arlcore::autopilot {
 

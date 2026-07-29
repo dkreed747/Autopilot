@@ -11,10 +11,10 @@
 
 #include <GeographicLib/LocalCartesian.hpp>
 
-#include "AngleMath.h"
-#include "AutopilotBrain.h"
-#include "ConstraintSupervisor.h"
-#include "SafeModeStrategy.h"
+#include "autopilot/guidance/AngleMath.hpp"
+#include "autopilot/core/AutopilotBrain.hpp"
+#include "autopilot/safety/ConstraintSupervisor.hpp"
+#include "autopilot/safety/SafeModeStrategy.hpp"
 #include "UuidFactory.h"
 #include "WaterZoneConditional.h"
 

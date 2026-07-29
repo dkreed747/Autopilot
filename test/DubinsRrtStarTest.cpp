@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "DubinsRrtStar.h"
+#include "autopilot/guidance/DubinsRrtStar.hpp"
 
 namespace arlcore::autopilot {
 

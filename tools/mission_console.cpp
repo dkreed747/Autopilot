@@ -35,25 +35,25 @@
 #include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
 #include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 
-#include "AutopilotConfig.h"
-#include "ClientIdentity.hpp"
-#include "ConstraintsClient.h"
+#include "autopilot/config/AutopilotConfig.hpp"
+#include "clients/ClientIdentity.hpp"
+#include "clients/ConstraintsClient.hpp"
 #include "CycloneQosProviderWrapper.h"
 #include "CycloneReader.h"
 #include "CycloneUtilities.h"
-#include "DubinsPathPlanner.h"
-#include "MissionRoute.h"
+#include "autopilot/guidance/DubinsPathPlanner.hpp"
+#include "autopilot/guidance/MissionRoute.hpp"
 #include "NumericGuid.h"
-#include "OperationalModeClient.hpp"
-#include "PlannerParamsFactory.h"
-#include "ToleranceUtils.h"
+#include "clients/OperationalModeClient.hpp"
+#include "autopilot/guidance/PlannerParamsFactory.hpp"
+#include "autopilot/guidance/ToleranceUtils.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
-#include "VectorActivityMonitor.hpp"
-#include "VectorCommandClient.hpp"
-#include "WaypointActivityMonitor.hpp"
-#include "WaypointMissionClient.h"
-#include "YamlConfigLoader.h"
+#include "monitors/VectorActivityMonitor.hpp"
+#include "clients/VectorCommandClient.hpp"
+#include "monitors/WaypointActivityMonitor.hpp"
+#include "clients/WaypointMissionClient.hpp"
+#include "autopilot/config/YamlConfigLoader.hpp"
 
 // httplib drags in <netdb.h>, whose NO_DATA/NO_ADDRESS macros collide with the SDK's
 // ReadStatus enumerators — keep it (and anything after it) below the project headers.

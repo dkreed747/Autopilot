@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "LocalReaderSender.h"
-#include "OperationalModeControlProvider.hpp"
+#include "autopilot/modes/OperationalModeControlProvider.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
 

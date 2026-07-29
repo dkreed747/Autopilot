@@ -9,7 +9,7 @@
 #include "UuidFactory.h"
 #include "WaterZoneConditional.h"
 
-#include "ConstraintSupervisor.h"
+#include "autopilot/safety/ConstraintSupervisor.hpp"
 
 namespace arlcore::autopilot {
 

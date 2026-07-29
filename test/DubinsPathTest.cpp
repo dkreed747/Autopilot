@@ -3,7 +3,7 @@
 #include <cmath>
 #include <random>
 
-#include "DubinsPath.h"
+#include "autopilot/guidance/DubinsPath.hpp"
 
 namespace arlcore::autopilot {
 
