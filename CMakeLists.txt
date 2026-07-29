@@ -57,6 +57,7 @@ find_package(Threads REQUIRED)
 # planning, zone geometry). Exported so the tools can move to their own repos
 # later and find_package it. TODO(repo-split): publish as its own package.
 add_library(autopilot-core
+  src/config/ConfigValidation.cpp
   src/config/YamlConfigLoader.cpp
   src/guidance/DubinsPath.cpp
   src/guidance/DubinsPathPlanner.cpp

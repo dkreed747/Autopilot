@@ -36,8 +36,8 @@ TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
       "dds:\n"
       "  domain_id: 7\n"
       "identity:\n"
-      "  vector_source_id: \"aaaa\"\n"
-      "  waypoint_source_id: \"bbbb\"\n"
+      "  vector_source_id: \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\"\n"
+      "  waypoint_source_id: \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\"\n"
       "arbitration:\n"
       "  local:\n"
       "    vector_priority: 50\n"
@@ -59,8 +59,8 @@ TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
 
   // THEN: every field round-trips
   EXPECT_EQ(config.dds.domainId, 7);
-  EXPECT_EQ(config.identity.vectorSourceId, "aaaa");
-  EXPECT_EQ(config.identity.waypointSourceId, "bbbb");
+  EXPECT_EQ(config.identity.vectorSourceId, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+  EXPECT_EQ(config.identity.waypointSourceId, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
   EXPECT_EQ(config.arbitration.local.vectorPriority, 50);
   EXPECT_EQ(config.arbitration.local.waypointPriority, 5);
   EXPECT_EQ(config.arbitration.remote.vectorPriority, 700);
@@ -108,7 +108,7 @@ TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
   // safety blocks, including an explicit null value
   writeConfig(
       "identity:\n"
-      "  constraints_source_id: \"cccc\"\n"
+      "  constraints_source_id: \"cccccccc-cccc-cccc-cccc-cccccccccccc\"\n"
       "arbitration:\n"
       "  safe_priority: 900\n"
       "planner:\n"
@@ -154,7 +154,7 @@ TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
   ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
   // THEN: every field round-trips and the explicit null stays unset
-  EXPECT_EQ(config.identity.constraintsSourceId, "cccc");
+  EXPECT_EQ(config.identity.constraintsSourceId, "cccccccc-cccc-cccc-cccc-cccccccccccc");
   EXPECT_EQ(config.arbitration.safePriority, 900);
   EXPECT_EQ(config.planner.rrt.seed, 42u);
   EXPECT_EQ(config.planner.rrt.maxIterations, 500);
@@ -237,4 +237,98 @@ TEST_F(YamlConfigLoaderTest, LegacyFlatArbitrationKeysAreIgnored) {
   EXPECT_EQ(config.arbitration.local.vectorPriority, 100);
   EXPECT_EQ(config.arbitration.local.waypointPriority, 10);
   EXPECT_EQ(config.arbitration.safePriority, 800);
+}
+
+TEST_F(YamlConfigLoaderTest, EmptyFileYieldsValidDefaults) {
+  // GIVEN: an empty config file
+  writeConfig("");
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: the config is loaded
+  // THEN: every struct default passes validation
+  EXPECT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
+}
+
+TEST_F(YamlConfigLoaderTest, RejectsOutOfRangeValues) {
+  // GIVEN: a table of configs that each violate one validation rule
+  const char* const kBadConfigs[] = {
+      "loop:\n  control_period_ms: 0\n",
+      "loop:\n  control_period_ms: -50\n",
+      "loop:\n  nav_staleness_timeout_ms: 0\n",
+      "identity:\n  platform_id: \"not-a-uuid\"\n",
+      "console:\n  platform_id: \"garbage\"\n",
+      "dds:\n  domain_id: -1\n",
+      "dds:\n  domain_id: 500\n",
+      "zones:\n  ellipse_segments: 0\n",
+      "zones:\n  ellipse_segments: -4\n",
+      "zones:\n  safety_margin_m: -1.0\n",
+      "tolerances:\n  waypoint_defaults:\n    position_m: -2.5\n",
+      "tolerances:\n  vector:\n    speed_mps: -0.5\n",
+      "planner:\n  lead_distance_m: 0\n",
+      "planner:\n  turn_radius_margin: -1.0\n",
+      "planner:\n  rrt:\n    max_iterations: 0\n",
+      "planner:\n  rrt:\n    time_budget_ms: 0\n",
+      "planner:\n  rrt:\n    goal_bias: 1.5\n",
+      "constraints:\n  min_speed_mps: 3.0\n  max_speed_mps: 1.0\n",
+      "constraints:\n  min_depth_m: 30.0\n  max_depth_m: 5.0\n",
+      "safety:\n  grace_period_s: -1\n",
+      "safety:\n  violation_confirm_ticks: 0\n",
+      "safety:\n  state_report_period_ms: 0\n",
+      "safety:\n  safe_mode:\n    strategy: \"banana\"\n",
+      "safety:\n  safe_mode:\n    srp:\n      csv_path: \"srp.csv\"\n",
+      "safety:\n  safe_mode:\n    srp:\n      csv_path: \"srp.csv\"\n"
+      "      origin_lat_deg: 95.0\n      origin_lon_deg: 0.0\n",
+      "vehicle_control:\n  sim:\n    cycle_rate_hz: 0\n",
+      "vehicle_control:\n  sim:\n    initial_latitude_deg: 123.0\n",
+      "platform_capabilities:\n  surface:\n    max_turn_rate_rps: 0\n",
+      "platform_capabilities:\n  surface:\n    cruising_speed_mps: -3.0\n",
+      "arbitration:\n  safe_priority: 50\n",
+      "operational_mode:\n  idle_revert_s: -2\n",
+      "vector_avoidance:\n  exit_clear_ticks: 0\n",
+      "recovery:\n  speed_mps: -1\n",
+  };
+
+  for (const char* bad : kBadConfigs) {
+    writeConfig(bad);
+    arlcore::autopilot::AutopilotConfig config;
+
+    // WHEN: the config is loaded
+    // THEN: loading fails with the offending snippet reported by the test
+    EXPECT_FALSE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config))
+        << "config accepted but should have been rejected:\n"
+        << bad;
+  }
+}
+
+TEST_F(YamlConfigLoaderTest, WarnsButAcceptsMarginalValues) {
+  // GIVEN: a table of configs that are suspicious but legal (warn + keep)
+  const struct {
+    const char* yaml;
+    bool expectLoaded;
+  } kMarginal[] = {
+      {"planner:\n  turn_radius_margin: 0.8\n", true},
+      {"zones:\n  ellipse_segments: 512\n", true},
+      {"loop:\n  control_period_ms: 2000\n", true},
+      {"vehicle_control:\n  type: \"hovercraft\"\n", true},
+      {"safety:\n  safe_mode:\n    strategy: \"zero_speed_hold\"\n", true},
+  };
+
+  for (const auto& entry : kMarginal) {
+    writeConfig(entry.yaml);
+    arlcore::autopilot::AutopilotConfig config;
+
+    // WHEN: the config is loaded
+    // THEN: loading succeeds and the configured value is kept
+    EXPECT_EQ(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config), entry.expectLoaded) << entry.yaml;
+  }
+}
+
+TEST_F(YamlConfigLoaderTest, TypeMismatchedValueFailsLoad) {
+  // GIVEN: a config whose control period is not numeric
+  writeConfig("loop:\n  control_period_ms: \"fast\"\n");
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: the config is loaded
+  // THEN: the contained conversion error fails the load instead of aborting
+  EXPECT_FALSE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 }

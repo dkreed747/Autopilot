@@ -5,7 +5,6 @@
 #include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 #include <chrono>
 #include <memory>
-#include <regex>
 #include <string>
 #include <thread>
 
@@ -16,6 +15,7 @@
 #include "InternalTypes.h"
 #include "Logger.h"
 #include "UuidFactory.h"
+#include "autopilot/config/ConfigValidation.hpp"
 #include "autopilot/safety/SafeModeStrategyFactory.hpp"
 #include "autopilot/umaa/PlatformReportFactory.hpp"
 
@@ -35,8 +35,7 @@ static arlcore::NumericGuid parseId(const std::string& uuid) {
 //! \brief A source ID must be a well-formed UUID string; anything else would silently
 //! produce a garbage GUID and commands addressed to the configured ID would never match.
 static bool validSourceId(const std::string& uuid, const char* name) {
-  static const std::regex kUuidPattern("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-  if (std::regex_match(uuid, kUuidPattern)) {
+  if (isValidUuid(uuid)) {
     return true;
   }
   UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "identity." << name << " is not a valid UUID: '" << uuid << "'")

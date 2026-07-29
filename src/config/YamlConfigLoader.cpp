@@ -6,6 +6,7 @@
 #include <string>
 
 #include "Logger.h"
+#include "autopilot/config/ConfigValidation.hpp"
 
 namespace arlcore::autopilot {
 
@@ -229,7 +230,16 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
     return false;
   }
 
-  return true;
+  std::vector<std::string> errors;
+  std::vector<std::string> warnings;
+  const bool valid = validateConfig(*out, &errors, &warnings);
+  for (const std::string& warning : warnings) {
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "autopilot config '" << path << "': " << warning)
+  }
+  for (const std::string& error : errors) {
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "autopilot config '" << path << "': " << error)
+  }
+  return valid;
 }
 
 }  // namespace arlcore::autopilot
