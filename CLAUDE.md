@@ -5,9 +5,9 @@ The workflow below is the process you should follow when starting any new task:
 1. Explore relevant code/files to be touched
 1. Create an implementation plan
 1. Write code and tests
-1. Build: `cmake --preset dev-debug && cmake --build --preset dev-debug`
-1. Test: `ctest --preset dev-debug`
-1. Format: (/workspace/projects/.clang-format)
+1. Build: `cmake --preset amd64-debug && cmake --build --preset amd64-debug`
+1. Test: `ctest --preset amd64-debug`
+1. Format: `git ls-files '*.cpp' '*.hpp' | grep -vE '^(third-party|umaa-cpp)/' | xargs clang-format -i` (config: /workspace/projects/.clang-format)
 
 # Coding Standards
 
@@ -15,7 +15,7 @@ Rules below are binding. **MUST**/**NEVER** are absolute. **PREFER** means: do t
 
 ## Language & Types
 
-- C++17. MUST NOT use later-standard features.
+- Builds as C++20 (the umaa-cpp SDK exports `cxx_std_20` as a PUBLIC requirement). Write C++17 idioms: MUST NOT introduce C++20-only features (concepts, ranges, `std::span`/`std::format`, spaceship, designated initializers) — pinning C++17 proper waits on the future SDK port.
 - MUST use fixed-width integers from `<cstdint>` (`int32_t`, `uint64_t`, ...). Never bare `int`/`long`/`short`.
 - MUST use the internal aliases `flt32_t` / `flt64_t`. Never bare `float`/`double`.
 - MUST use `std::scoped_lock`. NEVER `std::lock_guard<std::mutex>`.
@@ -28,13 +28,16 @@ Rules below are binding. **MUST**/**NEVER** are absolute. **PREFER** means: do t
 
 - MUST use smart pointers. NEVER `new`, `delete`, `malloc`, or `free`.
 - Default to `std::unique_ptr`. Use `std::shared_ptr` only when an object is genuinely co-owned across multiple locations for its lifetime. Use `std::weak_ptr` to break cycles.
+- Documented exception: ownership transfer into vendored APIs that take raw pointers (e.g. httplib's `new_task_queue`) — one-line comment + `NOLINT` at the site.
 
 ## Files & Layout
 
 - Extensions MUST be `.hpp` and `.cpp`.
 - One class per file; filename MUST match the class name. Extra types are allowed only when tightly coupled to it (RAII handles, internal config structs).
 - Pure virtual interfaces live in `I<InterfaceName>.hpp`.
-- Every file MUST start with the copyright header: `<TODO: paste exact header text here>`.
+- Headers live under `include/autopilot/<group>/` (groups: core, config, guidance, safety, modes, umaa, vehicle); sources mirror the layout under `src/<group>/`. Include style: `#include "autopilot/<group>/Name.hpp"`. Tools use `tools/clients/` and `tools/monitors/` with `#include "clients/Name.hpp"`.
+- Include guards: `AUTOPILOT_<GROUP>_<NAME>_HPP_` (tools: `AUTOPILOT_TOOLS_<SUB>_<NAME>_HPP_`).
+- Do NOT add copyright headers; the standard header text is pending and will be applied in a dedicated pass.
 
 ## Comments
 
@@ -76,8 +79,8 @@ Rules below are binding. **MUST**/**NEVER** are absolute. **PREFER** means: do t
   // WHEN: y
   // THEN: z
   ```
-- NEVER use namespaces in unit tests. Use fully qualified names.
-- MUST use GMock rather than hand-rolled test apparatus.
+- NEVER use namespaces in unit tests. Use fully qualified names. Carve-out: file-scope type aliases for UMAA generated types (`using ModeCmdEnum = UMAA::MM::...;`) are allowed — the generated paths run past 100 characters.
+- MUST use GMock rather than hand-rolled test apparatus. Carve-out: hand-rolled kinematic/physics simulators are permitted where a mock cannot express vehicle motion (planner/end-to-end test vehicles); pure canned-return fakes MUST be GMock.
 - NEVER add getters/setters or widen visibility for testability. Inject dependencies so tests can pass in mocks or expected values.
 - PREFER stateless functions — they are trivially testable.
 
