@@ -6,10 +6,8 @@
 #include "autopilot/guidance/DubinsRrtStar.hpp"
 #include "InternalTypes.h"
 
-namespace arlcore::autopilot {
-
-static DubinsRrtParams testParams() {
-  DubinsRrtParams p;
+static arlcore::autopilot::DubinsRrtParams testParams() {
+  arlcore::autopilot::DubinsRrtParams p;
   p.rhoM = 20.0;
   p.marginM = 5.0;
   p.seed = 42;
@@ -19,12 +17,13 @@ static DubinsRrtParams testParams() {
 }
 
 //! \brief Minimum clearance over every sample of the chain at 1 m resolution.
-static flt64_t chainMinClearance(const std::vector<DubinsPath>& chain, const ZoneSet& zones) {
+static flt64_t chainMinClearance(const std::vector<arlcore::autopilot::DubinsPath>& chain,
+                                 const arlcore::autopilot::ZoneSet& zones) {
   flt64_t minClearance = 1e18;
-  for (const DubinsPath& path : chain) {
+  for (const arlcore::autopilot::DubinsPath& path : chain) {
     const int32_t steps = std::max(1, static_cast<int32_t>(std::ceil(path.lengthM())));
     for (int32_t i = 0; i <= steps; ++i) {
-      const Dubins2DPose p = path.sample(path.lengthM() * i / steps);
+      const arlcore::autopilot::Dubins2DPose p = path.sample(path.lengthM() * i / steps);
       minClearance = std::min(minClearance, zones.clearanceM({p.x, p.y}));
     }
   }
@@ -32,11 +31,12 @@ static flt64_t chainMinClearance(const std::vector<DubinsPath>& chain, const Zon
 }
 
 //! \brief Largest positional discontinuity between consecutive chain segments.
-static flt64_t chainMaxGap(const Dubins2DPose& start, const std::vector<DubinsPath>& chain) {
+static flt64_t chainMaxGap(const arlcore::autopilot::Dubins2DPose& start,
+                           const std::vector<arlcore::autopilot::DubinsPath>& chain) {
   flt64_t maxGap = 0.0;
-  Dubins2DPose prev = start;
-  for (const DubinsPath& path : chain) {
-    const Dubins2DPose head = path.sample(0.0);
+  arlcore::autopilot::Dubins2DPose prev = start;
+  for (const arlcore::autopilot::DubinsPath& path : chain) {
+    const arlcore::autopilot::Dubins2DPose head = path.sample(0.0);
     maxGap = std::max(maxGap, std::hypot(head.x - prev.x, head.y - prev.y));
     prev = path.sample(path.lengthM());
   }
@@ -44,33 +44,41 @@ static flt64_t chainMaxGap(const Dubins2DPose& start, const std::vector<DubinsPa
 }
 
 TEST(DubinsRrtStarTest, FindsDetourAroundKeepOut) {
-  ZoneSet zones;
-  zones.addZone(ZoneKind::KEEP_OUT, LocalPolygon({{100.0, -80.0}, {200.0, -80.0},
+  // GIVEN: a keep-out box blocking the direct route from start to goal
+  arlcore::autopilot::ZoneSet zones;
+  zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
+                arlcore::autopilot::LocalPolygon({{100.0, -80.0}, {200.0, -80.0},
                                                   {200.0, 80.0}, {100.0, 80.0}}));
-  const Dubins2DPose start{0.0, 0.0, 0.0};   // facing +x, blocked by the box
-  const Dubins2DPose goal{300.0, 0.0, 0.0};
+  const arlcore::autopilot::Dubins2DPose start{0.0, 0.0, 0.0};   // facing +x, blocked by the box
+  const arlcore::autopilot::Dubins2DPose goal{300.0, 0.0, 0.0};
 
-  const auto chain = planDubinsRrtStar(start, goal, zones, testParams(), 0);
+  // WHEN: the planner runs
+  const auto chain = arlcore::autopilot::planDubinsRrtStar(start, goal, zones, testParams(), 0);
+
+  // THEN: the chain is compliant at the margin, continuous, and ends at the goal
   ASSERT_TRUE(chain.has_value());
   ASSERT_FALSE(chain->empty());
-
-  // Compliant at the margin, continuous, and ends at the goal.
   EXPECT_GE(chainMinClearance(chain.value(), zones), testParams().marginM - 1e-6);
   EXPECT_LT(chainMaxGap(start, chain.value()), 0.5);
-  const Dubins2DPose end = chain->back().sample(chain->back().lengthM());
+  const arlcore::autopilot::Dubins2DPose end = chain->back().sample(chain->back().lengthM());
   EXPECT_NEAR(end.x, goal.x, 0.5);
   EXPECT_NEAR(end.y, goal.y, 0.5);
 }
 
 TEST(DubinsRrtStarTest, DeterministicForFixedSeed) {
-  ZoneSet zones;
-  zones.addZone(ZoneKind::KEEP_OUT, LocalPolygon({{100.0, -80.0}, {200.0, -80.0},
+  // GIVEN: a keep-out world with identical planner parameters
+  arlcore::autopilot::ZoneSet zones;
+  zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
+                arlcore::autopilot::LocalPolygon({{100.0, -80.0}, {200.0, -80.0},
                                                   {200.0, 80.0}, {100.0, 80.0}}));
-  const Dubins2DPose start{0.0, 0.0, 0.0};
-  const Dubins2DPose goal{300.0, 0.0, 0.0};
+  const arlcore::autopilot::Dubins2DPose start{0.0, 0.0, 0.0};
+  const arlcore::autopilot::Dubins2DPose goal{300.0, 0.0, 0.0};
 
-  const auto first = planDubinsRrtStar(start, goal, zones, testParams(), 7);
-  const auto second = planDubinsRrtStar(start, goal, zones, testParams(), 7);
+  // WHEN: the planner runs twice with the same salt
+  const auto first = arlcore::autopilot::planDubinsRrtStar(start, goal, zones, testParams(), 7);
+  const auto second = arlcore::autopilot::planDubinsRrtStar(start, goal, zones, testParams(), 7);
+
+  // THEN: the resulting chains are identical segment by segment
   ASSERT_TRUE(first.has_value());
   ASSERT_TRUE(second.has_value());
   ASSERT_EQ(first->size(), second->size());
@@ -79,46 +87,58 @@ TEST(DubinsRrtStarTest, DeterministicForFixedSeed) {
     EXPECT_EQ((*first)[i].word(), (*second)[i].word());
   }
 
-  // A different salt explores differently (paths may coincide in trivial worlds, but the
-  // planner must at least run to completion).
-  const auto salted = planDubinsRrtStar(start, goal, zones, testParams(), 8);
+  // WHEN: the planner runs with a different salt (explores differently)
+  const auto salted = arlcore::autopilot::planDubinsRrtStar(start, goal, zones, testParams(), 8);
+  // THEN: it still runs to completion (paths may coincide in trivial worlds)
   EXPECT_TRUE(salted.has_value());
 }
 
 TEST(DubinsRrtStarTest, UnreachableGoalReturnsNullopt) {
-  // Goal boxed in on all sides.
-  ZoneSet zones;
-  zones.addZone(ZoneKind::KEEP_OUT, LocalPolygon({{250.0, -60.0}, {350.0, -60.0},
+  // GIVEN: a goal boxed in on all sides by a keep-out
+  arlcore::autopilot::ZoneSet zones;
+  zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
+                arlcore::autopilot::LocalPolygon({{250.0, -60.0}, {350.0, -60.0},
                                                   {350.0, 60.0}, {250.0, 60.0}}));
-  const Dubins2DPose start{0.0, 0.0, 0.0};
-  const Dubins2DPose goal{300.0, 0.0, 0.0};  // inside the keep-out
+  const arlcore::autopilot::Dubins2DPose start{0.0, 0.0, 0.0};
+  const arlcore::autopilot::Dubins2DPose goal{300.0, 0.0, 0.0};  // inside the keep-out
 
-  DubinsRrtParams params = testParams();
+  arlcore::autopilot::DubinsRrtParams params = testParams();
   params.maxIterations = 400;  // fail fast
-  EXPECT_FALSE(planDubinsRrtStar(start, goal, zones, params, 0).has_value());
+
+  // WHEN: the planner runs
+  // THEN: no chain is returned
+  EXPECT_FALSE(arlcore::autopilot::planDubinsRrtStar(start, goal, zones, params, 0).has_value());
 }
 
 TEST(DubinsRrtStarTest, StaysInsideKeepIn) {
-  ZoneSet zones;
-  zones.addZone(ZoneKind::KEEP_IN, LocalPolygon({{-50.0, -150.0}, {350.0, -150.0},
-                                                 {350.0, 150.0}, {-50.0, 150.0}}));
-  zones.addZone(ZoneKind::KEEP_OUT, LocalPolygon({{100.0, -150.0}, {200.0, -150.0},
+  // GIVEN: a keep-in whose only compliant corridor is the gap above the keep-out
+  arlcore::autopilot::ZoneSet zones;
+  zones.addZone(arlcore::autopilot::ZoneKind::KEEP_IN,
+                arlcore::autopilot::LocalPolygon({{-50.0, -150.0}, {350.0, -150.0},
+                                                  {350.0, 150.0}, {-50.0, 150.0}}));
+  zones.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
+                arlcore::autopilot::LocalPolygon({{100.0, -150.0}, {200.0, -150.0},
                                                   {200.0, 100.0}, {100.0, 100.0}}));
-  const Dubins2DPose start{0.0, 0.0, 0.0};
-  const Dubins2DPose goal{300.0, 0.0, 0.0};
+  const arlcore::autopilot::Dubins2DPose start{0.0, 0.0, 0.0};
+  const arlcore::autopilot::Dubins2DPose goal{300.0, 0.0, 0.0};
 
-  const auto chain = planDubinsRrtStar(start, goal, zones, testParams(), 3);
+  // WHEN: the planner runs
+  const auto chain = arlcore::autopilot::planDubinsRrtStar(start, goal, zones, testParams(), 3);
+
+  // THEN: the chain threads the corridor while staying compliant at the margin
   ASSERT_TRUE(chain.has_value());
-  // The only compliant corridor is the gap above the keep-out, inside the keep-in.
   EXPECT_GE(chainMinClearance(chain.value(), zones), testParams().marginM - 1e-6);
 }
 
 TEST(DubinsRrtStarTest, EmptyKeepInIntersectionFails) {
-  ZoneSet zones;
-  zones.addZone(ZoneKind::KEEP_IN, LocalPolygon({{0.0, 0.0}, {100.0, 0.0}, {100.0, 100.0}, {0.0, 100.0}}));
-  zones.addZone(ZoneKind::KEEP_IN, LocalPolygon({{500.0, 0.0}, {600.0, 0.0}, {600.0, 100.0}, {500.0, 100.0}}));
-  EXPECT_FALSE(planDubinsRrtStar({50.0, 50.0, 0.0}, {550.0, 50.0, 0.0}, zones, testParams(), 0)
+  // GIVEN: two disjoint keep-in zones with no common area
+  arlcore::autopilot::ZoneSet zones;
+  zones.addZone(arlcore::autopilot::ZoneKind::KEEP_IN,
+                arlcore::autopilot::LocalPolygon({{0.0, 0.0}, {100.0, 0.0}, {100.0, 100.0}, {0.0, 100.0}}));
+  zones.addZone(arlcore::autopilot::ZoneKind::KEEP_IN,
+                arlcore::autopilot::LocalPolygon({{500.0, 0.0}, {600.0, 0.0}, {600.0, 100.0}, {500.0, 100.0}}));
+  // WHEN: a plan is requested between the two zones
+  // THEN: no chain is returned
+  EXPECT_FALSE(arlcore::autopilot::planDubinsRrtStar({50.0, 50.0, 0.0}, {550.0, 50.0, 0.0}, zones, testParams(), 0)
                    .has_value());
 }
-
-}  // namespace arlcore::autopilot

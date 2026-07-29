@@ -1,3 +1,4 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -7,36 +8,50 @@
 #include "autopilot/core/AutopilotBrain.hpp"
 #include "InternalTypes.h"
 
-namespace arlcore::autopilot {
-
 //! Captures every control vector the brain emits.
-class FakeVehicle : public IVehicleControl {
+class BrainTestMockVehicle : public arlcore::autopilot::IVehicleControl {
  public:
-  bool initialize() override { return true; }
-  bool sendControlVector(const ControlVector& cv) override {
-    last = cv;
-    ++sendCount;
-    return true;
+  BrainTestMockVehicle() {
+    ON_CALL(*this, initialize()).WillByDefault(::testing::Return(true));
+    ON_CALL(*this, sendControlVector(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [this](const arlcore::autopilot::ControlVector& cv) {
+              last = cv;
+              ++sendCount;
+              return true;
+            }));
+    ON_CALL(*this, isManualEngaged())
+        .WillByDefault(::testing::ReturnPointee(&manualEngaged));
   }
-  bool isManualEngaged() const override { return manualEngaged; }
 
-  std::optional<ControlVector> last;
+  MOCK_METHOD(bool, initialize, (), (override));
+  MOCK_METHOD(bool, sendControlVector, (const arlcore::autopilot::ControlVector& cv), (override));
+  MOCK_METHOD(bool, isManualEngaged, (), (const, override));
+
+  std::optional<arlcore::autopilot::ControlVector> last;
   int32_t sendCount = 0;
   bool manualEngaged = false;
 };
 
-class FakeConstraintSource : public IConstraintSource {
+class BrainTestMockConstraintSource : public arlcore::autopilot::IConstraintSource {
  public:
-  ConstraintSnapshot snapshot() const override { return snapshot_; }
-  uint64_t revision() const override { return snapshot_.revision; }
-  void set(const ConstraintSnapshot& s) { snapshot_ = s; }
+  BrainTestMockConstraintSource() {
+    ON_CALL(*this, snapshot()).WillByDefault(::testing::ReturnPointee(&snapshot_));
+    ON_CALL(*this, revision())
+        .WillByDefault(::testing::Invoke([this] { return snapshot_.revision; }));
+  }
+
+  MOCK_METHOD(arlcore::autopilot::ConstraintSnapshot, snapshot, (), (const, override));
+  MOCK_METHOD(uint64_t, revision, (), (const, override));
+
+  void set(const arlcore::autopilot::ConstraintSnapshot& s) { snapshot_ = s; }
 
  private:
-  ConstraintSnapshot snapshot_;
+  arlcore::autopilot::ConstraintSnapshot snapshot_;
 };
 
-static AutopilotConfig testConfig() {
-  AutopilotConfig config;
+static arlcore::autopilot::AutopilotConfig testConfig() {
+  arlcore::autopilot::AutopilotConfig config;
   config.platformCapabilities.surface.cruisingSpeedMps = 3.0;
   config.platformCapabilities.surface.maxForwardSpeedMps = 8.0;
   config.platformCapabilities.surface.maxTurnRateRps = 0.5;
@@ -74,19 +89,24 @@ static UMAA::SA::GlobalPoseStatus::GlobalPoseReportType poseAt(flt64_t yawRad) {
 class AutopilotBrainSafetyTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    brain_ = std::make_unique<AutopilotBrain>(&nav_, &vehicle_, testConfig());
+    brain_ = std::make_unique<arlcore::autopilot::AutopilotBrain>(&nav_, &vehicle_, testConfig());
     nav_.setPose(poseAt(0.0));
   }
 
-  NavState nav_;
-  FakeVehicle vehicle_;
-  std::unique_ptr<AutopilotBrain> brain_;
-  FakeConstraintSource source_;
+  arlcore::autopilot::NavState nav_;
+  ::testing::NiceMock<BrainTestMockVehicle> vehicle_;
+  std::unique_ptr<arlcore::autopilot::AutopilotBrain> brain_;
+  ::testing::NiceMock<BrainTestMockConstraintSource> source_;
 };
 
 TEST_F(AutopilotBrainSafetyTest, NoConstraintSourceEmitsUnclamped) {
+  // GIVEN: a brain with no constraint source and an installed vector setpoint
   brain_->setVectorSetpoint(vectorCommand(1.0, 6.0));
+
+  // WHEN: a nav update drives the control path
   brain_->onNavUpdate();
+
+  // THEN: the commanded speed reaches the vehicle unclamped
   ASSERT_TRUE(vehicle_.last.has_value());
   EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 6.0);
 }
@@ -101,8 +121,8 @@ TEST_F(AutopilotBrainSafetyTest, ManualEngagedSuppressesAllActuation) {
   // WHEN: the platform engages manual control and control paths keep running
   vehicle_.manualEngaged = true;
   brain_->onNavUpdate();
-  brain_->clearSetpoint(DriveSource::VECTOR);  // would normally emit a zero-speed hold
-  brain_->activateSafeHold();                  // even safe mode must not actuate
+  brain_->clearSetpoint(arlcore::autopilot::DriveSource::VECTOR);  // would normally emit a zero-speed hold
+  brain_->activateSafeHold();                                     // even safe mode must not actuate
 
   // THEN: nothing reached the platform while manual was engaged
   EXPECT_EQ(vehicle_.sendCount, sendsBefore);
@@ -116,47 +136,60 @@ TEST_F(AutopilotBrainSafetyTest, ManualEngagedSuppressesAllActuation) {
 }
 
 TEST_F(AutopilotBrainSafetyTest, StaticPlatformCapClampsWhenSourceInstalled) {
-  brain_->setConstraintSource(&source_);  // empty dynamic snapshot; static caps still apply
+  // GIVEN: an installed constraint source with an empty dynamic snapshot; static caps still apply
+  brain_->setConstraintSource(&source_);
   brain_->setVectorSetpoint(vectorCommand(1.0, 12.0));
+
+  // WHEN: the brain emits on a nav update
   brain_->onNavUpdate();
+
+  // THEN: the platform max_forward_speed_mps clamps the command
   ASSERT_TRUE(vehicle_.last.has_value());
-  EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 8.0);  // platform max_forward_speed_mps
+  EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 8.0);
 }
 
 TEST_F(AutopilotBrainSafetyTest, DynamicConstraintClampsSpeedAndDepth) {
-  ConstraintSnapshot snapshot;
+  // GIVEN: a snapshot capping speed at 2 m/s and depth at 20 m
+  arlcore::autopilot::ConstraintSnapshot snapshot;
   snapshot.revision = 1;
   snapshot.maxSpeedMps = 2.0;
   snapshot.maxDepthM = 20.0;
   source_.set(snapshot);
   brain_->setConstraintSource(&source_);
 
+  // WHEN: a faster, deeper vector command is emitted
   brain_->setVectorSetpoint(vectorCommand(1.0, 6.0, 30.0));
   brain_->onNavUpdate();
+
+  // THEN: speed and depth are clamped, heading untouched
   ASSERT_TRUE(vehicle_.last.has_value());
   EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 2.0);
   ASSERT_TRUE(vehicle_.last->elevationM.has_value());
   EXPECT_DOUBLE_EQ(vehicle_.last->elevationM.value(), 20.0);
-  EXPECT_DOUBLE_EQ(vehicle_.last->headingRad, 1.0);  // heading untouched
+  EXPECT_DOUBLE_EQ(vehicle_.last->headingRad, 1.0);
 
-  // Constraint relaxes: the very next emit follows the new snapshot.
+  // WHEN: the constraint relaxes to 5 m/s
   snapshot.maxSpeedMps = 5.0;
   snapshot.revision = 2;
   source_.set(snapshot);
   brain_->onNavUpdate();
+
+  // THEN: the very next emit follows the new snapshot
   EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 5.0);
 }
 
 TEST_F(AutopilotBrainSafetyTest, ZeroSpeedHoldNeverRaisedByMinSpeed) {
-  ConstraintSnapshot snapshot;
+  // GIVEN: a snapshot with a 1.5 m/s minimum speed and an active vector setpoint
+  arlcore::autopilot::ConstraintSnapshot snapshot;
   snapshot.minSpeedMps = 1.5;
   source_.set(snapshot);
   brain_->setConstraintSource(&source_);
-
   brain_->setVectorSetpoint(vectorCommand(1.0, 3.0));
-  brain_->clearSetpoint(DriveSource::VECTOR);  // emits the zero-speed hold
+
+  // WHEN: clearing the setpoint emits the zero-speed hold
+  brain_->clearSetpoint(arlcore::autopilot::DriveSource::VECTOR);
+
+  // THEN: the hold stays at zero speed
   ASSERT_TRUE(vehicle_.last.has_value());
   EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 0.0);
 }
-
-}  // namespace arlcore::autopilot

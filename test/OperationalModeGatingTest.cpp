@@ -1,3 +1,4 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -21,19 +22,12 @@ using GatingStatus = UMAA::Common::MaritimeEnumeration::
 using GatingReason = UMAA::Common::MaritimeEnumeration::
     CommandStatusReasonEnumModule::CommandStatusReasonEnumType;
 
-//! \brief Minimal vehicle strategy: counts control vectors and exposes a manual
-//! flag.
-class GatingVehicle : public arlcore::autopilot::IVehicleControl {
+class MockGatingVehicle : public arlcore::autopilot::IVehicleControl {
  public:
-  bool initialize() override { return true; }
-  bool sendControlVector(const arlcore::autopilot::ControlVector& cv) override {
-    ++sendCount;
-    return true;
-  }
-  bool isManualEngaged() const override { return manualEngaged; }
-
-  int32_t sendCount = 0;
-  bool manualEngaged = false;
+  MOCK_METHOD(bool, initialize, (), (override));
+  MOCK_METHOD(bool, sendControlVector,
+              (const arlcore::autopilot::ControlVector& cv), (override));
+  MOCK_METHOD(bool, isManualEngaged, (), (const, override));
 };
 
 static arlcore::NumericGuid gatingPlatformGuid() {
@@ -112,6 +106,12 @@ class OperationalModeGatingTest : public ::testing::Test {
   //! providers.
   void init(bool allowImplicit, bool failOutOfMode,
             flt64_t idleRevertS = 3600.0) {
+    ON_CALL(vehicle_, initialize()).WillByDefault(::testing::Return(true));
+    ON_CALL(vehicle_, sendControlVector(::testing::_))
+        .WillByDefault(::testing::Return(true));
+    ON_CALL(vehicle_, isManualEngaged())
+        .WillByDefault(::testing::Return(false));
+
     arlcore::autopilot::OperationalModeConfig modeConfig;
     modeConfig.allowImplicitModeTransitions = allowImplicit;
     modeConfig.commandsOutOfModeAreFailed = failOutOfMode;
@@ -162,7 +162,7 @@ class OperationalModeGatingTest : public ::testing::Test {
   }
 
   arlcore::autopilot::NavState nav_;
-  GatingVehicle vehicle_;
+  ::testing::NiceMock<MockGatingVehicle> vehicle_;
   std::unique_ptr<arlcore::autopilot::OperationalModeManager> manager_;
   std::unique_ptr<arlcore::autopilot::AutopilotBrain> brain_;
 
@@ -409,7 +409,7 @@ TEST_F(OperationalModeGatingTest,
   drainStatuses(vecStatusIo_);
 
   // WHEN: the platform engages manual control
-  vehicle_.manualEngaged = true;
+  ON_CALL(vehicle_, isManualEngaged()).WillByDefault(::testing::Return(true));
   manager_->beginStep(true);
   vectorProvider_->cycle();
 

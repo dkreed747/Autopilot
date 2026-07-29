@@ -298,8 +298,10 @@ TEST(OperationalModeManagerTest, WouldAdmitIsSideEffectFree) {
 }
 
 TEST(OperationalModeManagerTest, ClassAllowedMatrix) {
-  // GIVEN: a manager walked through every mode
+  // GIVEN: a fresh manager
   ManagerHarness h(makeModeConfig());
+
+  // WHEN: the first manual poll boots it into STANDBY
   h.manager.beginStep(false);
 
   // THEN: STANDBY allows nothing
@@ -307,21 +309,27 @@ TEST(OperationalModeManagerTest, ClassAllowedMatrix) {
   EXPECT_FALSE(
       h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
 
-  // THEN: REMOTE allows only remote
+  // WHEN: REMOTE is commanded
   ASSERT_TRUE(
       h.manager.commandMode(arlcore::autopilot::OperationalMode::REMOTE));
+
+  // THEN: REMOTE allows only remote
   EXPECT_FALSE(h.manager.classAllowed(arlcore::autopilot::CommandClass::LOCAL));
   EXPECT_TRUE(h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
 
-  // THEN: AUTONOMOUS allows only local
+  // WHEN: AUTONOMOUS is commanded
   ASSERT_TRUE(
       h.manager.commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
+
+  // THEN: AUTONOMOUS allows only local
   EXPECT_TRUE(h.manager.classAllowed(arlcore::autopilot::CommandClass::LOCAL));
   EXPECT_FALSE(
       h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));
 
-  // THEN: MANUAL allows nothing
+  // WHEN: the platform engages manual control
   h.manager.beginStep(true);
+
+  // THEN: MANUAL allows nothing
   EXPECT_FALSE(h.manager.classAllowed(arlcore::autopilot::CommandClass::LOCAL));
   EXPECT_FALSE(
       h.manager.classAllowed(arlcore::autopilot::CommandClass::REMOTE));

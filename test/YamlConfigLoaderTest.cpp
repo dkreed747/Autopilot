@@ -7,8 +7,6 @@
 #include "autopilot/config/AutopilotConfig.hpp"
 #include "autopilot/config/YamlConfigLoader.hpp"
 
-namespace arlcore::autopilot {
-
 static const char* const kTestConfigPath = "autopilot_test_config.yaml";
 
 static void writeConfig(const std::string& contents) {
@@ -23,11 +21,17 @@ class YamlConfigLoaderTest : public ::testing::Test {
 };
 
 TEST_F(YamlConfigLoaderTest, MissingFileReturnsFalse) {
-  AutopilotConfig config;
-  EXPECT_FALSE(YamlConfigLoader::load("does_not_exist_12345.yaml", &config));
+  // GIVEN: a path with no file on disk
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: the config is loaded from that path
+  // THEN: loading reports failure
+  EXPECT_FALSE(arlcore::autopilot::YamlConfigLoader::load("does_not_exist_12345.yaml", &config));
 }
 
 TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
+  // GIVEN: a config file setting dds, identity, arbitration, planner, and
+  // platform capability fields
   writeConfig(
       "dds:\n"
       "  domain_id: 7\n"
@@ -49,9 +53,11 @@ TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
       "    max_forward_speed_mps: 8.5\n"
       "    max_turn_rate_rps: 0.3\n");
 
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  // WHEN: the config is loaded
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
+  // THEN: every field round-trips
   EXPECT_EQ(config.dds.domainId, 7);
   EXPECT_EQ(config.identity.vectorSourceId, "aaaa");
   EXPECT_EQ(config.identity.waypointSourceId, "bbbb");
@@ -68,13 +74,15 @@ TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
 }
 
 TEST_F(YamlConfigLoaderTest, UnsetFieldsKeepDefaults) {
+  // GIVEN: a config file that sets only the DDS domain
   writeConfig("dds:\n  domain_id: 3\n");
 
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  // WHEN: the config is loaded
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
+  // THEN: the domain applies and untouched fields retain their struct defaults
   EXPECT_EQ(config.dds.domainId, 3);
-  // Untouched fields retain their struct defaults.
   EXPECT_EQ(config.arbitration.local.vectorPriority, 100);
   EXPECT_EQ(config.arbitration.local.waypointPriority, 10);
   EXPECT_EQ(config.arbitration.remote.vectorPriority, 500);
@@ -96,6 +104,8 @@ TEST_F(YamlConfigLoaderTest, UnsetFieldsKeepDefaults) {
 }
 
 TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
+  // GIVEN: a config file with constraint, zone, avoidance, recovery, and
+  // safety blocks, including an explicit null value
   writeConfig(
       "identity:\n"
       "  constraints_source_id: \"cccc\"\n"
@@ -139,9 +149,11 @@ TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
       "      reposition_speed_mps: 2.0\n"
       "      safe_elevation_m: 3.0\n");
 
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  // WHEN: the config is loaded
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
+  // THEN: every field round-trips and the explicit null stays unset
   EXPECT_EQ(config.identity.constraintsSourceId, "cccc");
   EXPECT_EQ(config.arbitration.safePriority, 900);
   EXPECT_EQ(config.planner.rrt.seed, 42u);
@@ -195,8 +207,8 @@ TEST_F(YamlConfigLoaderTest, LoadsOperationalModeAndConsoleFields) {
       "  source_id: \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\"\n");
 
   // WHEN: the config is loaded
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
   // THEN: every new field round-trips
   EXPECT_EQ(config.identity.platformId, "00000000-0000-0000-0000-00000000c0fe");
@@ -218,13 +230,11 @@ TEST_F(YamlConfigLoaderTest, LegacyFlatArbitrationKeysAreIgnored) {
       "  safe_priority: 800\n");
 
   // WHEN: the config is loaded
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
   // THEN: the obsolete flat keys are ignored (warned), safe_priority still applies
   EXPECT_EQ(config.arbitration.local.vectorPriority, 100);
   EXPECT_EQ(config.arbitration.local.waypointPriority, 10);
   EXPECT_EQ(config.arbitration.safePriority, 800);
 }
-
-}  // namespace arlcore::autopilot
