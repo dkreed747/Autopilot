@@ -3,7 +3,7 @@
 // Pulls the umaa-cyclone-cpp development image published by CI (UBI 10 +
 // gcc-toolset-15 + CycloneDDS + UMAA types + SDK dependencies). The autopilot
 // builds the umaa-cpp SDK from its pinned submodule, so the plain dev image
-// (not the SDK image) is the right base: cmake --preset dev-debug.
+// (not the SDK image) is the right base: cmake --preset amd64-debug.
 //
 // Testing a feature-branch image: point `image` at `:<short-sha>` (always
 // fresh) or the branch's `:<ref-slug>` tag, then

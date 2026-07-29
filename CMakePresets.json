@@ -1,38 +1,28 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
   "configurePresets": [
     {
       "name": "base",
       "hidden": true,
       "generator": "Ninja",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_CXX_STANDARD": "20"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
-      "name": "dev-debug",
-      "displayName": "Development (Debug, tests)",
+      "name": "amd64-debug",
+      "displayName": "amd64 Debug",
       "inherits": "base",
       "binaryDir": "${sourceDir}/build",
+      "installDir": "${sourceDir}/install",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "AUTOPILOT_BUILD_TESTS": "ON"
       }
     },
     {
-      "name": "dev-release",
-      "displayName": "Development (Release)",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/build-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "ci",
-      "displayName": "CI (Release, tests, install tree)",
+      "name": "amd64-release",
+      "displayName": "amd64 Release",
       "inherits": "base",
       "binaryDir": "${sourceDir}/build",
       "installDir": "${sourceDir}/install",
@@ -43,19 +33,18 @@
     }
   ],
   "buildPresets": [
-    { "name": "dev-debug", "configurePreset": "dev-debug" },
-    { "name": "dev-release", "configurePreset": "dev-release" },
-    { "name": "ci", "configurePreset": "ci" }
+    { "name": "amd64-debug", "configurePreset": "amd64-debug" },
+    { "name": "amd64-release", "configurePreset": "amd64-release" }
   ],
   "testPresets": [
     {
-      "name": "dev-debug",
-      "configurePreset": "dev-debug",
+      "name": "amd64-debug",
+      "configurePreset": "amd64-debug",
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "ci",
-      "configurePreset": "ci",
+      "name": "amd64-release",
+      "configurePreset": "amd64-release",
       "output": { "outputOnFailure": true }
     }
   ]

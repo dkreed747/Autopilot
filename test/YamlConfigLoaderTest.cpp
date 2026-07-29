@@ -1,39 +1,19 @@
-//---------------------------------------------------------------------------
-// Copyright 2025 Pennsylvania State University
-//
-// Applied Research Laboratory
-// Pennsylvania State University
-// P.O. Box 30
-// State College, PA 16804-0030
-//
-// DISTRIBUTION STATEMENT A. Approved for public release.
-// Distribution is unlimited.
-// This software was developed by the Department of the Navy,
-// NAVSEA Unmanned and Small Combatants. It is provided under the terms of
-// use found in the LICENSE file at the source code root directory.
-//
-//---------------------------------------------------------------------------
-
 #include <gtest/gtest.h>
 
 #include <cstdio>
 #include <fstream>
 #include <string>
 
-#include "AutopilotConfig.h"
-#include "YamlConfigLoader.h"
+#include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/config/YamlConfigLoader.hpp"
 
-namespace arlcore::autopilot {
+static const char* const kTestConfigPath = "autopilot_test_config.yaml";
 
-namespace {
-const char* kTestConfigPath = "autopilot_test_config.yaml";
-
-void writeConfig(const std::string& contents) {
+static void writeConfig(const std::string& contents) {
   std::ofstream out(kTestConfigPath);
   out << contents;
   out.close();
 }
-}  // namespace
 
 class YamlConfigLoaderTest : public ::testing::Test {
  protected:
@@ -41,17 +21,23 @@ class YamlConfigLoaderTest : public ::testing::Test {
 };
 
 TEST_F(YamlConfigLoaderTest, MissingFileReturnsFalse) {
-  AutopilotConfig config;
-  EXPECT_FALSE(YamlConfigLoader::load("does_not_exist_12345.yaml", &config));
+  // GIVEN: a path with no file on disk
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: the config is loaded from that path
+  // THEN: loading reports failure
+  EXPECT_FALSE(arlcore::autopilot::YamlConfigLoader::load("does_not_exist_12345.yaml", &config));
 }
 
 TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
+  // GIVEN: a config file setting dds, identity, arbitration, planner, and
+  // platform capability fields
   writeConfig(
       "dds:\n"
       "  domain_id: 7\n"
       "identity:\n"
-      "  vector_source_id: \"aaaa\"\n"
-      "  waypoint_source_id: \"bbbb\"\n"
+      "  vector_source_id: \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\"\n"
+      "  waypoint_source_id: \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\"\n"
       "arbitration:\n"
       "  local:\n"
       "    vector_priority: 50\n"
@@ -67,12 +53,14 @@ TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
       "    max_forward_speed_mps: 8.5\n"
       "    max_turn_rate_rps: 0.3\n");
 
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  // WHEN: the config is loaded
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
+  // THEN: every field round-trips
   EXPECT_EQ(config.dds.domainId, 7);
-  EXPECT_EQ(config.identity.vectorSourceId, "aaaa");
-  EXPECT_EQ(config.identity.waypointSourceId, "bbbb");
+  EXPECT_EQ(config.identity.vectorSourceId, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+  EXPECT_EQ(config.identity.waypointSourceId, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
   EXPECT_EQ(config.arbitration.local.vectorPriority, 50);
   EXPECT_EQ(config.arbitration.local.waypointPriority, 5);
   EXPECT_EQ(config.arbitration.remote.vectorPriority, 700);
@@ -86,13 +74,15 @@ TEST_F(YamlConfigLoaderTest, LoadsCoreFields) {
 }
 
 TEST_F(YamlConfigLoaderTest, UnsetFieldsKeepDefaults) {
+  // GIVEN: a config file that sets only the DDS domain
   writeConfig("dds:\n  domain_id: 3\n");
 
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  // WHEN: the config is loaded
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
+  // THEN: the domain applies and untouched fields retain their struct defaults
   EXPECT_EQ(config.dds.domainId, 3);
-  // Untouched fields retain their struct defaults.
   EXPECT_EQ(config.arbitration.local.vectorPriority, 100);
   EXPECT_EQ(config.arbitration.local.waypointPriority, 10);
   EXPECT_EQ(config.arbitration.remote.vectorPriority, 500);
@@ -114,9 +104,11 @@ TEST_F(YamlConfigLoaderTest, UnsetFieldsKeepDefaults) {
 }
 
 TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
+  // GIVEN: a config file with constraint, zone, avoidance, recovery, and
+  // safety blocks, including an explicit null value
   writeConfig(
       "identity:\n"
-      "  constraints_source_id: \"cccc\"\n"
+      "  constraints_source_id: \"cccccccc-cccc-cccc-cccc-cccccccccccc\"\n"
       "arbitration:\n"
       "  safe_priority: 900\n"
       "planner:\n"
@@ -127,7 +119,7 @@ TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
       "    goal_bias: 0.2\n"
       "constraints:\n"
       "  max_speed_mps: 4.5\n"
-      "  min_speed_mps:\n"       // explicit null stays unset
+      "  min_speed_mps:\n"  // explicit null stays unset
       "  max_depth_m: 25.0\n"
       "zones:\n"
       "  safety_margin_m: 8.0\n"
@@ -157,10 +149,12 @@ TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
       "      reposition_speed_mps: 2.0\n"
       "      safe_elevation_m: 3.0\n");
 
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  // WHEN: the config is loaded
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
-  EXPECT_EQ(config.identity.constraintsSourceId, "cccc");
+  // THEN: every field round-trips and the explicit null stays unset
+  EXPECT_EQ(config.identity.constraintsSourceId, "cccccccc-cccc-cccc-cccc-cccccccccccc");
   EXPECT_EQ(config.arbitration.safePriority, 900);
   EXPECT_EQ(config.planner.rrt.seed, 42u);
   EXPECT_EQ(config.planner.rrt.maxIterations, 500);
@@ -213,8 +207,8 @@ TEST_F(YamlConfigLoaderTest, LoadsOperationalModeAndConsoleFields) {
       "  source_id: \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\"\n");
 
   // WHEN: the config is loaded
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
   // THEN: every new field round-trips
   EXPECT_EQ(config.identity.platformId, "00000000-0000-0000-0000-00000000c0fe");
@@ -236,8 +230,8 @@ TEST_F(YamlConfigLoaderTest, LegacyFlatArbitrationKeysAreIgnored) {
       "  safe_priority: 800\n");
 
   // WHEN: the config is loaded
-  AutopilotConfig config;
-  ASSERT_TRUE(YamlConfigLoader::load(kTestConfigPath, &config));
+  arlcore::autopilot::AutopilotConfig config;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
   // THEN: the obsolete flat keys are ignored (warned), safe_priority still applies
   EXPECT_EQ(config.arbitration.local.vectorPriority, 100);
@@ -245,4 +239,138 @@ TEST_F(YamlConfigLoaderTest, LegacyFlatArbitrationKeysAreIgnored) {
   EXPECT_EQ(config.arbitration.safePriority, 800);
 }
 
-}  // namespace arlcore::autopilot
+TEST_F(YamlConfigLoaderTest, EmptyFileYieldsValidDefaults) {
+  // GIVEN: an empty config file
+  writeConfig("");
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: the config is loaded
+  // THEN: every struct default passes validation
+  EXPECT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
+}
+
+TEST_F(YamlConfigLoaderTest, RejectsOutOfRangeValues) {
+  // GIVEN: a table of configs that each violate one validation rule
+  const char* const kBadConfigs[] = {
+      "loop:\n  control_period_ms: 0\n",
+      "loop:\n  control_period_ms: -50\n",
+      "loop:\n  nav_staleness_timeout_ms: 0\n",
+      "identity:\n  platform_id: \"not-a-uuid\"\n",
+      "console:\n  platform_id: \"garbage\"\n",
+      "dds:\n  domain_id: -1\n",
+      "dds:\n  domain_id: 500\n",
+      "zones:\n  ellipse_segments: 0\n",
+      "zones:\n  ellipse_segments: -4\n",
+      "zones:\n  safety_margin_m: -1.0\n",
+      "tolerances:\n  waypoint_defaults:\n    position_m: -2.5\n",
+      "tolerances:\n  vector:\n    speed_mps: -0.5\n",
+      "planner:\n  lead_distance_m: 0\n",
+      "planner:\n  turn_radius_margin: -1.0\n",
+      "planner:\n  rrt:\n    max_iterations: 0\n",
+      "planner:\n  rrt:\n    time_budget_ms: 0\n",
+      "planner:\n  rrt:\n    goal_bias: 1.5\n",
+      "constraints:\n  min_speed_mps: 3.0\n  max_speed_mps: 1.0\n",
+      "constraints:\n  min_depth_m: 30.0\n  max_depth_m: 5.0\n",
+      "safety:\n  grace_period_s: -1\n",
+      "safety:\n  violation_confirm_ticks: 0\n",
+      "safety:\n  state_report_period_ms: 0\n",
+      "safety:\n  safe_mode:\n    strategy: \"banana\"\n",
+      "safety:\n  safe_mode:\n    srp:\n      csv_path: \"srp.csv\"\n",
+      "safety:\n  safe_mode:\n    srp:\n      csv_path: \"srp.csv\"\n"
+      "      origin_lat_deg: 95.0\n      origin_lon_deg: 0.0\n",
+      "vehicle_control:\n  sim:\n    cycle_rate_hz: 0\n",
+      "vehicle_control:\n  sim:\n    initial_latitude_deg: 123.0\n",
+      "platform_capabilities:\n  surface:\n    max_turn_rate_rps: 0\n",
+      "platform_capabilities:\n  surface:\n    cruising_speed_mps: -3.0\n",
+      "arbitration:\n  safe_priority: 50\n",
+      "operational_mode:\n  idle_revert_s: -2\n",
+      "vector_avoidance:\n  exit_clear_ticks: 0\n",
+      "recovery:\n  speed_mps: -1\n",
+  };
+
+  for (const char* bad : kBadConfigs) {
+    writeConfig(bad);
+    arlcore::autopilot::AutopilotConfig config;
+
+    // WHEN: the config is loaded
+    // THEN: loading fails with the offending snippet reported by the test
+    EXPECT_FALSE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config))
+        << "config accepted but should have been rejected:\n"
+        << bad;
+  }
+}
+
+TEST_F(YamlConfigLoaderTest, WarnsButAcceptsMarginalValues) {
+  // GIVEN: a table of configs that are suspicious but legal (warn + keep)
+  const struct {
+    const char* yaml;
+    bool expectLoaded;
+  } kMarginal[] = {
+      {"planner:\n  turn_radius_margin: 0.8\n", true},
+      {"zones:\n  ellipse_segments: 512\n", true},
+      {"loop:\n  control_period_ms: 2000\n", true},
+      {"vehicle_control:\n  type: \"hovercraft\"\n", true},
+      {"safety:\n  safe_mode:\n    strategy: \"zero_speed_hold\"\n", true},
+  };
+
+  for (const auto& entry : kMarginal) {
+    writeConfig(entry.yaml);
+    arlcore::autopilot::AutopilotConfig config;
+
+    // WHEN: the config is loaded
+    // THEN: loading succeeds and the configured value is kept
+    EXPECT_EQ(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config), entry.expectLoaded) << entry.yaml;
+  }
+}
+
+TEST_F(YamlConfigLoaderTest, TypeMismatchedValueFailsLoad) {
+  // GIVEN: a config whose control period is not numeric
+  writeConfig("loop:\n  control_period_ms: \"fast\"\n");
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: the config is loaded
+  // THEN: the contained conversion error fails the load instead of aborting
+  EXPECT_FALSE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
+}
+
+TEST_F(YamlConfigLoaderTest, LoadsCrossTrackAndSimDriftFields) {
+  // GIVEN: a config file setting the planner xte block, sample step, and sim current
+  writeConfig(
+      "planner:\n"
+      "  sample_step_m: 1.5\n"
+      "  xte:\n"
+      "    kp_scale: 1.2\n"
+      "    ki: 0.04\n"
+      "    integrator_limit_rad: 0.3\n"
+      "    integrator_gate_m: 8.0\n"
+      "    correction_limit_rad: 1.0\n"
+      "    lead_time_s: 1.5\n"
+      "vehicle_control:\n"
+      "  sim:\n"
+      "    current_east_mps: 0.3\n"
+      "    current_north_mps: -0.1\n");
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: the config is loaded
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
+
+  // THEN: every field round-trips
+  EXPECT_DOUBLE_EQ(config.planner.sampleStepM, 1.5);
+  EXPECT_DOUBLE_EQ(config.planner.xte.kpScale, 1.2);
+  EXPECT_DOUBLE_EQ(config.planner.xte.ki, 0.04);
+  EXPECT_DOUBLE_EQ(config.planner.xte.integratorLimitRad, 0.3);
+  EXPECT_DOUBLE_EQ(config.planner.xte.integratorGateM, 8.0);
+  EXPECT_DOUBLE_EQ(config.planner.xte.correctionLimitRad, 1.0);
+  EXPECT_DOUBLE_EQ(config.planner.xte.leadTimeS, 1.5);
+  EXPECT_DOUBLE_EQ(config.simVehicle.currentEastMps, 0.3);
+  EXPECT_DOUBLE_EQ(config.simVehicle.currentNorthMps, -0.1);
+
+  // WHEN: defaults are loaded from an empty file
+  writeConfig("");
+  arlcore::autopilot::AutopilotConfig defaults;
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &defaults));
+  // THEN: the xte defaults reproduce the legacy pure-P law
+  EXPECT_DOUBLE_EQ(defaults.planner.xte.ki, 0.0);
+  EXPECT_DOUBLE_EQ(defaults.planner.xte.kpScale, 1.0);
+  EXPECT_DOUBLE_EQ(defaults.planner.xte.correctionLimitRad, 1.2);
+}

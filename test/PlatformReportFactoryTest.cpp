@@ -1,22 +1,6 @@
-//---------------------------------------------------------------------------
-// Copyright 2025 Pennsylvania State University
-//
-// Applied Research Laboratory
-// Pennsylvania State University
-// P.O. Box 30
-// State College, PA 16804-0030
-//
-// DISTRIBUTION STATEMENT A. Approved for public release.
-// Distribution is unlimited.
-// This software was developed by the Department of the Navy,
-// NAVSEA Unmanned and Small Combatants. It is provided under the terms of
-// use found in the LICENSE file at the source code root directory.
-//
-//---------------------------------------------------------------------------
-
 #include <gtest/gtest.h>
 
-#include "PlatformReportFactory.hpp"
+#include "autopilot/umaa/PlatformReportFactory.hpp"
 
 TEST(PlatformReportFactoryTest, MapsEverySpecsField) {
   // GIVEN: a fully populated platform_specs config
@@ -77,17 +61,11 @@ TEST(PlatformReportFactoryTest, MapsCapabilitiesWithUnderwater) {
   EXPECT_DOUBLE_EQ(report.surfaceCapabilities().maxTurnRate().value(), 0.26);
   EXPECT_FALSE(report.surfaceCapabilities().maxReverseSpeed().has_value());
   ASSERT_TRUE(report.underwaterCapabilities().has_value());
-  ASSERT_TRUE(
-      report.underwaterCapabilities().value().maxForwardSpeed().has_value());
-  EXPECT_DOUBLE_EQ(
-      report.underwaterCapabilities().value().maxForwardSpeed().value(), 4.0);
-  ASSERT_TRUE(
-      report.underwaterCapabilities().value().maxDepthChangeRate().has_value());
-  EXPECT_DOUBLE_EQ(
-      report.underwaterCapabilities().value().maxDepthChangeRate().value(),
-      0.2);
-  EXPECT_FALSE(
-      report.underwaterCapabilities().value().cruisingSpeed().has_value());
+  ASSERT_TRUE(report.underwaterCapabilities().value().maxForwardSpeed().has_value());
+  EXPECT_DOUBLE_EQ(report.underwaterCapabilities().value().maxForwardSpeed().value(), 4.0);
+  ASSERT_TRUE(report.underwaterCapabilities().value().maxDepthChangeRate().has_value());
+  EXPECT_DOUBLE_EQ(report.underwaterCapabilities().value().maxDepthChangeRate().value(), 0.2);
+  EXPECT_FALSE(report.underwaterCapabilities().value().cruisingSpeed().has_value());
 }
 
 TEST(PlatformReportFactoryTest, OmitsUnderwaterBlockWhenDisabled) {

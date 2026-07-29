@@ -72,10 +72,21 @@ planner:
   max_misses_per_waypoint: 3
   elevation_counts_as_miss: true
   max_replans: 10
+  sample_step_m: 2.0             # path polyline sampling resolution
+  xte:                           # cross-track tracking law; defaults = legacy pure P
+    kp_scale: 1.0                # P gain scale: correction = atan2(kp*xte, turn_radius)
+    ki: 0.0                      # integral gain, rad per meter-second; nulls the standing
+                                 # offset a lateral current/trim leaves behind. The in-repo
+                                 # sim masks under-commit; field starting point 0.02-0.05.
+    integrator_limit_rad: 0.35   # |integral| clamp (~20 deg of crab)
+    integrator_gate_m: 5.0       # integrate only while |xte| is inside the gate
+    correction_limit_rad: 1.2    # total correction clamp; raise for platforms that need a
+                                 # larger commanded-vs-current heading delta to commit
+    lead_time_s: 1.0             # tangent phase-lead seconds ahead of the progress pointer
   rrt:                           # fallback planner when the direct Dubins leg clips a zone
     seed: 12345                  # deterministic sampling, salted per waypoint index
     max_iterations: 2000
-    time_budget_ms: 150
+    time_budget_ms: 50           # runs on the control thread: keep <= loop.control_period_ms
     goal_bias: 0.10
     near_k: 8
     edge_check_step_m: 4.0       # coarse in-tree edge sampling
@@ -86,7 +97,7 @@ planner:
 constraints:
   max_speed_mps: 5.0
   min_speed_mps:
-  max_depth_m: 30.0
+  max_depth_m: 50.0                # must exceed the deepest mission depth (demo spiral: 40 m)
   min_depth_m:
 
 # Water-zone geometry margins.
@@ -141,6 +152,8 @@ vehicle_control:
     initial_heading_rad: 0.0
     accel_mps2: 1.0              # surge acceleration limit
     floor_depth_m: 60.0          # sea-floor depth for depth/ASF simulation
+    current_east_mps: 0.0        # uniform water current (drift); exercises planner.xte.ki
+    current_north_mps: 0.0
 
 # Physical platform specifications -> UVPlatformSpecsReportType (published once).
 platform_specs:

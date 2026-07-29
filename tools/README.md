@@ -1,10 +1,10 @@
 # Autopilot tools
 
-Both tools are the UMAA *consumer* side of the autopilot's Global Waypoint control service,
-built on the shared `WaypointMissionClient` (command + large-list route out; ack, command
-status, and execution status back) and the autopilot library's `MissionRoute` (waypoint
-construction). The console additionally consumes the autopilot's MM constraint services
-through `ConstraintsClient` in this directory.
+Both tools are the UMAA *consumer* side of the autopilot's services, built on the shared
+clients in `clients/` (`WaypointMissionClient`, `VectorCommandClient`, `ConstraintsClient`,
+`OperationalModeClient`) and bus monitors in `monitors/`. They link only `autopilot::core`
+(config + route/guidance/zone slice) and talk to the autopilot purely over DDS — the tools
+are staged to move into their own repositories. Binaries build to `build/tools/`.
 
 ## `mission_console`
 
@@ -12,8 +12,8 @@ Live mission-control web GUI. The C++ backend bridges the DDS bus to a single-pa
 browser app (no external web dependencies — works on an air-gapped network):
 
 ```bash
-# alongside a running autopilot (same YAML/domain):
-./mission_console autopilot.yaml 8080 web
+# from the build directory, alongside a running autopilot (same YAML/domain):
+./tools/mission_console autopilot.yaml 8080 web
 # then open http://localhost:8080/
 ```
 
@@ -53,7 +53,8 @@ plus ConditionalControl Add/Delete and ActiveConstraints commands out; the Condi
 (the authoritative constraint list), the standing ActiveConstraints acknowledgement (the
 authoritative *applied* set — this is how a restarted console recovers the active set), and
 the per-conditional state reports back. REST: `POST /api/constraints` (create; a body with
-`id` is an upsert/edit), `DELETE /api/constraints/<uuid>`, `POST /api/constraints/active`.
+`id` is an upsert/edit), `DELETE /api/constraints/<uuid>`, `POST /api/constraints/active`
+(`{"ids": ["<uuid>", ...]}` — the full applied set).
 
 - **Zones**: the *+ Keep-in* / *+ Keep-out* buttons enter zone-draw mode — click the chart
   to add vertices; double-click, press Enter, or click the first vertex to close (Esc
@@ -124,12 +125,13 @@ vehicle's configured start position.
 ./autopilot autopilot.yaml
 
 # terminal 2: run the built-in mission and record outputs
-./mission_runner autopilot.yaml mission-out
+./tools/mission_runner autopilot.yaml mission-out
 
 # ... or fly a custom route (local tangent-plane CSV, one waypoint per line:
 # east_m,north_m,speed_mps,capture_radius_m[,arrival_yaw_rad][,elev_value_m,elev_frame]
-# where elev_frame is `depth` or `asf`)
-./mission_runner autopilot.yaml mission-out my-mission.csv
+# where elev_frame is `depth` or `asf`; a malformed row rejects the whole file, and
+# the autopilot rejects non-positive or above-platform-max speeds)
+./tools/mission_runner autopilot.yaml mission-out my-mission.csv
 ```
 
 Outputs in the chosen directory:

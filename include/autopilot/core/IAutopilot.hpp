@@ -1,0 +1,47 @@
+#ifndef AUTOPILOT_CORE_IAUTOPILOT_HPP_
+#define AUTOPILOT_CORE_IAUTOPILOT_HPP_
+
+#include <UMAA/MO/GlobalVectorControl/GlobalVectorCommandType.hpp>
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
+#include <vector>
+
+#include "autopilot/guidance/ProgressTypes.hpp"
+#include "autopilot/modes/DriveSource.hpp"
+#include "autopilot/modes/DrivingResourceArbiter.hpp"
+
+namespace arlcore::autopilot {
+
+//! \brief The autopilot "brain": holds the active driving mode and setpoint, recomputes a
+//! control vector on every nav tick, and pushes it to the vehicle-control strategy.
+class IAutopilot {
+ public:
+  virtual ~IAutopilot() = default;
+
+  //! \brief Install a vector setpoint (pass-through driving). The provider must have already
+  //! acquired the driving resource from the arbiter.
+  virtual void setVectorSetpoint(const UMAA::MO::GlobalVectorControl::GlobalVectorCommandType& cmd) = 0;
+
+  //! \brief Install a waypoint route setpoint. The brain plans a Dubins path from the current
+  //! pose. Returns false if no navigation fix is available to plan from.
+  virtual bool setWaypointSetpoint(
+      const std::vector<UMAA::MO::GlobalWaypointControl::GlobalWaypointType>& waypoints) = 0;
+
+  //! \brief Clear the setpoint owned by `src` (no-op if it is not the active mode).
+  virtual void clearSetpoint(DriveSource src) = 0;
+
+  //! \brief Recompute and push a control vector from the latest navigation data. Triggered by
+  //! the global pose observer on every new nav packet.
+  virtual void onNavUpdate() = 0;
+
+  //! \brief Achieved-flag snapshot for the active vector command.
+  virtual VectorProgress vectorProgress() const = 0;
+
+  //! \brief Progress snapshot for the active waypoint route.
+  virtual WaypointProgress waypointProgress() const = 0;
+
+  //! \brief The shared driving-resource arbiter consulted by both providers.
+  virtual DrivingResourceArbiter& arbiter() = 0;
+};
+
+}  // namespace arlcore::autopilot
+#endif  // AUTOPILOT_CORE_IAUTOPILOT_HPP_

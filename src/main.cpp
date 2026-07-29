@@ -1,36 +1,18 @@
-//---------------------------------------------------------------------------
-// Copyright 2025 Pennsylvania State University
-//
-// Applied Research Laboratory
-// Pennsylvania State University
-// P.O. Box 30
-// State College, PA 16804-0030
-//
-// DISTRIBUTION STATEMENT A. Approved for public release.
-// Distribution is unlimited.
-// This software was developed by the Department of the Navy,
-// NAVSEA Unmanned and Small Combatants. It is provided under the terms of
-// use found in the LICENSE file at the source code root directory.
-//
-//---------------------------------------------------------------------------
-
 #include <csignal>
 #include <string>
 
-#include "AutopilotApp.h"
-#include "AutopilotConfig.h"
 #include "Logger.h"
-#include "YamlConfigLoader.h"
+#include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/config/YamlConfigLoader.hpp"
+#include "autopilot/core/AutopilotApp.hpp"
 
-namespace {
-arlcore::autopilot::AutopilotApp* g_app = nullptr;
+static arlcore::autopilot::AutopilotApp* g_app = nullptr;
 
-void handleSignal(int /*signal*/) {
+static void handleSignal(int /*signal*/) {
   if (g_app != nullptr) {
     g_app->stop();
   }
 }
-}  // namespace
 
 //! \brief Autopilot entry point: load config from YAML, construct the AutopilotConfig, hand it
 //! to AutopilotApp::initialize(), then run the control loop.

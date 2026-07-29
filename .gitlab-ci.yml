@@ -1,20 +1,22 @@
 # =============================================================================
 # autopilot CI
 #
-# Single artifact: the autopilot application image -> GitLab Container
-# Registry ($CI_REGISTRY_IMAGE). A trimmed ubi10-minimal runtime carrying the
-# autopilot, the mission-control web console (port 8080), and their shared-
-# library closure -- built from the pinned umaa-cpp submodule inside the
-# umaa-cyclone-cpp dev image (multi-stage Dockerfile).
+# Artifacts: three application images in the GitLab Container Registry --
+#   ${CI_REGISTRY_IMAGE}                    the autonomy stack
+#   ${CI_REGISTRY_IMAGE}/mission-console    the mission-control web console
+#   ${CI_REGISTRY_IMAGE}/mission-runner     the headless mission driver
+# All built from one multi-target Dockerfile (shared, Kaniko-cached build
+# stage) out of the pinned umaa-cpp submodule in the umaa-cyclone-cpp dev
+# image. docker-compose.yml composes them for deployment.
 #
 # Pipeline: build -> image -> integration
-#   * build-test       full build + ctest (autopilot + SDK submodule tests)
-#                      in the DEV image; gates the image build
-#   * build-app-image  builds/pushes the app image (Kaniko, rootless); the
-#                      kaniko context includes the checked-out submodule
-#   * image-smoke      runs IN the freshly built app image: boots the mission
-#                      console + autopilot over loopback DDS and probes the
-#                      web UI -- proves the lib closure and bundled web root
+#   * build-test       full build + ctest (autopilot + SDK) in the DEV image
+#   * build-images     Kaniko, three --target runs sharing one cache repo
+#   * smoke-autopilot  app image boots standalone and shuts down cleanly
+#   * smoke-console    app (job) + console (service) across the per-build
+#                      network: DDS via unicast peers, full REST round trips
+#   * smoke-runner     runner image drives a one-waypoint mission to
+#                      COMPLETED against the app image (service)
 #
 # While the dev-container branch is unmerged, override BASE_IMAGE_TAG with a
 # ref-slug or short-sha tag of the umaa-cyclone-cpp image.
@@ -32,40 +34,36 @@ stages:
 variables:
   DEV_IMAGE: "${CI_REGISTRY}/poseidon/utility/development-containers/umaa-cyclone-cpp"
   BASE_IMAGE_TAG: "latest"
-  # The umaa-cpp submodule is required to build (and must be in the kaniko
-  # context). Relative URL in .gitmodules + FORCE_HTTPS lets the runner clone
-  # it with the job token.
   GIT_SUBMODULE_STRATEGY: recursive
   GIT_SUBMODULE_FORCE_HTTPS: "true"
+  # DDS over the GitLab per-build network: no multicast, unicast SPDP.
+  # 127.0.0.1 in the peer lists covers runners whose services share localhost.
+  DDS_XML_LISTEN: "<General><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex></Discovery>"
 
-# Run one pipeline per branch push and per tag (no duplicate MR pipelines).
 workflow:
   rules:
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH'
 
-# -----------------------------------------------------------------------------
-# 1) Full build + test in the dev image (gates the image build)
-# -----------------------------------------------------------------------------
 build-test:
   stage: build
   image: "${DEV_IMAGE}:${BASE_IMAGE_TAG}"
   script: |
     set -e
-    cmake --preset ci
-    cmake --build --preset ci
+    cmake --preset amd64-release
+    cmake --build --preset amd64-release
     mkdir -p reports
-    ctest --preset ci --output-junit "${CI_PROJECT_DIR}/reports/ctest-junit.xml"
+    ctest --preset amd64-release --output-junit "${CI_PROJECT_DIR}/reports/ctest-junit.xml"
   artifacts:
     when: always
     reports:
       junit: reports/ctest-junit.xml
     expire_in: 1 week
 
-# -----------------------------------------------------------------------------
-# 2) Build & push the application image with Kaniko
-# -----------------------------------------------------------------------------
-build-app-image:
+# Three targets from one Dockerfile; the first run compiles and populates the
+# cache repo, the other two replay the build stage from cache. --cleanup
+# resets kaniko's filesystem between runs in the same container.
+build-images:
   stage: image
   needs: ["build-test"]
   image:
@@ -76,64 +74,99 @@ build-app-image:
     mkdir -p /kaniko/.docker
     AUTH="$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')"
     printf '{"auths":{"%s":{"auth":"%s"}}}' "${CI_REGISTRY}" "${AUTH}" > /kaniko/.docker/config.json
-    /kaniko/executor \
-      --context "${CI_PROJECT_DIR}" \
-      --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
-      --build-arg "BASE_IMAGE=${DEV_IMAGE}:${BASE_IMAGE_TAG}" \
-      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}" \
-      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}" \
-      ${EXTRA_DESTINATIONS} \
-      --cache=true \
-      --cache-repo "${CI_REGISTRY_IMAGE}/cache"
+    for target in autopilot mission-console mission-runner; do
+      rm -rf /kaniko/stages /kaniko/[0-9]* 2>/dev/null || true
+      if [ "${target}" = "autopilot" ]; then DEST="${CI_REGISTRY_IMAGE}"; else DEST="${CI_REGISTRY_IMAGE}/${target}"; fi
+      EXTRA=""
+      for tag in ${EXTRA_TAGS}; do EXTRA="${EXTRA} --destination ${DEST}:${tag}"; done
+      /kaniko/executor \
+        --context "${CI_PROJECT_DIR}" \
+        --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
+        --target "${target}" \
+        --build-arg "BASE_IMAGE=${DEV_IMAGE}:${BASE_IMAGE_TAG}" \
+        --destination "${DEST}:${CI_COMMIT_SHORT_SHA}" \
+        --destination "${DEST}:${CI_COMMIT_REF_SLUG}" \
+        ${EXTRA} \
+        --cache=true \
+        --cache-repo "${CI_REGISTRY_IMAGE}/cache" \
+        --cache-ttl 168h \
+        --cleanup
+    done
   rules:
     - if: '$CI_COMMIT_TAG'
       variables:
-        EXTRA_DESTINATIONS: "--destination ${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG} --destination ${CI_REGISTRY_IMAGE}:latest"
+        EXTRA_TAGS: "${CI_COMMIT_TAG} latest"
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       variables:
-        EXTRA_DESTINATIONS: "--destination ${CI_REGISTRY_IMAGE}:latest"
-    - if: '$CI_COMMIT_BRANCH'      # feature branches: validate build, sha tag only
+        EXTRA_TAGS: "latest"
+    - if: '$CI_COMMIT_BRANCH'      # feature branches: sha + ref-slug tags only
 
-# -----------------------------------------------------------------------------
-# 3) Smoke test the built image itself (lib closure + bundled web root)
-# -----------------------------------------------------------------------------
-# Uses bash's /dev/tcp for the HTTP probe so the runtime image needs no curl.
-image-smoke:
+# App image boots standalone (no console in the image any more) and exits
+# cleanly on SIGTERM.
+smoke-autopilot:
   stage: integration
+  needs: ["build-images"]
   image: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-  needs: ["build-app-image"]
   variables:
     GIT_STRATEGY: none
     CYCLONEDDS_URI: "file:///opt/autopilot/share/umaa-cpp/config/cyclonedds-loopback.xml"
   script: |
     set -e
     cd /opt/autopilot
-    ./run-all.sh &
-    RUNNER=$!
+    bin/autopilot autopilot.yaml &
+    PID=$!
+    sleep 10
+    kill -0 "${PID}" || { echo "autopilot died during startup"; exit 1; }
+    kill -TERM "${PID}"
+    wait "${PID}"
+    echo "autopilot image smoke OK"
+
+# The split-image integration gate: the console runs as a GitLab service on
+# the per-build network; the job runs the autopilot from the app image and
+# drives the console's REST API through the same round trips the combined
+# image used to smoke (constraints incl. the stale-metadata regression,
+# operational mode, vector execute/cancel).
+smoke-console:
+  stage: integration
+  needs: ["build-images"]
+  image: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+  services:
+    - name: "${CI_REGISTRY_IMAGE}/mission-console:${CI_COMMIT_SHORT_SHA}"
+      alias: mission-console
+      variables:
+        CYCLONEDDS_URI: "${DDS_XML_LISTEN}"
+  variables:
+    GIT_STRATEGY: none
+    FF_NETWORK_PER_BUILD: "true"
+    CONSOLE_HOST: mission-console
+    CYCLONEDDS_URI: "<General><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><Peers><Peer address=\"mission-console\"/><Peer address=\"127.0.0.1\"/></Peers></Discovery>"
+  script: |
+    set -e
+    cd /opt/autopilot
+    bin/autopilot autopilot.yaml &
+    APP=$!
     http_get() {
-      exec 3<>"/dev/tcp/127.0.0.1/8080"
-      printf 'GET %s HTTP/1.0\r\nHost: localhost\r\n\r\n' "$1" >&3
+      exec 3<>"/dev/tcp/${CONSOLE_HOST}/8080"
+      printf 'GET %s HTTP/1.0\r\nHost: console\r\n\r\n' "$1" >&3
+      cat <&3
+      exec 3<&-
+    }
+    http_post() {
+      body="$2"
+      exec 3<>"/dev/tcp/${CONSOLE_HOST}/8080"
+      printf 'POST %s HTTP/1.0\r\nHost: console\r\nContent-Type: application/json\r\nContent-Length: %s\r\n\r\n%s' \
+        "$1" "${#body}" "${body}" >&3
       cat <&3
       exec 3<&-
     }
     up=""
-    for i in $(seq 1 30); do
+    for i in $(seq 1 45); do
       if http_get / 2>/dev/null | grep -qi '<html'; then up=1; break; fi
       sleep 1
     done
     [ -n "${up}" ] || { echo "web UI never came up"; exit 1; }
     http_get /api/state | grep -q '"telemetry"' || { echo "/api/state missing telemetry"; exit 1; }
-    # Constraint round trip inside the image: POST a speed constraint through the console,
-    # then poll until it comes back via DDS (console -> add command -> autopilot report ->
-    # console read-back). Proves the whole MM constraint pipeline in the shipped image.
-    http_post() {
-      body="$2"
-      exec 3<>"/dev/tcp/127.0.0.1/8080"
-      printf 'POST %s HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: %s\r\n\r\n%s' \
-        "$1" "${#body}" "${body}" >&3
-      cat <&3
-      exec 3<&-
-    }
+    # Constraint round trip across containers: console -> DDS -> autopilot -> read-back.
     resp=$(http_post /api/constraints '{"type":"speed","name":"smoke","op":"lte","value":2.5}')
     echo "${resp}" | grep -q '"id"' || { echo "constraint POST rejected"; exit 1; }
     smoke_id=$(printf '%s' "${resp}" | sed -n 's/.*"id":"\([0-9a-fA-F-]*\)".*/\1/p')
@@ -144,9 +177,7 @@ image-smoke:
       sleep 1
     done
     [ -n "${roundtrip}" ] || { echo "constraint never round-tripped through the autopilot"; exit 1; }
-    # Regression: an edit stamps the report set metadata with wall-clock time; a brand-new
-    # add afterwards must still round-trip (an unstamped insert used to publish epoch-0
-    # metadata the console rejected as stale forever - the TODO.md warn-spin).
+    # Regression: add-after-edit must still round-trip (epoch-0 metadata warn-spin).
     http_post /api/constraints "{\"id\":\"${smoke_id}\",\"type\":\"speed\",\"name\":\"smoke\",\"op\":\"lte\",\"value\":3.0}" \
       | grep -q '"id"' || { echo "constraint edit rejected"; exit 1; }
     http_post /api/constraints '{"type":"speed","name":"smoke2","op":"lte","value":1.5}' \
@@ -157,8 +188,7 @@ image-smoke:
       sleep 1
     done
     [ -n "${addback}" ] || { echo "add-after-edit never round-tripped (stale-metadata regression)"; exit 1; }
-    # Operational-mode round trip: the sim boots in STANDBY; command REMOTE through the
-    # console and wait for the OperationalModeStatus report to echo back via /api/state.
+    # Operational-mode round trip; then a REMOTE vector while in REMOTE.
     http_get /api/state | grep -q '"operational_mode"' || { echo "no operational_mode block"; exit 1; }
     http_post /api/mode '{"mode":"REMOTE"}' | grep -q '"session"' || { echo "mode POST rejected"; exit 1; }
     modeok=""
@@ -167,8 +197,6 @@ image-smoke:
       sleep 1
     done
     [ -n "${modeok}" ] || { echo "mode never round-tripped"; exit 1; }
-    # Vector round trip while REMOTE. The shipped console platform_id differs from the
-    # autopilot's, so the console classifies REMOTE — this doubles as a mode-gating check.
     http_post /api/vector '{"heading_deg":90,"speed_mps":1.0,"timeout_s":30}' \
       | grep -q '"session"' || { echo "vector POST rejected"; exit 1; }
     vecok=""
@@ -178,6 +206,30 @@ image-smoke:
     done
     [ -n "${vecok}" ] || { echo "vector command never executed"; exit 1; }
     http_post /api/vector/cancel '{}' | grep -q '"canceled":true' || { echo "vector cancel failed"; exit 1; }
-    kill -TERM "${RUNNER}"
-    wait "${RUNNER}" || true
-    echo "image smoke OK: web UI served, constraint + mode + vector round-tripped, clean shutdown"
+    kill -TERM "${APP}"
+    wait "${APP}" || true
+    echo "split-image smoke OK: DDS across containers, constraint + mode + vector round-tripped"
+
+# Runner image drives a one-waypoint mission to COMPLETED against the app
+# image. mission_runner exits 0 only on COMPLETED.
+smoke-runner:
+  stage: integration
+  needs: ["build-images"]
+  timeout: 10m
+  image: "${CI_REGISTRY_IMAGE}/mission-runner:${CI_COMMIT_SHORT_SHA}"
+  services:
+    - name: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+      alias: autopilot
+      variables:
+        CYCLONEDDS_URI: "${DDS_XML_LISTEN}"
+  variables:
+    GIT_STRATEGY: none
+    FF_NETWORK_PER_BUILD: "true"
+    CYCLONEDDS_URI: "<General><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><Peers><Peer address=\"autopilot\"/><Peer address=\"127.0.0.1\"/></Peers></Discovery>"
+  script: |
+    set -e
+    cd /opt/autopilot
+    printf 'east_m,north_m,speed_mps,capture_radius_m\n0,40,3.0,12\n' > /tmp/mission.csv
+    bin/mission_runner autopilot.yaml /tmp/out /tmp/mission.csv
+    grep -q . /tmp/out/track.csv || { echo "empty track.csv"; exit 1; }
+    echo "runner smoke OK: mission COMPLETED across containers"

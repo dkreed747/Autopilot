@@ -1,0 +1,103 @@
+#ifndef AUTOPILOT_TOOLS_CLIENTS_WAYPOINTMISSIONCLIENT_HPP_
+#define AUTOPILOT_TOOLS_CLIENTS_WAYPOINTMISSIONCLIENT_HPP_
+
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandAckReportType.hpp>
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandStatusType.hpp>
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointCommandType.hpp>
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointType.hpp>
+#include <chrono>
+#include <dds/dds.hpp>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "CycloneReader.h"
+#include "CycloneSender.h"
+#include "LargeListWriter.h"
+#include "NumericGuid.h"
+#include "clients/ClientIdentity.hpp"
+
+namespace arlcore::autopilot::tools {
+
+//! \brief One command-status transition observed for the active session.
+struct MissionStatusUpdate {
+  std::string status;  // ISSUED / COMMANDED / EXECUTING / COMPLETED / CANCELED / FAILED
+  std::string reason;
+  std::string logMessage;
+  bool terminal = false;
+};
+
+//! \brief The UMAA consumer side of the Global Waypoint control service: publishes a
+//! waypoint route (as a large list plus the command referencing it), tracks the command
+//! acknowledgement and status for the session, and cancels by disposing the command
+//! instance. One client drives at most one session at a time; starting a new mission
+//! retires the previous list.
+class WaypointMissionClient {
+ public:
+  using GlobalWaypointType = UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
+  using CommandType = UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandType;
+  using CommandStatusType = UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandStatusType;
+  using CommandAckType = UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandAckReportType;
+  using ListElement = UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandTypeWaypointsListElement;
+
+  //! \brief `destinationId` is the waypoint provider's source ID (identity.waypoint_source_id);
+  //! `identity` stamps the outgoing command's source id/parentID.
+  WaypointMissionClient(const dds::domain::DomainParticipant& participant, const dds::pub::qos::DataWriterQos& wqos,
+                        const dds::sub::qos::DataReaderQos& rqos, const arlcore::NumericGuid& destinationId,
+                        const ClientIdentity& identity);
+
+  //! \brief Publish the route and command. Returns the new session ID.
+  arlcore::NumericGuid start(const std::vector<GlobalWaypointType>& waypoints);
+
+  //! \brief Cancel the active session by disposing the command instance.
+  bool cancel();
+
+  //! \brief Drain new command-status samples for the active session.
+  std::vector<MissionStatusUpdate> pollStatus();
+
+  //! \brief True once the session's command acknowledgement has been received.
+  bool pollAck();
+
+  //! \brief True while a session is started and not yet terminal.
+  //! \brief Whether a session is live. A cancel with no status echo (autopilot down)
+  //! times out after kCancelEchoTimeoutS so the console can never wedge on 409.
+  bool active() const {
+    if (!sessionId_.has_value() || terminal_) {
+      return false;
+    }
+    if (cancelRequestedAt_.has_value() &&
+        std::chrono::steady_clock::now() - cancelRequestedAt_.value() > std::chrono::seconds(5)) {
+      return false;
+    }
+    return true;
+  }
+
+  const std::optional<arlcore::NumericGuid>& sessionId() const { return sessionId_; }
+  const std::vector<GlobalWaypointType>& waypoints() const { return waypoints_; }
+  bool ackReceived() const { return ackReceived_; }
+  const std::string& lastStatus() const { return lastStatus_; }
+  const std::string& lastReason() const { return lastReason_; }
+
+ private:
+  std::shared_ptr<arlcore::io::CycloneSender<CommandType>> cmdSender_;
+  std::shared_ptr<arlcore::io::CycloneSender<ListElement>> elementSender_;
+  std::shared_ptr<arlcore::io::CycloneReader<CommandStatusType>> statusReader_;
+  std::shared_ptr<arlcore::io::CycloneReader<CommandAckType>> ackReader_;
+
+  ClientIdentity identity_;
+  arlcore::NumericGuid destinationId_;
+  std::optional<arlcore::umaa::LargeListWriter<GlobalWaypointType, ListElement>> listWriter_;
+  CommandType cmd_;
+  std::optional<arlcore::NumericGuid> sessionId_;
+  std::vector<GlobalWaypointType> waypoints_;
+  bool terminal_ = true;
+  std::optional<std::chrono::steady_clock::time_point> cancelRequestedAt_;
+  bool ackReceived_ = false;
+  std::string lastStatus_;
+  std::string lastReason_;
+};
+
+}  // namespace arlcore::autopilot::tools
+
+#endif  // AUTOPILOT_TOOLS_CLIENTS_WAYPOINTMISSIONCLIENT_HPP_

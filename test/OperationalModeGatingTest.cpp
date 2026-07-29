@@ -1,19 +1,4 @@
-//---------------------------------------------------------------------------
-// Copyright 2025 Pennsylvania State University
-//
-// Applied Research Laboratory
-// Pennsylvania State University
-// P.O. Box 30
-// State College, PA 16804-0030
-//
-// DISTRIBUTION STATEMENT A. Approved for public release.
-// Distribution is unlimited.
-// This software was developed by the Department of the Navy,
-// NAVSEA Unmanned and Small Combatants. It is provided under the terms of
-// use found in the LICENSE file at the source code root directory.
-//
-//---------------------------------------------------------------------------
-
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -22,33 +7,24 @@
 #include <utility>
 #include <vector>
 
-#include "AutopilotBrain.h"
+#include "InternalTypes.h"
 #include "LocalReaderSender.h"
-#include "NavState.h"
-#include "OperationalModeManager.hpp"
 #include "UmaaUtils.h"
 #include "UuidFactory.h"
-#include "VectorControlServiceProvider.h"
-#include "WaypointControlServiceProvider.h"
+#include "autopilot/core/AutopilotBrain.hpp"
+#include "autopilot/core/NavState.hpp"
+#include "autopilot/modes/OperationalModeManager.hpp"
+#include "autopilot/umaa/VectorControlServiceProvider.hpp"
+#include "autopilot/umaa/WaypointControlServiceProvider.hpp"
 
-using GatingStatus = UMAA::Common::MaritimeEnumeration::
-    CommandStatusEnumModule::CommandStatusEnumType;
-using GatingReason = UMAA::Common::MaritimeEnumeration::
-    CommandStatusReasonEnumModule::CommandStatusReasonEnumType;
+using GatingStatus = UMAA::Common::MaritimeEnumeration::CommandStatusEnumModule::CommandStatusEnumType;
+using GatingReason = UMAA::Common::MaritimeEnumeration::CommandStatusReasonEnumModule::CommandStatusReasonEnumType;
 
-//! \brief Minimal vehicle strategy: counts control vectors and exposes a manual
-//! flag.
-class GatingVehicle : public arlcore::autopilot::IVehicleControl {
+class MockGatingVehicle : public arlcore::autopilot::IVehicleControl {
  public:
-  bool initialize() override { return true; }
-  bool sendControlVector(const arlcore::autopilot::ControlVector& cv) override {
-    ++sendCount;
-    return true;
-  }
-  bool isManualEngaged() const override { return manualEngaged; }
-
-  int32_t sendCount = 0;
-  bool manualEngaged = false;
+  MOCK_METHOD(bool, initialize, (), (override));
+  MOCK_METHOD(bool, sendControlVector, (const arlcore::autopilot::ControlVector& cv), (override));
+  MOCK_METHOD(bool, isManualEngaged, (), (const, override));
 };
 
 static arlcore::NumericGuid gatingPlatformGuid() {
@@ -64,21 +40,16 @@ static arlcore::NumericGuid gatingForeignGuid() {
   return arlcore::NumericGuid(bytes);
 }
 
-static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType
-gatingVectorCommand(const arlcore::NumericGuid& sessionId,
-                    const arlcore::NumericGuid& parentId,
-                    double speedMps = 2.0) {
+static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType gatingVectorCommand(const arlcore::NumericGuid& sessionId,
+                                                                                  const arlcore::NumericGuid& parentId,
+                                                                                  flt64_t speedMps = 2.0) {
   UMAA::MO::GlobalVectorControl::GlobalVectorCommandType cmd;
   UMAA::Common::Orientation::DirectionTrueNorthRequirementVariantType dir;
   dir.direction().direction(1.0);
-  cmd.direction()
-      .DirectionRequirementVariantTypeSubtypes()
-      .DirectionTrueNorthRequirementVariantVariant(dir);
+  cmd.direction().DirectionRequirementVariantTypeSubtypes().DirectionTrueNorthRequirementVariantVariant(dir);
   UMAA::Common::Speed::GroundSpeedRequirementVariantType speed;
   speed.speed().speed(speedMps);
-  cmd.speed()
-      .SpeedRequirementVariantTypeSubtypes()
-      .GroundSpeedRequirementVariantVariant(speed);
+  cmd.speed().SpeedRequirementVariantTypeSubtypes().GroundSpeedRequirementVariantVariant(speed);
   cmd.sessionID(sessionId.getGuid());
   cmd.source().id(arlcore::UuidFactory::getInstance().generateGuid().getGuid());
   cmd.source().parentID(parentId.getGuid());
@@ -88,9 +59,8 @@ gatingVectorCommand(const arlcore::NumericGuid& sessionId,
 
 //! \brief A waypoint command whose large list never completes (unknown listID,
 //! size 1), so the session dwells in COMMANDED assembling it.
-static UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandType
-gatingWaypointCommand(const arlcore::NumericGuid& sessionId,
-                      const arlcore::NumericGuid& parentId) {
+static UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandType gatingWaypointCommand(
+    const arlcore::NumericGuid& sessionId, const arlcore::NumericGuid& parentId) {
   UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandType cmd;
   UMAA::Common::LargeListMetadata metadata;
   metadata.listID(arlcore::UuidFactory::getInstance().generateGuid().getGuid());
@@ -105,8 +75,7 @@ gatingWaypointCommand(const arlcore::NumericGuid& sessionId,
 
 template <class StatusType>
 static std::vector<std::pair<GatingStatus, GatingReason>> drainStatuses(
-    const std::shared_ptr<arlcore::io::LocalReaderSender<StatusType>>&
-        statusIo) {
+    const std::shared_ptr<arlcore::io::LocalReaderSender<StatusType>>& statusIo) {
   std::vector<std::pair<GatingStatus, GatingReason>> out;
   StatusType status;
   while (true) {
@@ -125,105 +94,79 @@ class OperationalModeGatingTest : public ::testing::Test {
  protected:
   //! \brief Build the manager (booted into STANDBY), brain, and both gated
   //! providers.
-  void init(bool allowImplicit, bool failOutOfMode,
-            double idleRevertS = 3600.0) {
+  void init(bool allowImplicit, bool failOutOfMode, flt64_t idleRevertS = 3600.0) {
+    ON_CALL(vehicle_, initialize()).WillByDefault(::testing::Return(true));
+    ON_CALL(vehicle_, sendControlVector(::testing::_)).WillByDefault(::testing::Return(true));
+    ON_CALL(vehicle_, isManualEngaged()).WillByDefault(::testing::Return(false));
+
     arlcore::autopilot::OperationalModeConfig modeConfig;
     modeConfig.allowImplicitModeTransitions = allowImplicit;
     modeConfig.commandsOutOfModeAreFailed = failOutOfMode;
     modeConfig.idleRevertS = idleRevertS;
-    manager_ = std::make_unique<arlcore::autopilot::OperationalModeManager>(
-        modeConfig, gatingPlatformGuid());
+    manager_ = std::make_unique<arlcore::autopilot::OperationalModeManager>(modeConfig, gatingPlatformGuid());
     manager_->beginStep(false);
 
     arlcore::autopilot::AutopilotConfig config;
     config.platformCapabilities.surface.cruisingSpeedMps = 3.0;
     config.platformCapabilities.surface.maxForwardSpeedMps = 8.0;
     config.platformCapabilities.surface.maxTurnRateRps = 0.5;
-    brain_ = std::make_unique<arlcore::autopilot::AutopilotBrain>(
-        &nav_, &vehicle_, config);
+    brain_ = std::make_unique<arlcore::autopilot::AutopilotBrain>(&nav_, &vehicle_, config);
 
-    vecCmdIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::GlobalVectorCommandType>>();
-    vecAckIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::GlobalVectorCommandAckReportType>>();
-    vecStatusIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::GlobalVectorCommandStatusType>>();
-    vecExeIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::GlobalVectorExecutionStatusReportType>>();
-    vectorProvider_ = std::make_unique<
-        arlcore::autopilot::VectorControlServiceProvider>(
+    vecCmdIo_ = std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalVectorCommandType>>();
+    vecAckIo_ =
+        std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalVectorCommandAckReportType>>();
+    vecStatusIo_ =
+        std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalVectorCommandStatusType>>();
+    vecExeIo_ =
+        std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalVectorExecutionStatusReportType>>();
+    vectorProvider_ = std::make_unique<arlcore::autopilot::VectorControlServiceProvider>(
         arlcore::UuidFactory::getInstance().generateGuid(),
-        std::make_shared<arlcore::autopilot::VectorControlServiceProviderIo>(
-            vecCmdIo_, vecAckIo_, vecStatusIo_, vecExeIo_),
+        std::make_shared<arlcore::autopilot::VectorControlServiceProviderIo>(vecCmdIo_, vecAckIo_, vecStatusIo_,
+                                                                             vecExeIo_),
         brain_.get(), 8.0, nullptr, manager_.get());
 
-    wpCmdIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::GlobalWaypointCommandType>>();
-    wpAckIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::GlobalWaypointCommandAckReportType>>();
-    wpStatusIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::GlobalWaypointCommandStatusType>>();
-    wpExeIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::GlobalWaypointExecutionStatusReportType>>();
-    wpElementIo_ = std::make_shared<arlcore::io::LocalReaderSender<
-        arlcore::autopilot::GlobalWaypointCommandTypeWaypointsListElement>>();
-    waypointProvider_ = std::make_unique<
-        arlcore::autopilot::WaypointControlServiceProvider>(
+    wpCmdIo_ = std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointCommandType>>();
+    wpAckIo_ =
+        std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointCommandAckReportType>>();
+    wpStatusIo_ =
+        std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointCommandStatusType>>();
+    wpExeIo_ =
+        std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointExecutionStatusReportType>>();
+    wpElementIo_ = std::make_shared<
+        arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointCommandTypeWaypointsListElement>>();
+    waypointProvider_ = std::make_unique<arlcore::autopilot::WaypointControlServiceProvider>(
         arlcore::UuidFactory::getInstance().generateGuid(),
-        std::make_shared<arlcore::autopilot::WaypointControlServiceProviderIo>(
-            wpCmdIo_, wpAckIo_, wpStatusIo_, wpExeIo_, wpElementIo_),
-        brain_.get(), 8.0, /*maxListWaitCycles=*/50, nullptr, nullptr,
-        manager_.get());
+        std::make_shared<arlcore::autopilot::WaypointControlServiceProviderIo>(wpCmdIo_, wpAckIo_, wpStatusIo_,
+                                                                               wpExeIo_, wpElementIo_),
+        brain_.get(), 8.0, /*maxListWaitCycles=*/50, nullptr, nullptr, manager_.get());
   }
 
   arlcore::autopilot::NavState nav_;
-  GatingVehicle vehicle_;
+  ::testing::NiceMock<MockGatingVehicle> vehicle_;
   std::unique_ptr<arlcore::autopilot::OperationalModeManager> manager_;
   std::unique_ptr<arlcore::autopilot::AutopilotBrain> brain_;
 
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::GlobalVectorCommandType>>
-      vecCmdIo_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::GlobalVectorCommandAckReportType>>
-      vecAckIo_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::GlobalVectorCommandStatusType>>
-      vecStatusIo_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::GlobalVectorExecutionStatusReportType>>
-      vecExeIo_;
-  std::unique_ptr<arlcore::autopilot::VectorControlServiceProvider>
-      vectorProvider_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalVectorCommandType>> vecCmdIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalVectorCommandAckReportType>> vecAckIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalVectorCommandStatusType>> vecStatusIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalVectorExecutionStatusReportType>> vecExeIo_;
+  std::unique_ptr<arlcore::autopilot::VectorControlServiceProvider> vectorProvider_;
 
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::GlobalWaypointCommandType>>
-      wpCmdIo_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::GlobalWaypointCommandAckReportType>>
-      wpAckIo_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::GlobalWaypointCommandStatusType>>
-      wpStatusIo_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::GlobalWaypointExecutionStatusReportType>>
-      wpExeIo_;
-  std::shared_ptr<arlcore::io::LocalReaderSender<
-      arlcore::autopilot::GlobalWaypointCommandTypeWaypointsListElement>>
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointCommandType>> wpCmdIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointCommandAckReportType>> wpAckIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointCommandStatusType>> wpStatusIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointExecutionStatusReportType>> wpExeIo_;
+  std::shared_ptr<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointCommandTypeWaypointsListElement>>
       wpElementIo_;
-  std::unique_ptr<arlcore::autopilot::WaypointControlServiceProvider>
-      waypointProvider_;
+  std::unique_ptr<arlcore::autopilot::WaypointControlServiceProvider> waypointProvider_;
 };
 
-TEST_F(OperationalModeGatingTest,
-       ImplicitLocalVectorEntersAutonomousAndExecutes) {
+TEST_F(OperationalModeGatingTest, ImplicitLocalVectorEntersAutonomousAndExecutes) {
   // GIVEN: STANDBY, implicit transitions on, fail policy
   init(true, true);
 
   // WHEN: a local-classified vector command arrives
-  vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid()));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   vectorProvider_->cycle();
 
   // THEN: the command runs ISSUED -> COMMANDED -> EXECUTING in one cycle and
@@ -235,20 +178,16 @@ TEST_F(OperationalModeGatingTest,
   EXPECT_EQ(statuses[1].first, GatingStatus::COMMANDED);
   EXPECT_EQ(statuses[2].first, GatingStatus::EXECUTING);
   EXPECT_EQ(manager_->mode(), arlcore::autopilot::OperationalMode::AUTONOMOUS);
-  EXPECT_EQ(brain_->arbiter().currentHolder(),
-            arlcore::autopilot::DriveSource::VECTOR);
+  EXPECT_EQ(brain_->arbiter().currentHolder(), arlcore::autopilot::DriveSource::VECTOR);
 }
 
 TEST_F(OperationalModeGatingTest, FailPolicyRejectsLocalCommandInRemote) {
   // GIVEN: explicit REMOTE mode under the fail policy
   init(true, true);
-  ASSERT_TRUE(
-      manager_->commandMode(arlcore::autopilot::OperationalMode::REMOTE));
+  ASSERT_TRUE(manager_->commandMode(arlcore::autopilot::OperationalMode::REMOTE));
 
   // WHEN: a local-classified vector command arrives
-  vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid()));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   vectorProvider_->cycle();
 
   // THEN: it fails validation from ISSUED and the mode never moves
@@ -263,13 +202,10 @@ TEST_F(OperationalModeGatingTest, FailPolicyRejectsLocalCommandInRemote) {
 TEST_F(OperationalModeGatingTest, HoldPolicyParksThenExplicitReleaseExecutes) {
   // GIVEN: explicit REMOTE mode under the hold policy
   init(true, false);
-  ASSERT_TRUE(
-      manager_->commandMode(arlcore::autopilot::OperationalMode::REMOTE));
+  ASSERT_TRUE(manager_->commandMode(arlcore::autopilot::OperationalMode::REMOTE));
 
   // WHEN: a local-classified vector command arrives
-  vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid()));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   vectorProvider_->cycle();
 
   // THEN: only the ISSUED status is published and further cycles stay silent
@@ -282,8 +218,7 @@ TEST_F(OperationalModeGatingTest, HoldPolicyParksThenExplicitReleaseExecutes) {
   EXPECT_TRUE(drainStatuses(vecStatusIo_).empty());
 
   // WHEN: AUTONOMOUS is explicitly commanded
-  ASSERT_TRUE(
-      manager_->commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
+  ASSERT_TRUE(manager_->commandMode(arlcore::autopilot::OperationalMode::AUTONOMOUS));
   vectorProvider_->cycle();
 
   // THEN: the held command advances to EXECUTING in that cycle
@@ -296,17 +231,13 @@ TEST_F(OperationalModeGatingTest, HoldPolicyParksThenExplicitReleaseExecutes) {
 TEST_F(OperationalModeGatingTest, ExplicitStandbyFlushesHeldLocalCommand) {
   // GIVEN: a local command held at ISSUED in REMOTE under the hold policy
   init(true, false);
-  ASSERT_TRUE(
-      manager_->commandMode(arlcore::autopilot::OperationalMode::REMOTE));
-  vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid()));
+  ASSERT_TRUE(manager_->commandMode(arlcore::autopilot::OperationalMode::REMOTE));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   vectorProvider_->cycle();
   ASSERT_EQ(drainStatuses(vecStatusIo_).size(), 1u);  // ISSUED only
 
   // WHEN: STANDBY is explicitly commanded (an authoritative lockdown)
-  ASSERT_TRUE(
-      manager_->commandMode(arlcore::autopilot::OperationalMode::STANDBY));
+  ASSERT_TRUE(manager_->commandMode(arlcore::autopilot::OperationalMode::STANDBY));
   vectorProvider_->cycle();
 
   // THEN: the held command is flushed with INTERRUPTED and no implicit re-entry
@@ -322,10 +253,8 @@ TEST_F(OperationalModeGatingTest, IdleRevertReleasesHeldCommandTwoStep) {
   // GIVEN: implicit REMOTE (from a remote command since canceled) holding a
   // local command
   init(true, false, 0.0);
-  const arlcore::NumericGuid remoteSession =
-      arlcore::UuidFactory::getInstance().generateGuid();
-  const auto remoteCmd =
-      gatingVectorCommand(remoteSession, gatingForeignGuid());
+  const arlcore::NumericGuid remoteSession = arlcore::UuidFactory::getInstance().generateGuid();
+  const auto remoteCmd = gatingVectorCommand(remoteSession, gatingForeignGuid());
   vecCmdIo_->send(remoteCmd);
   vectorProvider_->cycle();
   ASSERT_EQ(manager_->mode(), arlcore::autopilot::OperationalMode::REMOTE);
@@ -333,9 +262,7 @@ TEST_F(OperationalModeGatingTest, IdleRevertReleasesHeldCommandTwoStep) {
   vectorProvider_->cycle();
   drainStatuses(vecStatusIo_);
 
-  vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid()));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   vectorProvider_->cycle();
   const auto heldStatuses = drainStatuses(vecStatusIo_);
   ASSERT_EQ(heldStatuses.size(), 1u);
@@ -357,19 +284,15 @@ TEST_F(OperationalModeGatingTest, IdleRevertReleasesHeldCommandTwoStep) {
   EXPECT_EQ(manager_->mode(), arlcore::autopilot::OperationalMode::AUTONOMOUS);
 }
 
-TEST_F(OperationalModeGatingTest,
-       RemoteVectorPreemptsExecutingLocalVectorSameProvider) {
+TEST_F(OperationalModeGatingTest, RemoteVectorPreemptsExecutingLocalVectorSameProvider) {
   // GIVEN: a local vector command executing in implicit AUTONOMOUS
   init(true, true);
-  vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid()));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   vectorProvider_->cycle();
   drainStatuses(vecStatusIo_);
 
   // WHEN: a remote vector command arrives at the same provider
-  vecCmdIo_->send(gatingVectorCommand(
-      arlcore::UuidFactory::getInstance().generateGuid(), gatingForeignGuid()));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingForeignGuid()));
   vectorProvider_->cycle();
 
   // THEN: the local session is CANCELED (same-provider CANCEL_EXISTING), the
@@ -386,15 +309,12 @@ TEST_F(OperationalModeGatingTest,
 TEST_F(OperationalModeGatingTest, RemoteWaypointPreemptsLocalVectorViaArbiter) {
   // GIVEN: a local vector command executing in implicit AUTONOMOUS
   init(true, true);
-  vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid()));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   vectorProvider_->cycle();
   drainStatuses(vecStatusIo_);
 
   // WHEN: a remote waypoint command arrives (its large list still assembling)
-  wpCmdIo_->send(gatingWaypointCommand(
-      arlcore::UuidFactory::getInstance().generateGuid(), gatingForeignGuid()));
+  wpCmdIo_->send(gatingWaypointCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingForeignGuid()));
   waypointProvider_->cycle();
   vectorProvider_->cycle();
 
@@ -408,23 +328,19 @@ TEST_F(OperationalModeGatingTest, RemoteWaypointPreemptsLocalVectorViaArbiter) {
   ASSERT_EQ(vecStatuses.size(), 1u);
   EXPECT_EQ(vecStatuses[0].first, GatingStatus::FAILED);
   EXPECT_EQ(vecStatuses[0].second, GatingReason::INTERRUPTED);
-  EXPECT_EQ(brain_->arbiter().currentHolder(),
-            arlcore::autopilot::DriveSource::WAYPOINT);
+  EXPECT_EQ(brain_->arbiter().currentHolder(), arlcore::autopilot::DriveSource::WAYPOINT);
   EXPECT_EQ(manager_->mode(), arlcore::autopilot::OperationalMode::REMOTE);
 }
 
-TEST_F(OperationalModeGatingTest,
-       ManualEngageInterruptsExecutingAndRejectsNewCommands) {
+TEST_F(OperationalModeGatingTest, ManualEngageInterruptsExecutingAndRejectsNewCommands) {
   // GIVEN: a local vector command executing in implicit AUTONOMOUS
   init(true, true);
-  vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid()));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   vectorProvider_->cycle();
   drainStatuses(vecStatusIo_);
 
   // WHEN: the platform engages manual control
-  vehicle_.manualEngaged = true;
+  ON_CALL(vehicle_, isManualEngaged()).WillByDefault(::testing::Return(true));
   manager_->beginStep(true);
   vectorProvider_->cycle();
 
@@ -436,9 +352,7 @@ TEST_F(OperationalModeGatingTest,
 
   // WHEN: a new command arrives while MANUAL (even under a hold-free fail
   // policy)
-  vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid()));
+  vecCmdIo_->send(gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   vectorProvider_->cycle();
 
   // THEN: it fails validation immediately
@@ -448,14 +362,11 @@ TEST_F(OperationalModeGatingTest,
   EXPECT_EQ(statuses[1].second, GatingReason::VALIDATION_FAILED);
 }
 
-TEST_F(OperationalModeGatingTest,
-       ExplicitStandbyInterruptsWaypointMidListAssembly) {
+TEST_F(OperationalModeGatingTest, ExplicitStandbyInterruptsWaypointMidListAssembly) {
   // GIVEN: a local waypoint command dwelling in COMMANDED while its list
   // assembles
   init(true, true);
-  wpCmdIo_->send(
-      gatingWaypointCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                            gatingPlatformGuid()));
+  wpCmdIo_->send(gatingWaypointCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid()));
   waypointProvider_->cycle();
   waypointProvider_->cycle();
   const auto setupStatuses = drainStatuses(wpStatusIo_);
@@ -464,8 +375,7 @@ TEST_F(OperationalModeGatingTest,
   ASSERT_EQ(manager_->mode(), arlcore::autopilot::OperationalMode::AUTONOMOUS);
 
   // WHEN: STANDBY is explicitly commanded
-  ASSERT_TRUE(
-      manager_->commandMode(arlcore::autopilot::OperationalMode::STANDBY));
+  ASSERT_TRUE(manager_->commandMode(arlcore::autopilot::OperationalMode::STANDBY));
   waypointProvider_->cycle();
 
   // THEN: the command fails INTERRUPTED from COMMANDED and the resource is
@@ -474,8 +384,7 @@ TEST_F(OperationalModeGatingTest,
   ASSERT_EQ(statuses.size(), 1u);
   EXPECT_EQ(statuses[0].first, GatingStatus::FAILED);
   EXPECT_EQ(statuses[0].second, GatingReason::INTERRUPTED);
-  EXPECT_EQ(brain_->arbiter().currentHolder(),
-            arlcore::autopilot::DriveSource::NONE);
+  EXPECT_EQ(brain_->arbiter().currentHolder(), arlcore::autopilot::DriveSource::NONE);
 }
 
 TEST_F(OperationalModeGatingTest, UpdateWhileDisallowedParksAndReleasesResources) {
@@ -519,8 +428,7 @@ TEST_F(OperationalModeGatingTest, InvalidContentNeverMovesTheMode) {
   // WHEN: a local vector command with an over-limit speed arrives (9 > platform
   // max 8)
   vecCmdIo_->send(
-      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(),
-                          gatingPlatformGuid(), /*speedMps=*/9.0));
+      gatingVectorCommand(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid(), /*speedMps=*/9.0));
   vectorProvider_->cycle();
 
   // THEN: it fails validation and the invalid command never fired the implicit

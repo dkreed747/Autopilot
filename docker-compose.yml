@@ -1,0 +1,75 @@
+# Autopilot stack, single host.
+#   docker compose up -d                          -> autopilot only
+#   docker compose --profile console up -d        -> + web console on :8080
+#   docker compose --profile runner up            -> + one-shot mission (exits)
+#
+# DDS: bridge network with multicast disabled; the tools unicast-peer at the
+# "autopilot" service name (the same topology CI smoke-tests). For a console
+# on a different host (operator in wifi range), run the console there with
+# CYCLONEDDS_URI peers pointing at the vehicle's IP and publish 8080 -- see
+# the README deployment section.
+#
+# All services read the same autopilot.yaml, bind-mounted read-only over the
+# baked-in copy. They must agree on dds.* and identity.*.
+# TODO(repo-split): per-tool subset configs once the tools move to their own repos.
+
+x-registry: &registry-prefix ${REGISTRY:-gitlab.bongo-barley.ts.net/poseidon/platform}
+
+x-config-volume: &config-volume
+  ./config/autopilot.yaml:/opt/autopilot/share/autopilot/autopilot.yaml:ro
+
+x-app-dds: &app-dds >-
+  <General><AllowMulticast>false</AllowMulticast></General>
+  <Discovery><ParticipantIndex>auto</ParticipantIndex></Discovery>
+
+x-tool-dds: &tool-dds >-
+  <General><AllowMulticast>false</AllowMulticast></General>
+  <Discovery><ParticipantIndex>auto</ParticipantIndex>
+  <Peers><Peer address="autopilot"/></Peers></Discovery>
+
+services:
+  autopilot:
+    image: ${REGISTRY:-gitlab.bongo-barley.ts.net/poseidon/platform}/autopilot:${TAG:-latest}
+    environment:
+      CYCLONEDDS_URI: *app-dds
+    volumes:
+      - *config-volume
+    restart: unless-stopped
+
+  mission-console:
+    image: ${REGISTRY:-gitlab.bongo-barley.ts.net/poseidon/platform}/autopilot/mission-console:${TAG:-latest}
+    profiles: ["console"]
+    depends_on: [autopilot]
+    environment:
+      CYCLONEDDS_URI: *tool-dds
+    ports:
+      - "${CONSOLE_PORT:-8080}:8080"
+    volumes:
+      - *config-volume
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET / HTTP/1.0\\r\\n\\r\\n' >&3 && grep -qi html <&3"
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+    restart: unless-stopped
+
+  mission-runner:
+    image: ${REGISTRY:-gitlab.bongo-barley.ts.net/poseidon/platform}/autopilot/mission-runner:${TAG:-latest}
+    profiles: ["runner"]
+    depends_on: [autopilot]
+    environment:
+      CYCLONEDDS_URI: *tool-dds
+    volumes:
+      - *config-volume
+      - mission-out:/opt/autopilot/mission-out
+      # Drop a CSV here and append its path to the command to run a custom
+      # mission: command: ["bin/mission_runner", "autopilot.yaml", "mission-out", "missions/my.csv"]
+      # - ./missions:/opt/autopilot/missions:ro
+    restart: "no"
+
+volumes:
+  mission-out:
