@@ -73,22 +73,40 @@ planner:
   elevation_counts_as_miss: true
   max_replans: 10
   sample_step_m: 2.0             # path polyline sampling resolution
-  xte:                           # cross-track tracking law; defaults = legacy pure P
-    kp_scale: 1.0                # P gain scale: correction = atan2(kp*xte, turn_radius)
+  tracker:                       # path-tracking law: curvature feedforward + bounded cross-track
+    heading_loop_tau_s: 1.11     # steady-state 1/K of the inner heading loop. The platform accepts
+                                 # a heading, not a turn rate, so holding a planned arc means
+                                 # biasing the command ahead of the tangent by omega * tau.
+                                 # MEASURE THIS with tools/heading_probe: nothing in flight
+                                 # corrects it, and a guess shows up as a standing corner-cut (tau
+                                 # too large) or a standing overshoot (too small) on every arc.
+                                 # It is the steady-state gain, NOT the lag-inclusive closed-loop
+                                 # constant: an actuator lag has settled by the time an arc reaches
+                                 # steady state, so it does not change the bias the arc needs.
+    feedforward_limit_rad: 0.7   # curvature feedforward clamp. The geometry only ever asks for
+                                 # omega_max * tau / turn_radius_margin, so this binds solely on a
+                                 # replanned arc tighter than the planned radius.
+    cross_track_approach_rad: 0.6  # the angle the cross-track term saturates at, so a gross
+                                 # excursion cannot consume the feedforward's turn authority
+    cross_track_gain_per_m: 0.15 # correction = approach * (2/pi) * atan(kp_scale * gain * xte), so
+                                 # the slope at zero error is approach * (2/pi) * gain and the
+                                 # correction is half the approach angle at xte = 1 / gain.
+                                 # Keep the outer loop slower than the inner one: see docs/tuning.md.
+  xte:                           # cross-track integral term; the P shape lives in tracker above
+    kp_scale: 1.0                # scales tracker.cross_track_gain_per_m; ship 1.0 and tune the gain
     ki: 0.0                      # integral gain, rad per meter-second; nulls the standing
                                  # offset a lateral current/trim leaves behind. The in-repo
                                  # sim masks under-commit; field starting point 0.02-0.05.
     integrator_limit_rad: 0.35   # |integral| clamp (~20 deg of crab)
     integrator_gate_m: 5.0       # integrate only while |xte| is inside the gate
-    correction_limit_rad: 1.2    # total correction clamp; raise for platforms that need a
-                                 # larger commanded-vs-current heading delta to commit
-    lead_time_s: 1.0             # tangent phase-lead seconds ahead of the progress pointer
+    correction_limit_rad: 1.2    # total P+I clamp; keep it above cross_track_approach_rad +
+                                 # integrator_limit_rad or it caps the approach angle
   rrt:                           # fallback planner when the direct Dubins leg clips a zone
     seed: 12345                  # deterministic sampling, salted per waypoint index
     max_iterations: 2000
     time_budget_ms: 50           # runs on the control thread: keep <= loop.control_period_ms
     goal_bias: 0.10
-    near_k: 8
+    near_k: 16
     edge_check_step_m: 4.0       # coarse in-tree edge sampling
     final_check_step_m: 1.0      # fine recheck of the accepted path
 
@@ -99,6 +117,12 @@ constraints:
   min_speed_mps:
   max_depth_m: 50.0                # must exceed the deepest mission depth (demo spiral: 40 m)
   min_depth_m:
+  # Bottom clearance: the closest to the sea floor any setpoint may be commanded. Bounds
+  # ALTITUDE_ASF commands directly and DEPTH commands via depth + altitude_asf whenever the
+  # platform is reporting an altitude. Needs underwater.reports_altitude_asf. Not the same knob
+  # as platform_capabilities.min_water_depth_m, which is only published in the capabilities
+  # report and enforces nothing.
+  min_altitude_asf_m: 5.0
 
 # Water-zone geometry margins.
 zones:
@@ -151,6 +175,11 @@ vehicle_control:
     initial_longitude_deg: -76.5
     initial_heading_rad: 0.0
     accel_mps2: 1.0              # surge acceleration limit
+    heading_gain_rps_per_rad: 0.9  # inner heading loop: turn rate commanded per radian of
+                                 # heading error, saturated at the platform turn rate. Sets the
+                                 # error at which the loop saturates (omega_max / gain, here
+                                 # ~17 deg). A gain of 1/dt reproduces a pure rate limiter.
+    heading_lag_s: 0.5           # first-order actuator lag on the turn rate; 0 disables
     floor_depth_m: 60.0          # sea-floor depth for depth/ASF simulation
     current_east_mps: 0.0        # uniform water current (drift); exercises planner.xte.ki
     current_north_mps: 0.0
@@ -183,6 +212,7 @@ platform_capabilities:
     min_speed_in_medium_mps: 0.5
   underwater:
     enabled: true
+    reports_altitude_asf: true   # publishes altitude ASF; gates ALTITUDE_ASF commands
     max_forward_speed_mps: 4.0
     max_turn_rate_rps: 0.1745    # ~10 deg/s
     max_depth_change_rate_mps: 0.2

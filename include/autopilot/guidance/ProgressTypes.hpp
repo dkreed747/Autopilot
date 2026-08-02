@@ -24,6 +24,11 @@ struct CaptureResult {
   bool positionAchieved = false;
   std::optional<bool> attitudeAchieved;  // nullopt if waypoint has no attitude requirement
   bool elevationAchieved = true;         // true when no elevation requirement
+  //! False when the pose carries no usable value in the commanded elevation frame (a lost bottom
+  //! lock against an ASF waypoint). It still gates capture - completing on an unmeasured depth
+  //! would be a false success - but it is what the planner's latched diagnostic reports, so the
+  //! misses it accrues are attributable.
+  bool elevationEvaluable = true;
   bool speedAchieved = false;
   bool captured = false;  // all *required* criteria met
 };

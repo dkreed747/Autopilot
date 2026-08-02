@@ -53,6 +53,28 @@ def main():
     alt_asf = [float(r["alt_asf_m"]) if r.get("alt_asf_m") not in (None, "") else None
                for r in track]
     has_depth = any(d is not None for d in depth)
+
+    def optional_column(name):
+        values = [float(r[name]) if r.get(name) not in (None, "") else None for r in track]
+        return values if any(v is not None for v in values) else None
+
+    yaw_rate = optional_column("yaw_rate_rps")
+    xte = optional_column("cross_track_error_m")
+    # meta.csv carries the configuration that produced the run, which is what turns the
+    # turn-rate trace into a comparison against the platform limit and the planned demand.
+    meta = {}
+    meta_file = out_dir / "meta.csv"
+    if meta_file.exists():
+        for r in read_csv(meta_file):
+            try:
+                meta[r["key"]] = float(r["value"])
+            except (ValueError, KeyError):
+                pass
+    omega_max = meta.get("max_turn_rate_rps")
+    turn_radius = meta.get("turn_radius_m")
+    cruise = meta.get("cruising_speed_mps")
+    planned_omega = cruise / turn_radius if cruise and turn_radius else None
+    capture = meta.get("pos_capture_m")
     wp_e, wp_n, wp_r, wp_yaw = [], [], [], []
     for r in waypoints:
         e, n = to_local(float(r["lat_deg"]), float(r["lon_deg"]))
@@ -62,8 +84,8 @@ def main():
         yaw = r.get("arrival_yaw_rad", "")
         wp_yaw.append(float(yaw) if yaw not in (None, "") else None)
 
-    fig = plt.figure(figsize=(14, 9), constrained_layout=True)
-    rows = 3 if has_depth else 2
+    rows = 2 + (1 if yaw_rate else 0) + (1 if xte else 0) + (1 if has_depth else 0)
+    fig = plt.figure(figsize=(14, 3.0 * rows), constrained_layout=True)
     grid = fig.add_gridspec(rows, 2, width_ratios=[1.4, 1.0])
     fig.suptitle("Autopilot waypoint mission — simulated vehicle", fontsize=14)
 
@@ -124,9 +146,50 @@ def main():
     ax.set_title("Speed over time")
     ax.grid(True, alpha=0.3)
 
+    next_row = 2
+
+    # Turn rate against the platform limit and the planned arc's demand: the gap between the
+    # two is the turn authority left for disturbance rejection.
+    if yaw_rate:
+        ax = fig.add_subplot(grid[next_row, 1])
+        next_row += 1
+        tw = [ti for ti, w in zip(t, yaw_rate) if w is not None]
+        ax.plot(tw, [w for w in yaw_rate if w is not None], color="#4269d0", linewidth=1.2)
+        for level, color, label in ((omega_max, "#ff725c", "platform limit"),
+                                    (planned_omega, "#8a8a8a", "planned arc demand")):
+            if level:
+                ax.axhline(level, color=color, linestyle="--", linewidth=1.1, label=label)
+                ax.axhline(-level, color=color, linestyle="--", linewidth=1.1)
+        ax.set_xlabel("elapsed time (s)")
+        ax.set_ylabel("yaw rate (rad/s)")
+        title = "Turn rate vs available authority"
+        if not meta:
+            title += " (no meta.csv: reference lines unavailable)"
+        ax.set_title(title)
+        ax.grid(True, alpha=0.3)
+        if omega_max or planned_omega:
+            ax.legend(loc="best", fontsize=9)
+
+    # Signed cross-track error, starboard-positive, as the planner itself measured it.
+    if xte:
+        ax = fig.add_subplot(grid[next_row, 1])
+        next_row += 1
+        tx = [ti for ti, e in zip(t, xte) if e is not None]
+        ax.plot(tx, [e for e in xte if e is not None], color="#3ca951", linewidth=1.2)
+        ax.axhline(0.0, color="#8a8a8a", linewidth=1.0)
+        if capture:
+            ax.axhline(capture, color="#a3770a", linestyle=":", linewidth=1.1,
+                       label="capture gate half-width")
+            ax.axhline(-capture, color="#a3770a", linestyle=":", linewidth=1.1)
+            ax.legend(loc="best", fontsize=9)
+        ax.set_xlabel("elapsed time (s)")
+        ax.set_ylabel("cross-track error (m)")
+        ax.set_title("Cross-track error (starboard positive)")
+        ax.grid(True, alpha=0.3)
+
     # Depth / altitude above sea floor over time.
     if has_depth:
-        ax = fig.add_subplot(grid[2, 1])
+        ax = fig.add_subplot(grid[next_row, 1])
         td = [ti for ti, d in zip(t, depth) if d is not None]
         ax.plot(td, [d for d in depth if d is not None], color="#4269d0", linewidth=1.4,
                 label="depth (m)")

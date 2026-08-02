@@ -1,0 +1,11 @@
+key,min,max
+flown_over_planned,0.896388,1.095585
+arc_radial_mean,-1.747114,-1.429457
+arc_radial_p10,-2.560831,-2.095226
+arc_radial_min,-2.646889,-2.165637
+arc_margin_consumed_frac,0.0,0.02
+arc_median_radius_m,10.362201,12.664912
+straight_xte_absmean,0.0,0.03089
+straight_xte_p90,0.0,0.036648
+settle_distance_max_m,20.952459,25.608561
+saturated_frac,0.009928,0.049928

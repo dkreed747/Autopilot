@@ -57,16 +57,21 @@ find_package(Threads REQUIRED)
 # planning, zone geometry). Exported so the tools can move to their own repos
 # later and find_package it. TODO(repo-split): publish as its own package.
 add_library(autopilot-core
+  src/config/ConfigKeyRegistry.cpp
   src/config/ConfigValidation.cpp
   src/config/YamlConfigLoader.cpp
   src/guidance/CrossTrackController.cpp
   src/guidance/DubinsPath.cpp
   src/guidance/DubinsPathPlanner.cpp
   src/guidance/DubinsRrtStar.cpp
+  src/guidance/ElevationUtils.cpp
+  src/guidance/HeadingLoopIdentifier.cpp
   src/guidance/MissionRoute.cpp
+  src/guidance/PathTracker.cpp
   src/guidance/ToleranceUtils.cpp
   src/safety/ZoneGeometry.cpp
-  src/safety/ZoneMap.cpp)
+  src/safety/ZoneMap.cpp
+  src/vehicle/VehicleControlTypes.cpp)
 add_library(autopilot::core ALIAS autopilot-core)
 set_target_properties(autopilot-core PROPERTIES
   VERSION ${PROJECT_VERSION}
@@ -94,10 +99,12 @@ add_library(autopilot-app
   src/safety/SafeModeStrategyFactory.cpp
   src/safety/SafeReturnPath.cpp
   src/safety/VectorZoneGuidance.cpp
+  src/umaa/ElevationAdmission.cpp
   src/umaa/PlatformReportFactory.cpp
   src/umaa/VectorControlServiceProvider.cpp
   src/umaa/WaypointControlServiceProvider.cpp
-  src/vehicle/SimVehicleControl.cpp)
+  src/vehicle/SimVehicleControl.cpp
+  src/vehicle/VehicleControlFactory.cpp)
 add_library(autopilot::app ALIAS autopilot-app)
 set_target_properties(autopilot-app PROPERTIES
   VERSION ${PROJECT_VERSION}
@@ -119,7 +126,9 @@ add_subdirectory(tools)
 if(AUTOPILOT_BUILD_TESTS)
   find_package(GTest CONFIG REQUIRED)
   add_executable(autopilot_test
+    test/AutopilotAppTest.cpp
     test/AutopilotBrainSafetyTest.cpp
+    test/ConfigValidationTest.cpp
     test/ConstrainedPlannerTest.cpp
     test/CrossTrackControllerTest.cpp
     test/ConstraintClampTest.cpp
@@ -128,15 +137,25 @@ if(AUTOPILOT_BUILD_TESTS)
     test/DubinsPathPlannerTest.cpp
     test/DubinsPathTest.cpp
     test/DubinsRrtStarTest.cpp
+    test/ElevationAdmissionTest.cpp
+    test/ElevationUtilsTest.cpp
+    test/HeadingLoopIdentifierTest.cpp
+    test/NavStateTest.cpp
     test/OperationalModeControlProviderTest.cpp
     test/OperationalModeGatingTest.cpp
     test/OperationalModeManagerTest.cpp
+    test/PathTrackerTest.cpp
+    test/PathTrackingRegressionTest.cpp
+    test/PlannerParamsFactoryTest.cpp
     test/PlatformReportFactoryTest.cpp
     test/RecoveryGuidanceTest.cpp
     test/SafeReturnPathTest.cpp
     test/SafetyEndToEndTest.cpp
+    test/ServoSimVehicle.cpp
     test/SimVehicleControlTest.cpp
+    test/ToleranceUtilsTest.cpp
     test/VectorZoneGuidanceTest.cpp
+    test/VehicleControlFactoryTest.cpp
     test/YamlConfigLoaderTest.cpp
     test/ZoneGeometryTest.cpp
     test/ZoneMapTest.cpp)
@@ -145,6 +164,10 @@ if(AUTOPILOT_BUILD_TESTS)
     umaa-cpp::test-utils
     GTest::gtest_main
     GTest::gmock)
+  # The shipped-config key test must not depend on the working directory ctest happens to use.
+  target_compile_definitions(autopilot_test PRIVATE
+    AUTOPILOT_SHIPPED_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/config/autopilot.yaml")
+
   add_test(NAME autopilot_test
     COMMAND autopilot_test --gtest_output=xml:test-reports/autopilot_test.xml)
 endif()

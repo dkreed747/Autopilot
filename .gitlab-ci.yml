@@ -11,12 +11,19 @@
 #
 # Pipeline: build -> image -> integration
 #   * build-test       full build + ctest (autopilot + SDK) in the DEV image
+#   * analyze-baselines  the tracking analysis reproduces the committed recordings
 #   * build-images     Kaniko, three --target runs sharing one cache repo
 #   * smoke-autopilot  app image boots standalone and shuts down cleanly
 #   * smoke-console    app (job) + console (service) across the per-build
 #                      network: DDS via unicast peers, full REST round trips
 #   * smoke-runner     runner image drives a one-waypoint mission to
-#                      COMPLETED against the app image (service)
+#                      COMPLETED against the app image (service), and the
+#                      recording carries every column the analysis needs
+#
+# heading_probe is deliberately not exercised here. Against the simulator it
+# would check that the sim obeys the same max_turn_rate_rps it clamps itself
+# with, which is close to a tautology; its value is on a real hull, where it is
+# a commissioning step (see docs/tuning.md), not a pipeline gate.
 #
 # While the dev-container branch is unmerged, override BASE_IMAGE_TAG with a
 # ref-slug or short-sha tag of the umaa-cyclone-cpp image.
@@ -59,6 +66,42 @@ build-test:
     reports:
       junit: reports/ctest-junit.xml
     expire_in: 1 week
+
+# Regression-tests the tracking analysis itself against the recordings committed under
+# docs/mission-results, each of which carries an expectations.csv locking its measured values.
+# A change that alters the measurement silently would otherwise be indistinguishable from a
+# change that improves the control law. No DDS and no build: seconds to run.
+analyze-baselines:
+  stage: build
+  # analyze_tracking.py is stdlib-only by design so it can run on a boat; it needs neither the
+  # SDK submodules nor the multi-GB dev image to check a handful of committed CSVs.
+  image: "python:3-slim"
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script: |
+    set -e
+    for run in . lawnmower-10m lawnmower-20m lawnmower-40m lawnmower-20m-r1 depth-spiral; do
+      dir="docs/mission-results/${run}"
+      echo "--- ${dir} ---"
+      out="$(python3 tools/analyze_tracking.py "${dir}" --expect "${dir}/expectations.csv")"
+      echo "${out}"
+      # The depth-rate-limited spiral flies loop-back passes the from-start preview cannot
+      # contain, so its geometric metrics must stay suppressed rather than reported as error.
+      if [ "${run}" = "depth-spiral" ]; then
+        echo "${out}" | grep -q "GEOMETRIC GATES REFUSED" \
+          || { echo "spiral geometry was not refused"; exit 1; }
+      fi
+    done
+    # lawnmower-20m-r1 is the only recording in the post-refactor schema, so it is the only one
+    # that exercises the reported-yaw-rate, planner-curvature and meta.csv paths rather than the
+    # legacy fallbacks. It must also pass the acceptance gates outright: the archived recordings
+    # predate the tracking work and cannot.
+    python3 tools/analyze_tracking.py docs/mission-results/lawnmower-20m-r1 --gate > /dev/null \
+      || { echo "the post-refactor reference recording no longer passes the acceptance gates"; exit 1; }
+    python3 tools/analyze_tracking.py docs/mission-results/lawnmower-20m-r1 \
+      | grep -q "omega source: reported" \
+      || { echo "the reference recording is not being read through the reported-yaw-rate path"; exit 1; }
+    echo "baseline analysis OK: recordings reproduce, spiral refused, r1 passes the gates"
 
 # Three targets from one Dockerfile; the first run compiles and populates the
 # cache repo, the other two replay the build stage from cache. --cleanup
@@ -231,5 +274,15 @@ smoke-runner:
     cd /opt/autopilot
     printf 'east_m,north_m,speed_mps,capture_radius_m\n0,40,3.0,12\n' > /tmp/mission.csv
     bin/mission_runner autopilot.yaml /tmp/out /tmp/mission.csv
-    grep -q . /tmp/out/track.csv || { echo "empty track.csv"; exit 1; }
-    echo "runner smoke OK: mission COMPLETED across containers"
+    # The runner image is UBI-minimal (no python, no awk), so assert the recording schema with
+    # grep. A missing column means the tracking analysis silently loses a signal.
+    head -1 /tmp/out/track.csv | grep -q 'yaw_rate_rps' \
+      || { echo "track.csv is missing yaw_rate_rps"; exit 1; }
+    head -1 /tmp/out/track.csv | grep -q 'cross_track_error_m' \
+      || { echo "track.csv is missing the execution-status columns"; exit 1; }
+    head -1 /tmp/out/planned_path.csv | grep -q 'kappa_1pm' \
+      || { echo "planned_path.csv is missing curvature"; exit 1; }
+    grep -q '^turn_radius_m,' /tmp/out/meta.csv \
+      || { echo "meta.csv is missing turn_radius_m"; exit 1; }
+    [ "$(grep -c . /tmp/out/track.csv)" -gt 100 ] || { echo "track.csv too short"; exit 1; }
+    echo "runner smoke OK: mission COMPLETED across containers, recording schema intact"

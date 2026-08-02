@@ -5,6 +5,8 @@
 #include <regex>
 #include <sstream>
 
+#include "autopilot/vehicle/VehicleControlTypes.hpp"
+
 namespace arlcore::autopilot {
 
 bool isValidUuid(const std::string& uuid) {
@@ -63,6 +65,15 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
                     std::vector<std::string>* warnings) {
   detail::Collector c(errors, warnings);
 
+  // A key describing a control law the software no longer implements must not load silently; a
+  // misspelled key must not be able to ground the vehicle over a gap in the registry.
+  for (const std::string& removed : config.removedKeys) {
+    c.error(removed);
+  }
+  for (const std::string& unknown : config.unknownKeys) {
+    c.warn("unknown config key '" + unknown + "' is ignored; check it against config/autopilot.yaml");
+  }
+
   // NaN/inf pass every range comparison below (no ordering with anything), so finiteness is
   // screened first for every floating-point field.
   detail::requireFinite(&c, "operational_mode.idle_revert_s", config.operationalMode.idleRevertS);
@@ -81,7 +92,10 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
   detail::requireFinite(&c, "planner.xte.integrator_limit_rad", config.planner.xte.integratorLimitRad);
   detail::requireFinite(&c, "planner.xte.integrator_gate_m", config.planner.xte.integratorGateM);
   detail::requireFinite(&c, "planner.xte.correction_limit_rad", config.planner.xte.correctionLimitRad);
-  detail::requireFinite(&c, "planner.xte.lead_time_s", config.planner.xte.leadTimeS);
+  detail::requireFinite(&c, "planner.tracker.heading_loop_tau_s", config.planner.tracker.headingLoopTauS);
+  detail::requireFinite(&c, "planner.tracker.feedforward_limit_rad", config.planner.tracker.feedforwardLimitRad);
+  detail::requireFinite(&c, "planner.tracker.cross_track_approach_rad", config.planner.tracker.crossTrackApproachRad);
+  detail::requireFinite(&c, "planner.tracker.cross_track_gain_per_m", config.planner.tracker.crossTrackGainPerM);
   detail::requireFinite(&c, "planner.rrt.goal_bias", config.planner.rrt.goalBias);
   detail::requireFinite(&c, "planner.rrt.edge_check_step_m", config.planner.rrt.edgeCheckStepM);
   detail::requireFinite(&c, "planner.rrt.final_check_step_m", config.planner.rrt.finalCheckStepM);
@@ -89,6 +103,7 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
   detail::requireFiniteIfSet(&c, "constraints.min_speed_mps", config.constraints.minSpeedMps);
   detail::requireFiniteIfSet(&c, "constraints.max_depth_m", config.constraints.maxDepthM);
   detail::requireFiniteIfSet(&c, "constraints.min_depth_m", config.constraints.minDepthM);
+  detail::requireFiniteIfSet(&c, "constraints.min_altitude_asf_m", config.constraints.minAltitudeAsfM);
   detail::requireFinite(&c, "zones.safety_margin_m", config.zones.safetyMarginM);
   detail::requireFinite(&c, "zones.compliance_hysteresis_m", config.zones.complianceHysteresisM);
   detail::requireFinite(&c, "zones.elevation_margin_m", config.zones.elevationMarginM);
@@ -113,6 +128,8 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
   detail::requireFinite(&c, "vehicle_control.sim.initial_longitude_deg", config.simVehicle.initialLongitudeDeg);
   detail::requireFinite(&c, "vehicle_control.sim.initial_heading_rad", config.simVehicle.initialHeadingRad);
   detail::requireFinite(&c, "vehicle_control.sim.accel_mps2", config.simVehicle.accelMps2);
+  detail::requireFinite(&c, "vehicle_control.sim.heading_gain_rps_per_rad", config.simVehicle.headingGainRpsPerRad);
+  detail::requireFinite(&c, "vehicle_control.sim.heading_lag_s", config.simVehicle.headingLagS);
   detail::requireFinite(&c, "vehicle_control.sim.floor_depth_m", config.simVehicle.floorDepthM);
   detail::requireFinite(&c, "vehicle_control.sim.current_east_mps", config.simVehicle.currentEastMps);
   detail::requireFinite(&c, "vehicle_control.sim.current_north_mps", config.simVehicle.currentNorthMps);
@@ -251,8 +268,38 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
   if (p.xte.correctionLimitRad <= 0.0) {
     c.error("planner.xte.correction_limit_rad", p.xte.correctionLimitRad, "must be > 0");
   }
-  if (p.xte.leadTimeS < 0.0) {
-    c.error("planner.xte.lead_time_s", p.xte.leadTimeS, "must be >= 0");
+  const TrackerConfig& tr = p.tracker;
+  if (tr.headingLoopTauS < 0.0) {
+    c.error("planner.tracker.heading_loop_tau_s", tr.headingLoopTauS, "must be >= 0");
+  } else if (tr.headingLoopTauS > 1.5) {
+    c.warn(
+        "planner.tracker.heading_loop_tau_s above 1.5 s demands a large curvature feedforward; "
+        "verify it against the platform's measured heading step response");
+  }
+  if (tr.feedforwardLimitRad <= 0.0) {
+    c.error("planner.tracker.feedforward_limit_rad", tr.feedforwardLimitRad, "must be > 0");
+  }
+  if (tr.crossTrackApproachRad <= 0.0 || tr.crossTrackApproachRad >= M_PI_2) {
+    c.error("planner.tracker.cross_track_approach_rad", tr.crossTrackApproachRad,
+            "must be in (0, pi/2): beyond pi/2 the correction points the command across the path");
+  }
+  if (tr.crossTrackGainPerM <= 0.0) {
+    c.error("planner.tracker.cross_track_gain_per_m", tr.crossTrackGainPerM, "must be > 0");
+  }
+  // The cross-track term's own ceiling is whichever binds first: its approach angle plus the
+  // integral it may accumulate, or the total-correction clamp they share.
+  const flt64_t crossTrackCeilingRad =
+      std::min(tr.crossTrackApproachRad + p.xte.integratorLimitRad, p.xte.correctionLimitRad);
+  if (tr.feedforwardLimitRad + crossTrackCeilingRad > 1.75) {
+    c.warn(
+        "the summed planner.tracker authority lets the command sit more than 100 degrees off "
+        "the path tangent");
+  }
+  if (p.xte.correctionLimitRad < tr.crossTrackApproachRad + p.xte.integratorLimitRad) {
+    c.warn(
+        "planner.xte.correction_limit_rad is below cross_track_approach_rad + "
+        "integrator_limit_rad, so it silently caps the approach angle before the approach law "
+        "reaches it");
   }
   const RrtConfig& rrt = p.rrt;
   if (rrt.maxIterations <= 0 || rrt.nearK <= 0) {
@@ -282,6 +329,16 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
   }
   if (lim.minDepthM.has_value() && lim.maxDepthM.has_value() && lim.minDepthM.value() > lim.maxDepthM.value()) {
     c.error("constraints.min_depth_m exceeds constraints.max_depth_m");
+  }
+  if (lim.minAltitudeAsfM.has_value() && lim.minAltitudeAsfM.value() < 0.0) {
+    c.error("constraints.min_altitude_asf_m", lim.minAltitudeAsfM.value(), "must be >= 0");
+  }
+  // A bottom clearance the autopilot cannot evaluate is worse than none: it would be silently
+  // ignored in both frames, since every altitude comparison needs the seafloor reference.
+  if (lim.minAltitudeAsfM.has_value() && !config.platformCapabilities.reportsAltitudeAsf) {
+    c.error(
+        "constraints.min_altitude_asf_m needs platform_capabilities.underwater."
+        "reports_altitude_asf; without an altitude above sea floor it cannot be enforced");
   }
 
   const ZonesConfig& z = config.zones;
@@ -350,8 +407,9 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
     c.error("safety.safe_mode.srp.reposition_speed_mps", sm.srp.repositionSpeedMps, "must be > 0");
   }
 
-  if (config.vehicleControlType != "sim") {
-    c.warn("vehicle_control.type '" + config.vehicleControlType + "' is unknown; the app defaults to sim");
+  if (!isKnownVehicleControlType(config.vehicleControlType)) {
+    c.error("vehicle_control.type must be one of " + joinVehicleControlTypes() + " (got '" + config.vehicleControlType +
+            "')");
   }
   const SimVehicleConfig& sim = config.simVehicle;
   if (sim.cycleRateHz <= 0.0) {
@@ -364,6 +422,13 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
   }
   if (sim.floorDepthM <= 0.0) {
     c.error("vehicle_control.sim.floor_depth_m", sim.floorDepthM, "must be > 0");
+  }
+  if (sim.headingGainRpsPerRad < 0.0) {
+    c.error("vehicle_control.sim.heading_gain_rps_per_rad", sim.headingGainRpsPerRad,
+            "must be >= 0 (0 selects the deadbeat rate limiter the sim used before it modeled a servo)");
+  }
+  if (sim.headingLagS < 0.0) {
+    c.error("vehicle_control.sim.heading_lag_s", sim.headingLagS, "must be >= 0 (0 disables the lag)");
   }
   if (sim.initialLatitudeDeg < -90.0 || sim.initialLatitudeDeg > 90.0 || sim.initialLongitudeDeg < -180.0 ||
       sim.initialLongitudeDeg > 180.0) {
@@ -398,6 +463,11 @@ bool validateConfig(const AutopilotConfig& config, std::vector<std::string>* err
     c.warn(
         "platform_capabilities.underwater enabled without max_depth_change_rate_mps; "
         "depth-rate budgeting uses its default");
+  }
+  if (caps.reportsAltitudeAsf && !caps.underwaterEnabled) {
+    c.warn(
+        "platform_capabilities.underwater.reports_altitude_asf is set on a platform with no "
+        "underwater regime; ALTITUDE_ASF commands will be admitted anyway");
   }
 
   return errors->empty();

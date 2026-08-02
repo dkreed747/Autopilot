@@ -85,6 +85,7 @@ class ConstraintSupervisor : public IConstraintSource, public ISafetyGate {
     bool confirmed = false;
     std::chrono::steady_clock::time_point confirmedAt{};
     std::optional<std::chrono::steady_clock::time_point> compliantSince;
+    bool unevaluableLogged = false;  // latches the not-evaluable warning to once per episode
   };
 
   void onConditionalSetChanged(const ConditionalList& all);

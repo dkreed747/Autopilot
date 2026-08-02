@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 
 #include "InternalTypes.h"
@@ -71,25 +73,92 @@ TEST(SimVehicleControlTest, PublishesAllThreeNavReportsEachStep) {
 }
 
 TEST(SimVehicleControlTest, RespectsTurnRateLimit) {
-  // GIVEN: a sim vehicle commanded to turn from 0 to pi/2
+  // GIVEN: a sim vehicle commanded to turn from 0 to pi/2, an error far beyond where its
+  //        proportional heading loop saturates (0.25 / 0.9 = 0.28 rad)
   SimFixture f;
+  auto vehicle = f.make();
+  vehicle->sendControlVector(makeCv(M_PI_2, 0.0));
+
+  // WHEN: the simulation runs long enough to complete the turn
+  flt64_t peakRate = 0.0;
+  flt64_t previousHeading = vehicle->state().headingRad;
+  for (int32_t i = 0; i < 200; i++) {
+    vehicle->stepOnce(0.1);
+    const flt64_t heading = vehicle->state().headingRad;
+    peakRate = std::max(peakRate, std::fabs(arlcore::autopilot::wrapPi(heading - previousHeading)) / 0.1);
+    previousHeading = heading;
+  }
+
+  // THEN: the turn rate never exceeded the platform limit, and the heading converged
+  EXPECT_LE(peakRate, 0.25 + 1e-9);
+  EXPECT_GT(peakRate, 0.2);  // the limit was actually reached, so the bound is not vacuous
+  EXPECT_NEAR(vehicle->state().headingRad, M_PI_2, 1e-6);
+}
+
+TEST(SimVehicleControlTest, HeadingGainOfOneOverStepReproducesAPureRateLimiter) {
+  // GIVEN: a sim vehicle whose heading gain is 1/dt with no actuator lag, which is the
+  //        deadbeat rate limiter the model used before it simulated a servo
+  SimFixture f;
+  f.sim.headingGainRpsPerRad = 1.0 / 0.1;
+  f.sim.headingLagS = 0.0;
   auto vehicle = f.make();
   vehicle->sendControlVector(makeCv(M_PI_2, 0.0));
 
   // WHEN: a single 0.1 s step runs
   vehicle->stepOnce(0.1);
 
-  // THEN: heading advances by only the turn-rate limit
-  // 0.25 rad/s * 0.1 s = 0.025 rad per step, far less than the pi/2 error.
-  EXPECT_NEAR(vehicle->state().headingRad, 0.025, 1e-9);
+  // THEN: heading advances by exactly the rate limit, so the servo model is a strict
+  //       generalization of the previous behavior rather than a replacement for it
+  EXPECT_NEAR(vehicle->state().headingRad, 0.25 * 0.1, 1e-9);
+}
 
-  // WHEN: the simulation continues for 10 more seconds
-  for (int32_t i = 0; i < 100; i++) {
-    vehicle->stepOnce(0.1);
+TEST(SimVehicleControlTest, HeadingLoopHoldsTheProportionalSteadyStateOffset) {
+  // GIVEN: a lag-free proportional heading loop and a command inside its linear region
+  SimFixture f;
+  f.sim.headingGainRpsPerRad = 0.9;
+  f.sim.headingLagS = 0.0;
+  auto vehicle = f.make();
+  const flt64_t target = 0.1;  // 0.9 * 0.1 = 0.09 rad/s, well inside the 0.25 envelope
+  vehicle->sendControlVector(makeCv(target, 0.0));
+
+  // WHEN: one step runs from zero heading
+  vehicle->stepOnce(0.1);
+
+  // THEN: the turn rate is gain * error, the property a pure rate limiter cannot express and
+  //       the one the tracker's curvature feedforward is sized against
+  EXPECT_NEAR(vehicle->state().headingRad, 0.9 * target * 0.1, 1e-9);
+}
+
+TEST(SimVehicleControlTest, NonFiniteHeadingLoopSettingsCannotPoisonThePose) {
+  // GIVEN: heading-loop settings config validation rejects but that a directly constructed
+  //        SimVehicleConfig can still carry. An infinite gain times a zero heading error is NaN,
+  //        and std::clamp propagates NaN straight through to the published pose.
+  for (int32_t field = 0; field < 4; field++) {
+    SimFixture f;
+    if (field == 0) {
+      f.sim.headingGainRpsPerRad = std::numeric_limits<flt64_t>::infinity();
+    } else if (field == 1) {
+      f.sim.headingGainRpsPerRad = std::nan("");
+    } else if (field == 2) {
+      f.sim.headingLagS = std::numeric_limits<flt64_t>::infinity();
+    } else {
+      f.sim.headingLagS = std::nan("");
+    }
+    auto vehicle = f.make();
+    // A zero heading error is the case that produces inf * 0 rather than a saturated clamp.
+    vehicle->sendControlVector(makeCv(0.0, 1.0));
+
+    // WHEN: several steps run
+    for (int32_t i = 0; i < 5; i++) {
+      vehicle->stepOnce(0.1);
+    }
+
+    // THEN: the reported pose stays finite. A NaN heading here would be published as the platform
+    //       position and reach every consumer on the domain.
+    EXPECT_TRUE(std::isfinite(vehicle->state().headingRad)) << "field=" << field;
+    EXPECT_TRUE(std::isfinite(vehicle->state().latitudeDeg)) << "field=" << field;
+    EXPECT_TRUE(std::isfinite(vehicle->state().longitudeDeg)) << "field=" << field;
   }
-
-  // THEN: it converges on the commanded heading
-  EXPECT_NEAR(vehicle->state().headingRad, M_PI_2, 1e-6);
 }
 
 TEST(SimVehicleControlTest, RespectsAccelerationAndSpeedCap) {
@@ -155,6 +224,7 @@ TEST(SimVehicleControlTest, DrivesDepthAndPublishesAltitudeAboveSeaFloor) {
   // GIVEN: an underwater-capable sim vehicle over a 50 m sea floor
   SimFixture f;
   f.caps.underwaterEnabled = true;
+  f.caps.reportsAltitudeAsf = true;
   f.caps.underwater.maxDepthChangeRateMps = 1.0;
   f.sim.floorDepthM = 50.0;
   auto vehicle = f.make();
@@ -200,6 +270,24 @@ TEST(SimVehicleControlTest, DrivesDepthAndPublishesAltitudeAboveSeaFloor) {
 
   // THEN: depth clamps at the 50 m floor
   EXPECT_NEAR(vehicle->state().depthM, 50.0, 1e-6);
+}
+
+TEST(SimVehicleControlTest, AltitudeAboveSeaFloorIsWithheldWithoutTheCapability) {
+  // GIVEN: an underwater-capable sim vehicle that does not declare an altimeter
+  SimFixture f;
+  f.caps.underwaterEnabled = true;
+  f.caps.reportsAltitudeAsf = false;
+  auto vehicle = f.make();
+
+  // WHEN: a cycle publishes the pose
+  vehicle->stepOnce(0.1);
+
+  // THEN: depth is reported but altitude above sea floor is absent, so the autopilot has no
+  // seafloor reference - the sim can stand in for a platform with no bottom lock
+  GlobalPoseReportType pose;
+  ASSERT_EQ(f.poseIo->readLatest(&pose), arlcore::io::ReadStatus::SUCCESS);
+  EXPECT_TRUE(pose.depth().has_value());
+  EXPECT_FALSE(pose.altitudeASF().has_value());
 }
 
 TEST(SimVehicleControlTest, ThreadedRunPublishesAtCycleRate) {

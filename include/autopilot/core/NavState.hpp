@@ -5,6 +5,8 @@
 #include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
 #include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 
@@ -28,6 +30,7 @@ class NavState {
   void setVelocity(const UMAA::SA::VelocityStatus::VelocityReportType& velocity) {
     std::scoped_lock lock(mtx_);
     velocity_ = velocity;
+    velocityReceivedAt_ = std::chrono::steady_clock::now();
   }
 
   std::optional<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType> pose() const {
@@ -58,19 +61,32 @@ class NavState {
         .count();
   }
 
-  //! \brief Current ground speed if reported, else 0.
+  //! \brief Current ground speed if finitely reported, else 0. The finiteness screen matters:
+  //! a NaN speed would otherwise propagate into the tracker's turn-rate demand.
   flt64_t groundSpeedMps() const {
     std::scoped_lock lock(mtx_);
-    if (speed_.has_value() && speed_->speedOverGround().has_value()) {
+    if (speed_.has_value() && speed_->speedOverGround().has_value() &&
+        std::isfinite(speed_->speedOverGround().value())) {
       return speed_->speedOverGround().value();
     }
     return 0.0;
+  }
+
+  //! \brief Milliseconds since the newest velocity report, or nullopt before the first one.
+  std::optional<int64_t> velocityAgeMs() const {
+    std::scoped_lock lock(mtx_);
+    if (!velocity_.has_value()) {
+      return std::nullopt;
+    }
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - velocityReceivedAt_)
+        .count();
   }
 
  private:
   mutable std::mutex mtx_;
   std::optional<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType> pose_;
   std::chrono::steady_clock::time_point poseReceivedAt_{};
+  std::chrono::steady_clock::time_point velocityReceivedAt_{};
   std::optional<UMAA::SA::SpeedStatus::SpeedReportType> speed_;
   std::optional<UMAA::SA::VelocityStatus::VelocityReportType> velocity_;
 };

@@ -30,6 +30,7 @@
 #include "autopilot/config/ConfigValidation.hpp"
 #include "autopilot/config/YamlConfigLoader.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
+#include "autopilot/guidance/ElevationUtils.hpp"
 #include "autopilot/guidance/MissionRoute.hpp"
 #include "autopilot/guidance/PlannerParamsFactory.hpp"
 #include "autopilot/guidance/ToleranceUtils.hpp"
@@ -528,7 +529,7 @@ static json trafficJson(const WaypointActivityMonitor& wpMonitor, const VectorAc
         const auto elev = arlcore::autopilot::tolerance::extractElevation(wp.elevation().value());
         if (elev.has_value()) {
           w["elev_value_m"] = elev->valueM;
-          w["elev_frame"] = elev->frame == arlcore::autopilot::ElevationFrame::DEPTH ? "depth" : "asf";
+          w["elev_frame"] = arlcore::autopilot::elevation::frameName(elev->frame);
         }
       }
       m["waypoints"].push_back(w);

@@ -112,3 +112,54 @@ TEST_F(SafeReturnPathTest, BadHoldRadiusIsAnError) {
   EXPECT_FALSE(arlcore::autopilot::SafeReturnPath::load(config, &error).has_value());
   EXPECT_NE(error.find("hold_radius"), std::string::npos);
 }
+
+TEST_F(SafeReturnPathTest, AnUnknownElevationFrameIsRejectedRatherThanReadAsDepth) {
+  // GIVEN: an SRP row whose elevation frame is not one the loader knows
+  //
+  // This used to fall through to DEPTH, so a row authored to mean "3 m above the sea floor"
+  // silently became "3 m below the surface" and the safe return path surfaced the vehicle during
+  // the exact scenario it exists for. Refusing to load is the only safe reading of a safety
+  // artifact whose units are ambiguous.
+  writeCsv(
+      "east_m,north_m,speed_mps,capture_radius_m,arrival_yaw_rad,elev_value_m,elev_frame\n"
+      "0,0,2.0,5.0,,3.0,altitude\n");
+  std::string error;
+
+  // WHEN: loading
+  // THEN: it is refused, with the offending frame named
+  EXPECT_FALSE(arlcore::autopilot::SafeReturnPath::load(configWithCsv(), &error).has_value());
+  EXPECT_FALSE(error.empty());
+}
+
+TEST_F(SafeReturnPathTest, TheElevationFrameIsCaseAndWhitespaceInsensitive) {
+  // GIVEN: the same route written with an uppercase frame and Windows line endings
+  writeCsv(
+      "east_m,north_m,speed_mps,capture_radius_m,arrival_yaw_rad,elev_value_m,elev_frame\r\n"
+      "0,0,2.0,5.0,,3.0,ASF\r\n");
+  std::string error;
+
+  // WHEN: loading
+  // THEN: it loads. A CSV saved on Windows, or with the frame capitalised, must not silently
+  //       change what the safe return path means.
+  const std::optional<arlcore::autopilot::SafeReturnPath> srp =
+      arlcore::autopilot::SafeReturnPath::load(configWithCsv(), &error);
+  ASSERT_TRUE(srp.has_value()) << error;
+  ASSERT_EQ(srp->waypoints().size(), 1u);
+  EXPECT_EQ(srp->waypoints().front().elevFrame, "asf");
+}
+
+TEST_F(SafeReturnPathTest, ANonFiniteElevationIsRejected) {
+  // GIVEN: an SRP row whose elevation parses but is not finite. std::stod accepts "inf" and "nan"
+  //        without throwing, so the malformed-row catch does not see them.
+  writeCsv(
+      "east_m,north_m,speed_mps,capture_radius_m,arrival_yaw_rad,elev_value_m,elev_frame\n"
+      "0,0,2.0,5.0,,inf,depth\n");
+  std::string error;
+
+  // WHEN: loading
+  // THEN: it is refused. An infinite elevation would reach the control vector and every safe-mode
+  //       command would then be substituted with a hold, so safe mode would actuate nothing while
+  //       the supervisor believed the strategy was running.
+  EXPECT_FALSE(arlcore::autopilot::SafeReturnPath::load(configWithCsv(), &error).has_value());
+  EXPECT_FALSE(error.empty());
+}

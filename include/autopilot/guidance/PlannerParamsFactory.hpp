@@ -25,12 +25,15 @@ inline PlannerParams derivePlannerParams(const AutopilotConfig& config) {
   p.elevationCountsAsMiss = config.planner.elevationCountsAsMiss;
   p.maxReplans = config.planner.maxReplans;
   p.sampleStepM = config.planner.sampleStepM;
-  p.leadTimeS = config.planner.xte.leadTimeS;
-  p.xte.kpScale = config.planner.xte.kpScale;
-  p.xte.ki = config.planner.xte.ki;
-  p.xte.integratorLimitRad = config.planner.xte.integratorLimitRad;
-  p.xte.integratorGateM = config.planner.xte.integratorGateM;
-  p.xte.correctionLimitRad = config.planner.xte.correctionLimitRad;
+  p.tracker.headingLoopTauS = config.planner.tracker.headingLoopTauS;
+  p.tracker.feedforwardLimitRad = config.planner.tracker.feedforwardLimitRad;
+  p.tracker.crossTrackApproachRad = config.planner.tracker.crossTrackApproachRad;
+  p.tracker.crossTrackGainPerM = config.planner.tracker.crossTrackGainPerM;
+  p.tracker.xte.kpScale = config.planner.xte.kpScale;
+  p.tracker.xte.ki = config.planner.xte.ki;
+  p.tracker.xte.integratorLimitRad = config.planner.xte.integratorLimitRad;
+  p.tracker.xte.integratorGateM = config.planner.xte.integratorGateM;
+  p.tracker.xte.correctionLimitRad = config.planner.xte.correctionLimitRad;
 
   const CapabilityLimits& surf = config.platformCapabilities.surface;
   const std::optional<flt64_t> speed =
@@ -40,7 +43,6 @@ inline PlannerParams derivePlannerParams(const AutopilotConfig& config) {
   } else {
     p.turnRadiusM = 25.0;
   }
-
   if (config.platformCapabilities.underwaterEnabled &&
       config.platformCapabilities.underwater.maxDepthChangeRateMps.has_value()) {
     p.maxDepthRateMps = config.platformCapabilities.underwater.maxDepthChangeRateMps.value();

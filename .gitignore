@@ -3,3 +3,6 @@ build-*/
 install/
 .cache/
 TODO.md
+# Python bytecode from the analysis tools
+__pycache__/
+*.pyc

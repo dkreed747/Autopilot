@@ -109,7 +109,14 @@ flt64_t ZoneSet::zoneClearance(const Zone& z, const Vec2& p) {
 flt64_t ZoneSet::clearanceM(const Vec2& p) const {
   flt64_t clearance = std::numeric_limits<flt64_t>::max();
   for (const Zone& z : zones_) {
-    clearance = std::min(clearance, zoneClearance(z, p));
+    const flt64_t c = zoneClearance(z, p);
+    // std::min(a, NaN) returns a, so a non-finite clearance would be silently dropped from the
+    // minimum and the zone would stop constraining anything. Geometry we cannot evaluate has to
+    // read as maximally violating, not as absent.
+    if (!std::isfinite(c)) {
+      return -std::numeric_limits<flt64_t>::max();
+    }
+    clearance = std::min(clearance, c);
   }
   return clearance;
 }
@@ -120,6 +127,12 @@ ClearanceInfo ZoneSet::clearanceInfo(const Vec2& p) const {
   const Zone* binding = nullptr;
   for (const Zone& z : zones_) {
     const flt64_t c = zoneClearance(z, p);
+    if (!std::isfinite(c)) {
+      // Same reasoning as clearanceM: an unevaluable zone must bind, not disappear.
+      info.clearanceM = -std::numeric_limits<flt64_t>::max();
+      binding = &z;
+      break;
+    }
     if (c < info.clearanceM) {
       info.clearanceM = c;
       binding = &z;

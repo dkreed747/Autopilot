@@ -11,6 +11,7 @@
 #include "autopilot/core/IAutopilot.hpp"
 #include "autopilot/core/NavState.hpp"
 #include "autopilot/guidance/DubinsPathPlanner.hpp"
+#include "autopilot/guidance/ISeafloorReference.hpp"
 #include "autopilot/safety/ConstraintClamp.hpp"
 #include "autopilot/safety/IConstraintSource.hpp"
 #include "autopilot/safety/RecoveryGuidance.hpp"
@@ -22,7 +23,7 @@ namespace arlcore::autopilot {
 
 //! \brief Concrete autopilot brain; single-threaded by design (everything runs on the main
 //! loop thread), the mutex is defensive should a future strategy introduce threads.
-class AutopilotBrain : public IAutopilot {
+class AutopilotBrain : public IAutopilot, public ISeafloorReference {
  public:
   AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const AutopilotConfig& config);
 
@@ -37,6 +38,9 @@ class AutopilotBrain : public IAutopilot {
   VectorProgress vectorProgress() const override;
   WaypointProgress waypointProgress() const override;
   DrivingResourceArbiter& arbiter() override { return arbiter_; }
+
+  //! \brief Seafloor reference from the newest navigation fix, refreshed once per nav tick.
+  std::optional<flt64_t> floorDepthM() const override;
 
   //! \brief Current active driving mode (for diagnostics/tests).
   DriveSource mode() const;
@@ -91,6 +95,7 @@ class AutopilotBrain : public IAutopilot {
   PlannerParams derivePlannerParams() const;
   void updateVectorControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
   void updateWaypointControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
+
   void updateSafeControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
   void updateRecoveryControl(const UMAA::SA::GlobalPoseStatus::GlobalPoseReportType& pose);
 
@@ -110,7 +115,16 @@ class AutopilotBrain : public IAutopilot {
   ClampLimits staticClampLimits_;
   bool lastSpeedClamped_ = false;
   bool lastElevationClamped_ = false;
+  bool lastElevationUnbounded_ = false;
   bool manualSuppressed_ = false;
+  bool nonFiniteRefused_ = false;       // latches the non-finite-vector error to once per episode
+  bool elevUnevaluableLogged_ = false;  // latches the unevaluable-elevation warning to one episode
+
+  //! Depth of the sea floor under the vehicle, refreshed from the pose at the top of every nav
+  //! tick. Load-bearing invariant: every emitControl path that can run on a stale value carries
+  //! no elevation (emitHold, clearSetpoint, enforceNavStaleness and recovery all build a default
+  //! ControlVector), so the three paths that do carry one always clamp against the pose they fly.
+  std::optional<flt64_t> floorDepthM_;
   const ZoneMap* zoneMap_ = nullptr;
   std::unique_ptr<VectorZoneGuidance> vectorGuidance_;
   uint64_t plannedConstraintRevision_ = 0;  // constraint revision the current route was planned under

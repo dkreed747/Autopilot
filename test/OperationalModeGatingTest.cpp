@@ -57,6 +57,37 @@ static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType gatingVectorComman
   return cmd;
 }
 
+//! \brief The same command carrying an elevation requirement in the given frame.
+static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType gatingVectorCommandAt(
+    const arlcore::NumericGuid& sessionId, const arlcore::NumericGuid& parentId, flt64_t elevationM,
+    arlcore::autopilot::ElevationFrame frame) {
+  UMAA::MO::GlobalVectorControl::GlobalVectorCommandType cmd = gatingVectorCommand(sessionId, parentId);
+  UMAA::Common::Measurement::ElevationRequirementVariantType elev;
+  if (frame == arlcore::autopilot::ElevationFrame::ALTITUDE_ASF) {
+    elev.ElevationRequirementVariantTypeSubtypes().AltitudeASFRequirementVariantVariant(
+        UMAA::Common::Measurement::AltitudeASFRequirementVariantType());
+    elev.ElevationRequirementVariantTypeSubtypes().AltitudeASFRequirementVariantVariant().altitude().altitude(
+        elevationM);
+  } else {
+    elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant(
+        UMAA::Common::Measurement::DepthRequirementVariantType());
+    elev.ElevationRequirementVariantTypeSubtypes().DepthRequirementVariantVariant().depth().depth(elevationM);
+  }
+  cmd.elevation() = elev;
+  return cmd;
+}
+
+//! \brief A pose that gives the brain a seafloor reference 60 m down.
+static UMAA::SA::GlobalPoseStatus::GlobalPoseReportType gatingPoseOverA60mFloor() {
+  UMAA::SA::GlobalPoseStatus::GlobalPoseReportType pose;
+  pose.position().geodeticLatitude(39.0);
+  pose.position().geodeticLongitude(-76.5);
+  pose.attitude().yaw().yaw(0.0);
+  pose.depth() = 10.0;
+  pose.altitudeASF() = 50.0;
+  return pose;
+}
+
 //! \brief A waypoint command whose large list never completes (unknown listID,
 //! size 1), so the session dwells in COMMANDED assembling it.
 static UMAA::MO::GlobalWaypointControl::GlobalWaypointCommandType gatingWaypointCommand(
@@ -123,7 +154,7 @@ class OperationalModeGatingTest : public ::testing::Test {
         arlcore::UuidFactory::getInstance().generateGuid(),
         std::make_shared<arlcore::autopilot::VectorControlServiceProviderIo>(vecCmdIo_, vecAckIo_, vecStatusIo_,
                                                                              vecExeIo_),
-        brain_.get(), 8.0, nullptr, manager_.get());
+        brain_.get(), 8.0, nullptr, manager_.get(), brain_.get());
 
     wpCmdIo_ = std::make_shared<arlcore::io::LocalReaderSender<arlcore::autopilot::GlobalWaypointCommandType>>();
     wpAckIo_ =
@@ -438,4 +469,75 @@ TEST_F(OperationalModeGatingTest, InvalidContentNeverMovesTheMode) {
   EXPECT_EQ(statuses[1].first, GatingStatus::FAILED);
   EXPECT_EQ(statuses[1].second, GatingReason::VALIDATION_FAILED);
   EXPECT_EQ(manager_->mode(), arlcore::autopilot::OperationalMode::STANDBY);
+}
+
+TEST_F(OperationalModeGatingTest, DepthBeyondTheConfiguredCeilingFailsValidation) {
+  // GIVEN: a 50 m depth ceiling
+  init(true, true);
+  arlcore::autopilot::ElevationAdmissionLimits limits;
+  limits.maxDepthM = 50.0;
+  vectorProvider_->setElevationAdmissionLimits(limits);
+
+  // WHEN: a vector command 60 m down arrives
+  vecCmdIo_->send(gatingVectorCommandAt(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid(), 60.0,
+                                        arlcore::autopilot::ElevationFrame::DEPTH));
+  vectorProvider_->cycle();
+
+  // THEN: it is refused at validation rather than admitted and held away by the output clamp
+  const auto statuses = drainStatuses(vecStatusIo_);
+  ASSERT_EQ(statuses.size(), 2u);
+  EXPECT_EQ(statuses[1].first, GatingStatus::FAILED);
+  EXPECT_EQ(statuses[1].second, GatingReason::VALIDATION_FAILED);
+}
+
+TEST_F(OperationalModeGatingTest, AltitudeAboveSeaFloorNeedsThePlatformCapability) {
+  // GIVEN: a platform that does not report an altitude above the sea floor
+  init(true, true);
+  arlcore::autopilot::ElevationAdmissionLimits limits;
+  limits.platformReportsAsf = false;
+  vectorProvider_->setElevationAdmissionLimits(limits);
+
+  // WHEN: an ASF-framed vector command arrives
+  vecCmdIo_->send(gatingVectorCommandAt(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid(), 20.0,
+                                        arlcore::autopilot::ElevationFrame::ALTITUDE_ASF));
+  vectorProvider_->cycle();
+
+  // THEN: it fails validation - nothing could track that setpoint or bound it
+  const auto statuses = drainStatuses(vecStatusIo_);
+  ASSERT_EQ(statuses.size(), 2u);
+  EXPECT_EQ(statuses[1].first, GatingStatus::FAILED);
+  EXPECT_EQ(statuses[1].second, GatingReason::VALIDATION_FAILED);
+}
+
+TEST_F(OperationalModeGatingTest, AsfAdmissionUsesTheLiveSeafloorReference) {
+  // GIVEN: an ASF-capable platform with a 50 m depth ceiling, over a sea floor 60 m down
+  init(true, true);
+  arlcore::autopilot::ElevationAdmissionLimits limits;
+  limits.maxDepthM = 50.0;
+  limits.platformReportsAsf = true;
+  vectorProvider_->setElevationAdmissionLimits(limits);
+  nav_.setPose(gatingPoseOverA60mFloor());
+  brain_->onNavUpdate();  // refreshes the seafloor reference the provider reads
+
+  // WHEN: an altitude 5 m off the bottom arrives, which is 55 m down
+  vecCmdIo_->send(gatingVectorCommandAt(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid(), 5.0,
+                                        arlcore::autopilot::ElevationFrame::ALTITUDE_ASF));
+  vectorProvider_->cycle();
+
+  // THEN: the reference converts it and validation refuses it against the depth ceiling
+  auto statuses = drainStatuses(vecStatusIo_);
+  ASSERT_EQ(statuses.size(), 2u);
+  EXPECT_EQ(statuses[1].first, GatingStatus::FAILED);
+  EXPECT_EQ(statuses[1].second, GatingReason::VALIDATION_FAILED);
+
+  // WHEN: an altitude 20 m off the bottom arrives, which is 40 m down
+  vecCmdIo_->send(gatingVectorCommandAt(arlcore::UuidFactory::getInstance().generateGuid(), gatingPlatformGuid(), 20.0,
+                                        arlcore::autopilot::ElevationFrame::ALTITUDE_ASF));
+  vectorProvider_->cycle();
+
+  // THEN: it is admitted and drives
+  statuses = drainStatuses(vecStatusIo_);
+  ASSERT_EQ(statuses.size(), 3u);
+  EXPECT_EQ(statuses[2].first, GatingStatus::EXECUTING);
+  EXPECT_EQ(brain_->arbiter().currentHolder(), arlcore::autopilot::DriveSource::VECTOR);
 }

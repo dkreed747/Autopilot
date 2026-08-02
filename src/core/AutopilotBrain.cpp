@@ -7,29 +7,13 @@
 #include "InternalTypes.h"
 #include "Logger.h"
 #include "autopilot/guidance/AngleMath.hpp"
+#include "autopilot/guidance/ElevationUtils.hpp"
 #include "autopilot/guidance/PlannerParamsFactory.hpp"
 #include "autopilot/guidance/ToleranceUtils.hpp"
 
 namespace arlcore::autopilot {
 
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
-
-static std::optional<flt64_t> poseElevation(const GlobalPoseReportType& p, ElevationFrame frame) {
-  switch (frame) {
-    case ElevationFrame::DEPTH:
-      return p.depth().has_value() ? std::optional<flt64_t>(p.depth().value()) : std::nullopt;
-    case ElevationFrame::ALTITUDE_MSL:
-      return p.altitude().has_value() ? std::optional<flt64_t>(p.altitude().value()) : std::nullopt;
-    case ElevationFrame::ALTITUDE_AGL:
-      return p.altitudeAGL().has_value() ? std::optional<flt64_t>(p.altitudeAGL().value()) : std::nullopt;
-    case ElevationFrame::ALTITUDE_GEODETIC:
-      return p.altitudeGeodetic().has_value() ? std::optional<flt64_t>(p.altitudeGeodetic().value()) : std::nullopt;
-    case ElevationFrame::ALTITUDE_ASF:
-      return p.altitudeASF().has_value() ? std::optional<flt64_t>(p.altitudeASF().value()) : std::nullopt;
-    default:
-      return std::nullopt;
-  }
-}
 
 AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const AutopilotConfig& config)
     : nav_(nav), vehicle_(vehicle), config_(config), arbiter_(config.arbitration) {
@@ -39,6 +23,7 @@ AutopilotBrain::AutopilotBrain(NavState* nav, IVehicleControl* vehicle, const Au
   staticClampLimits_.maxSpeedMps = config_.constraints.maxSpeedMps;
   staticClampLimits_.minDepthM = config_.constraints.minDepthM;
   staticClampLimits_.maxDepthM = config_.constraints.maxDepthM;
+  staticClampLimits_.minAltitudeAsfM = config_.constraints.minAltitudeAsfM;
   const std::optional<flt64_t>& capSpeed = config_.platformCapabilities.surface.maxForwardSpeedMps;
   if (capSpeed.has_value() &&
       (!staticClampLimits_.maxSpeedMps.has_value() || capSpeed.value() < staticClampLimits_.maxSpeedMps.value())) {
@@ -161,10 +146,8 @@ bool AutopilotBrain::beginRecovery() {
     return false;
   }
   const GeoPoint at{pose->position().geodeticLatitude(), pose->position().geodeticLongitude()};
-  const flt64_t depth = pose->depth().has_value() ? pose->depth().value() : 0.0;
-  const std::optional<flt64_t> asf =
-      pose->altitudeASF().has_value() ? std::optional<flt64_t>(pose->altitudeASF().value()) : std::nullopt;
-  const bool found = recovery_->begin(at, depth, asf, *zoneMap_);
+  const DepthAsf vertical = elevation::poseDepthAsf(pose.value());
+  const bool found = recovery_->begin(at, vertical.depthM, vertical.asfM, *zoneMap_);
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Autopilot brain: zone recovery engaged"
                                          << (found ? "" : " (no target found; holding zero speed while grace runs)"))
   return found;
@@ -180,10 +163,8 @@ bool AutopilotBrain::recoveryComplete() {
     return false;
   }
   const GeoPoint at{pose->position().geodeticLatitude(), pose->position().geodeticLongitude()};
-  const flt64_t depth = pose->depth().has_value() ? pose->depth().value() : 0.0;
-  const std::optional<flt64_t> asf =
-      pose->altitudeASF().has_value() ? std::optional<flt64_t>(pose->altitudeASF().value()) : std::nullopt;
-  return recovery_->complete(at, depth, asf, *zoneMap_);
+  const DepthAsf vertical = elevation::poseDepthAsf(pose.value());
+  return recovery_->complete(at, vertical.depthM, vertical.asfM, *zoneMap_);
 }
 
 void AutopilotBrain::endRecovery() {
@@ -218,11 +199,27 @@ bool AutopilotBrain::recovering() const {
 }
 
 void AutopilotBrain::emitControl(const ControlVector& cv) {
-  if (!std::isfinite(cv.headingRad) || !std::isfinite(cv.speedMps) ||
-      (cv.elevationM.has_value() && !std::isfinite(cv.elevationM.value()))) {
-    UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
-                   "Refusing non-finite control vector (heading " << cv.headingRad << ", speed " << cv.speedMps << ")")
-    return;
+  ControlVector out = cv;
+  if (!std::isfinite(out.headingRad) || !std::isfinite(out.speedMps) ||
+      (out.elevationM.has_value() && !std::isfinite(out.elevationM.value()))) {
+    // Substituting a stop rather than returning: sending nothing leaves the platform driving
+    // whatever setpoint it was last given, so a single poisoned cycle would turn a refusal into
+    // "keep going indefinitely". Nothing else covers this - the nav-staleness hold only fires on a
+    // stale pose, and here navigation is healthy and the command is the problem.
+    if (!nonFiniteRefused_) {
+      nonFiniteRefused_ = true;
+      UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Non-finite control vector (heading "
+                                              << out.headingRad << ", speed " << out.speedMps
+                                              << "); commanding a zero-speed hold instead")
+    }
+    const std::optional<GlobalPoseReportType> pose = nav_->pose();
+    const flt64_t heldHeading = pose.has_value() ? pose->attitude().yaw().yaw() : 0.0;
+    out = ControlVector();
+    out.headingRad = std::isfinite(heldHeading) ? heldHeading : 0.0;
+    out.speedMps = 0.0;
+  } else if (nonFiniteRefused_) {
+    nonFiniteRefused_ = false;
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Control vectors are finite again; normal actuation resumed")
   }
   // MANUAL is polled from the strategy directly (not the mode FSM) so actuation safety never
   // depends on whether the mode services are configured; while engaged nothing reaches the
@@ -239,10 +236,11 @@ void AutopilotBrain::emitControl(const ControlVector& cv) {
     UMAA_LOG_INFO(util::SYSTEM_LOGGER, "MANUAL control released; autopilot actuation resumed")
   }
   if (constraintSource_ == nullptr) {
-    vehicle_->sendControlVector(cv);
+    vehicle_->sendControlVector(out);
     return;
   }
-  const ClampResult result = applyConstraintClamps(cv, constraintSource_->snapshot(), staticClampLimits_);
+  const ClampResult result =
+      applyConstraintClamps(out, constraintSource_->snapshot(), staticClampLimits_, floorDepthM_);
   if (result.speedClamped != lastSpeedClamped_ || result.elevationClamped != lastElevationClamped_) {
     lastSpeedClamped_ = result.speedClamped;
     lastElevationClamped_ = result.elevationClamped;
@@ -253,10 +251,27 @@ void AutopilotBrain::emitControl(const ControlVector& cv) {
       UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Constraint clamp released")
     }
   }
+  if (result.elevationUnbounded != lastElevationUnbounded_) {
+    lastElevationUnbounded_ = result.elevationUnbounded;
+    if (result.elevationUnbounded) {
+      UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                    "No altitude above sea floor to check the commanded elevation against a depth "
+                    "bound; dropping the elevation demand (the platform holds its current depth)")
+    } else {
+      UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Seafloor reference recovered; the elevation demand is enforced again")
+    }
+  }
   if (result.conflict) {
-    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Contradictory speed/depth constraint bounds; the max bound won")
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "Contradictory speed bounds or an unsatisfiable vertical window; the deep-side "
+                  "bound won and the setpoint was clamped into the water column")
   }
   vehicle_->sendControlVector(result.cv);
+}
+
+std::optional<flt64_t> AutopilotBrain::floorDepthM() const {
+  std::scoped_lock lock(mtx_);
+  return floorDepthM_;
 }
 
 PlannerParams AutopilotBrain::derivePlannerParams() const { return arlcore::autopilot::derivePlannerParams(config_); }
@@ -335,6 +350,7 @@ void AutopilotBrain::onNavUpdate() {
   const auto now = std::chrono::steady_clock::now();
   navTickDtS_ = lastNavTickAt_.has_value() ? std::chrono::duration<flt64_t>(now - lastNavTickAt_.value()).count() : 0.0;
   lastNavTickAt_ = now;
+  floorDepthM_ = elevation::floorDepthM(pose.value());
   // Recovery overrides whatever guidance is (or is not) active: an installed command stays
   // EXECUTING with its progress frozen, and an idle vehicle is still driven back to compliance.
   if (recovering_ && mode_ != DriveSource::SAFE) {
@@ -359,10 +375,8 @@ void AutopilotBrain::onNavUpdate() {
 void AutopilotBrain::updateRecoveryControl(const GlobalPoseReportType& pose) {
   if (recovery_ && zoneMap_ != nullptr) {
     const GeoPoint at{pose.position().geodeticLatitude(), pose.position().geodeticLongitude()};
-    const flt64_t depth = pose.depth().has_value() ? pose.depth().value() : 0.0;
-    const std::optional<flt64_t> asf =
-        pose.altitudeASF().has_value() ? std::optional<flt64_t>(pose.altitudeASF().value()) : std::nullopt;
-    const std::optional<ControlVector> cv = recovery_->tick(at, depth, asf, *zoneMap_);
+    const DepthAsf vertical = elevation::poseDepthAsf(pose);
+    const std::optional<ControlVector> cv = recovery_->tick(at, vertical.depthM, vertical.asfM, *zoneMap_);
     if (cv.has_value()) {
       emitControl(cv.value());
       return;
@@ -402,10 +416,9 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
   // vehicle into (or out of) an active zone within the lookahead.
   bool avoiding = false;
   if (vectorGuidance_ && zoneMap_ != nullptr && zoneMap_->hasZones() && zoneMap_->anchor().has_value()) {
-    const flt64_t depthM = pose.depth().has_value() ? pose.depth().value() : 0.0;
-    const std::optional<flt64_t> asfM =
-        pose.altitudeASF().has_value() ? std::optional<flt64_t>(pose.altitudeASF().value()) : std::nullopt;
-    const ZoneSet zones = zoneMap_->activeSet(zoneMap_->anchor().value(), ElevationEnvelope::atPoint(depthM, asfM));
+    const DepthAsf vertical = elevation::poseDepthAsf(pose);
+    const ZoneSet zones =
+        zoneMap_->activeSet(zoneMap_->anchor().value(), ElevationEnvelope::atPoint(vertical.depthM, vertical.asfM));
     if (!zones.empty()) {
       flt64_t xE = 0.0;
       flt64_t yN = 0.0;
@@ -428,19 +441,31 @@ void AutopilotBrain::updateVectorControl(const GlobalPoseReportType& pose) {
   prog.speedAchieved =
       sp.has_value() && tolerance::speedAchieved(sp.value(), nav_->groundSpeedMps(), config_.vectorTolerances.speedMps);
 
+  bool elevationEvaluable = true;
   if (elev.has_value()) {
-    const std::optional<flt64_t> cur = poseElevation(pose, elev->frame);
-    prog.elevationAchieved =
-        cur.has_value() && tolerance::elevationAchieved(elev.value(), cur.value(), config_.vectorTolerances.elevationM);
+    const std::optional<flt64_t> cur = elevation::poseElevation(pose, elev->frame);
+    elevationEvaluable = cur.has_value() && std::isfinite(cur.value());
+    prog.elevationAchieved = elevationEvaluable && tolerance::elevationAchieved(elev.value(), cur.value(),
+                                                                                config_.vectorTolerances.elevationM);
   } else {
     prog.elevationAchieved = true;
+  }
+  if (!elevationEvaluable && !elevUnevaluableLogged_) {
+    elevUnevaluableLogged_ = true;
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                  "Commanded elevation cannot be evaluated (the pose carries no value in the "
+                  "commanded frame); reporting it as not achieved and suspending the failure delay")
+  } else if (elevationEvaluable && elevUnevaluableLogged_) {
+    elevUnevaluableLogged_ = false;
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "Commanded elevation is evaluable again")
   }
 
   // Hard tolerances (UMAA failureDelay semantics): after all criteria have been achieved
   // once, a violation persisting past the failure delay fails the command; suspended while
-  // zone avoidance overrides the heading, since that deviation is deliberate.
+  // zone avoidance overrides the heading, since that deviation is deliberate, and while the
+  // elevation is unevaluable, since a lost bottom lock is not the command failing.
   const bool allAchieved = prog.directionAchieved && prog.speedAchieved && prog.elevationAchieved;
-  if (avoiding) {
+  if (avoiding || !elevationEvaluable) {
     vectorViolationSince_.reset();
   } else if (allAchieved) {
     vectorEverAchieved_ = true;

@@ -5,17 +5,61 @@
 
 #include "autopilot/guidance/CrossTrackController.hpp"
 
-TEST(CrossTrackControllerTest, KiZeroMatchesLegacyShapeExactly) {
-  // GIVEN: a controller at defaults (ki = 0, kp_scale = 1, limit 1.2)
+// The shipped proportional shape, so the integral tests below drive integrate() through the same
+// term the tracker feeds it rather than a stand-in.
+static flt64_t shippedP(flt64_t errM) {
+  return arlcore::autopilot::CrossTrackController::approachCorrection(errM, 0.6, 0.15);
+}
+
+TEST(CrossTrackControllerTest, ApproachCorrectionSaturatesAtTheApproachLimit) {
+  // GIVEN: the approach law at a 0.6 rad limit
+  // WHEN: the error is swept far past anything the gain resolves
+  // THEN: the correction is strictly bounded by the approach limit and monotonically approaches it
+  flt64_t previous = 0.0;
+  for (flt64_t err = 0.0; err <= 5000.0; err += 13.7) {
+    const flt64_t out = arlcore::autopilot::CrossTrackController::approachCorrection(err, 0.6, 0.15);
+    EXPECT_LT(out, 0.6) << "err=" << err;
+    EXPECT_GE(out, previous) << "err=" << err;
+    previous = out;
+  }
+  EXPECT_NEAR(previous, 0.6, 1e-3);
+}
+
+TEST(CrossTrackControllerTest, ApproachCorrectionIsOddWithTheDocumentedOriginSlope) {
+  // GIVEN: the approach law, whose documented slope at zero error is approach * (2/pi) * gain
+  const flt64_t approachRad = 0.6;
+  const flt64_t gainPerM = 0.15;
+
+  // WHEN: the response either side of zero is compared, and the central slope measured
+  // THEN: it is odd, and the slope matches the closed form
+  for (flt64_t err = 0.1; err <= 50.0; err += 3.3) {
+    EXPECT_DOUBLE_EQ(arlcore::autopilot::CrossTrackController::approachCorrection(-err, approachRad, gainPerM),
+                     -arlcore::autopilot::CrossTrackController::approachCorrection(err, approachRad, gainPerM));
+  }
+  const flt64_t h = 1e-6;
+  const flt64_t slope = (arlcore::autopilot::CrossTrackController::approachCorrection(h, approachRad, gainPerM) -
+                         arlcore::autopilot::CrossTrackController::approachCorrection(-h, approachRad, gainPerM)) /
+                        (2.0 * h);
+  EXPECT_NEAR(slope, approachRad * (2.0 / M_PI) * gainPerM, 1e-9);
+}
+
+TEST(CrossTrackControllerTest, ApproachCorrectionIsHalfTheLimitAtTheInverseGain) {
+  // GIVEN: the approach law, where atan(1) = pi/4 puts the response at exactly half the limit
+  // WHEN: the error equals 1 / gain
+  // THEN: the correction is half the approach angle, which is how the gain is chosen when tuning
+  const flt64_t out = arlcore::autopilot::CrossTrackController::approachCorrection(1.0 / 0.15, 0.6, 0.15);
+  EXPECT_NEAR(out, 0.3, 1e-12);
+}
+
+TEST(CrossTrackControllerTest, IntegrateIsAClampedPassThroughWhenKiIsZero) {
+  // GIVEN: a controller at the shipped defaults, where ki is 0
   arlcore::autopilot::CrossTrackController ctl;
 
-  // WHEN: corrections are computed across the error/radius envelope
-  // THEN: every output is bit-identical to the legacy clamp(atan2(err, max(R,1)), +/-1.2) law
+  // WHEN: proportional terms across and beyond the correction clamp are passed through
+  // THEN: the output is exactly the clamped input and no integral ever accumulates
   for (flt64_t err = -500.0; err <= 500.0; err += 7.3) {
-    for (flt64_t r : {0.5, 1.0, 14.3, 20.0, 25.0}) {
-      const flt64_t legacy = std::clamp(std::atan2(err, std::max(r, 1.0)), -1.2, 1.2);
-      EXPECT_EQ(ctl.correction(err, r, 0.5), legacy) << "err=" << err << " r=" << r;
-    }
+    const flt64_t p = shippedP(err);
+    EXPECT_EQ(ctl.integrate(p, err, 0.5), std::clamp(p, -1.2, 1.2)) << "err=" << err;
   }
   EXPECT_EQ(ctl.integratorRad(), 0.0);
 }
@@ -27,13 +71,13 @@ TEST(CrossTrackControllerTest, IntegratorAccumulatesAndClamps) {
   arlcore::autopilot::CrossTrackController ctl(params);
 
   // WHEN: a steady 2 m error inside the gate is integrated for one 0.5 s tick
-  ctl.correction(2.0, 20.0, 0.5);
+  ctl.integrate(shippedP(2.0), 2.0, 0.5);
   // THEN: the integrator holds ki * err * dt
   EXPECT_NEAR(ctl.integratorRad(), 0.1 * 2.0 * 0.5, 1e-12);
 
   // WHEN: the error persists long enough to wind far beyond the clamp
   for (int32_t i = 0; i < 100; ++i) {
-    ctl.correction(4.9, 20.0, 1.0);
+    ctl.integrate(shippedP(4.9), 4.9, 1.0);
   }
   // THEN: the integrator saturates at the configured limit
   EXPECT_DOUBLE_EQ(ctl.integratorRad(), params.integratorLimitRad);
@@ -47,7 +91,7 @@ TEST(CrossTrackControllerTest, GateBlocksIntegrationDuringCapture) {
 
   // WHEN: a gross 40 m error (initial capture) is applied repeatedly
   for (int32_t i = 0; i < 50; ++i) {
-    ctl.correction(40.0, 20.0, 0.5);
+    ctl.integrate(shippedP(40.0), 40.0, 0.5);
   }
   // THEN: the integrator never moves
   EXPECT_EQ(ctl.integratorRad(), 0.0);
@@ -62,16 +106,16 @@ TEST(CrossTrackControllerTest, AntiWindupFreezesWhenSaturatedDeeper) {
 
   // WHEN: a steady in-gate error drives the summed output into saturation
   for (int32_t i = 0; i < 200; ++i) {
-    ctl.correction(4.0, 20.0, 0.5);
+    ctl.integrate(shippedP(4.0), 4.0, 0.5);
   }
   const flt64_t frozen = ctl.integratorRad();
-  ctl.correction(4.0, 20.0, 0.5);
+  ctl.integrate(shippedP(4.0), 4.0, 0.5);
   // THEN: further same-sign error does not wind the integrator any deeper
   EXPECT_EQ(ctl.integratorRad(), frozen);
   EXPECT_LT(frozen, params.integratorLimitRad);
 
   // WHEN: the error flips sign (vehicle crossed the path)
-  ctl.correction(-4.0, 20.0, 0.5);
+  ctl.integrate(shippedP(-4.0), -4.0, 0.5);
   // THEN: back-off is allowed immediately
   EXPECT_LT(ctl.integratorRad(), frozen);
 }
@@ -83,12 +127,12 @@ TEST(CrossTrackControllerTest, DtIsClampedAndResetZeroes) {
   arlcore::autopilot::CrossTrackController ctl(params);
 
   // WHEN: a negative dt is supplied (clock went backwards / first tick)
-  ctl.correction(2.0, 20.0, -3.0);
+  ctl.integrate(shippedP(2.0), 2.0, -3.0);
   // THEN: nothing integrates
   EXPECT_EQ(ctl.integratorRad(), 0.0);
 
   // WHEN: a huge dt is supplied (pose gap)
-  ctl.correction(2.0, 20.0, 30.0);
+  ctl.integrate(shippedP(2.0), 2.0, 30.0);
   // THEN: at most one second of error is integrated
   EXPECT_NEAR(ctl.integratorRad(), 0.1 * 2.0 * 1.0, 1e-12);
 
@@ -96,17 +140,4 @@ TEST(CrossTrackControllerTest, DtIsClampedAndResetZeroes) {
   ctl.reset();
   // THEN: the integrator is zeroed
   EXPECT_EQ(ctl.integratorRad(), 0.0);
-}
-
-TEST(CrossTrackControllerTest, KpScaleSteepensTheResponse) {
-  // GIVEN: two P-only controllers, one with kp_scale = 2
-  arlcore::autopilot::CrossTrackController::Params sharp;
-  sharp.kpScale = 2.0;
-  arlcore::autopilot::CrossTrackController base;
-  arlcore::autopilot::CrossTrackController steep(sharp);
-
-  // WHEN: the same small error is corrected
-  // THEN: the scaled controller commands a larger correction of the same sign
-  EXPECT_GT(steep.correction(2.0, 20.0, 0.5), base.correction(2.0, 20.0, 0.5));
-  EXPECT_LT(steep.correction(-2.0, 20.0, 0.5), base.correction(-2.0, 20.0, 0.5));
 }

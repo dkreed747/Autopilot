@@ -111,11 +111,23 @@ void SimVehicleControl::stepOnce(flt64_t dtS) {
     flt64_t targetSpeed = setpoint_.has_value() ? setpoint_->speedMps : 0.0;
     targetSpeed = std::clamp(targetSpeed, -maxReverseSpeedMps(), maxForwardSpeedMps());
 
+    // Inner heading loop: a proportional servo saturated at the platform turn rate, with an
+    // optional first-order actuator lag. A gain of 1/dtS reproduces a pure rate limiter, which
+    // is what this was before it modeled a servo, so that behavior stays reachable by config.
+    // The finiteness screens are not redundant with config validation: an infinite gain times a
+    // zero heading error is NaN, which std::clamp propagates straight into the published pose, and
+    // an infinite lag freezes the yaw rate at its initial value forever without a word.
     const flt64_t headingErr = wrapPi(targetHeading - headingRad_);
-    const flt64_t maxDelta = maxTurnRateRps() * dtS;
-    const flt64_t applied = std::clamp(headingErr, -maxDelta, maxDelta);
-    headingRad_ = wrapPi(headingRad_ + applied);
-    yawRateRps_ = applied / dtS;
+    const bool gainUsable = std::isfinite(simConfig_.headingGainRpsPerRad) && simConfig_.headingGainRpsPerRad > 0.0;
+    const flt64_t gain = gainUsable ? simConfig_.headingGainRpsPerRad : 1.0 / dtS;
+    const flt64_t omegaMax = maxTurnRateRps();
+    const flt64_t demanded = std::clamp(gain * headingErr, -omegaMax, omegaMax);
+    if (std::isfinite(simConfig_.headingLagS) && simConfig_.headingLagS > 0.0) {
+      yawRateRps_ += (dtS / (simConfig_.headingLagS + dtS)) * (demanded - yawRateRps_);
+    } else {
+      yawRateRps_ = demanded;
+    }
+    headingRad_ = wrapPi(headingRad_ + yawRateRps_ * dtS);
 
     const flt64_t speedErr = targetSpeed - speedMps_;
     const flt64_t maxDv = std::max(0.0, simConfig_.accelMps2) * dtS;
@@ -170,8 +182,11 @@ void SimVehicleControl::publishReports() {
   pose.course() = heading;
   if (caps_.underwaterEnabled) {
     pose.depth() = depth;
-    // Height above the sea floor, from the configured floor depth (0 at the floor).
-    pose.altitudeASF() = std::max(0.0, simConfig_.floorDepthM - depth);
+    // Height above the sea floor, from the configured floor depth (0 at the floor). Gated on the
+    // declared capability so the sim can stand in for a platform with no altimeter.
+    if (caps_.reportsAltitudeAsf) {
+      pose.altitudeASF() = std::max(0.0, simConfig_.floorDepthM - depth);
+    }
   }
   poseProvider_.send(&pose);
 

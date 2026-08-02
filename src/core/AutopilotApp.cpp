@@ -18,6 +18,8 @@
 #include "autopilot/config/ConfigValidation.hpp"
 #include "autopilot/safety/SafeModeStrategyFactory.hpp"
 #include "autopilot/umaa/PlatformReportFactory.hpp"
+#include "autopilot/vehicle/VehicleControlFactory.hpp"
+#include "autopilot/vehicle/VehicleControlTypes.hpp"
 
 namespace arlcore::autopilot {
 
@@ -65,9 +67,17 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
     return false;
   }
 
+  // Checked before any DDS resource is acquired: a config naming a strategy that does not exist
+  // must fail immediately rather than after joining a domain, and the old behaviour of warning and
+  // silently driving the simulator is the failure this refuses.
+  if (!isKnownVehicleControlType(config_.vehicleControlType)) {
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "vehicle_control.type '" << config_.vehicleControlType
+                                                                 << "' is unknown; expected one of "
+                                                                 << joinVehicleControlTypes())
+    return false;
+  }
+
   participant_ = arlcore::io::getDomainParticipant(config_.dds.domainId);
-  subscriber_ = arlcore::io::createSubscriber(participant_);
-  publisher_ = arlcore::io::createPublisher(participant_);
 
   // Honor the configured UMAA QoS profiles (reliable/transient-local); the wrapper falls back
   // to defaults when the file or profile cannot be resolved.
@@ -76,19 +86,19 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
   const auto wqos = qosProvider.datawriter_qos();
   const auto largeListRqos = qosProvider.datareader_qos(config_.dds.largeCollectionsQosProfile);
 
-  // Vehicle-control strategy (only "sim" is provided here; extend by strategy type).
-  if (config_.vehicleControlType != "sim") {
-    UMAA_LOG_WARN(util::SYSTEM_LOGGER,
-                  "Unknown vehicle_control.type '" << config_.vehicleControlType << "', defaulting to sim")
+  // Vehicle-control strategy. The nav senders are only used by a strategy that is itself the
+  // platform's navigation source; see NavReportSenders and docs/adding-a-vehicle.md.
+  NavReportSenders navSenders;
+  navSenders.pose = std::make_shared<CycloneSender<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>>(
+      participant_, UMAA::SA::GlobalPoseStatus::GlobalPoseReportTypeTopic, wqos);
+  navSenders.speed = std::make_shared<CycloneSender<UMAA::SA::SpeedStatus::SpeedReportType>>(
+      participant_, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, wqos);
+  navSenders.velocity = std::make_shared<CycloneSender<UMAA::SA::VelocityStatus::VelocityReportType>>(
+      participant_, UMAA::SA::VelocityStatus::VelocityReportTypeTopic, wqos);
+  vehicle_ = makeVehicleControl(config_, navSenders);
+  if (vehicle_ == nullptr) {
+    return false;  // the factory logged the type it could not build
   }
-  vehicle_ = std::make_unique<SimVehicleControl>(
-      config_.platformCapabilities, config_.simVehicle, parseId(config_.identity.navSourceId),
-      std::make_shared<CycloneSender<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>>(
-          participant_, UMAA::SA::GlobalPoseStatus::GlobalPoseReportTypeTopic, wqos),
-      std::make_shared<CycloneSender<UMAA::SA::SpeedStatus::SpeedReportType>>(
-          participant_, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, wqos),
-      std::make_shared<CycloneSender<UMAA::SA::VelocityStatus::VelocityReportType>>(
-          participant_, UMAA::SA::VelocityStatus::VelocityReportTypeTopic, wqos));
   if (!vehicle_->initialize()) {
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vehicle control failed to initialize")
     return false;
@@ -128,6 +138,11 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
 
   const flt64_t maxForwardSpeed = config_.platformCapabilities.surface.maxForwardSpeedMps.value_or(0.0);
 
+  ElevationAdmissionLimits elevationLimits;
+  elevationLimits.maxDepthM = config_.constraints.maxDepthM;
+  elevationLimits.minAltitudeAsfM = config_.constraints.minAltitudeAsfM;
+  elevationLimits.platformReportsAsf = config_.platformCapabilities.reportsAltitudeAsf;
+
   // Vector control provider
   auto vectorIo = std::make_shared<VectorControlServiceProviderIo>(
       std::make_shared<CycloneReader<GlobalVectorCommandType>>(
@@ -138,10 +153,10 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
           participant_, UMAA::MO::GlobalVectorControl::GlobalVectorCommandStatusTypeTopic, wqos),
       std::make_shared<CycloneSender<GlobalVectorExecutionStatusReportType>>(
           participant_, UMAA::MO::GlobalVectorControl::GlobalVectorExecutionStatusReportTypeTopic, wqos));
-  vectorProvider_ =
-      std::make_unique<VectorControlServiceProvider>(parseId(config_.identity.vectorSourceId), vectorIo, brain_.get(),
-                                                     maxForwardSpeed, supervisor_.get(), modeManager_.get());
-  vectorProvider_->setStaticDepthLimit(config_.constraints.maxDepthM);
+  vectorProvider_ = std::make_unique<VectorControlServiceProvider>(parseId(config_.identity.vectorSourceId), vectorIo,
+                                                                   brain_.get(), maxForwardSpeed, supervisor_.get(),
+                                                                   modeManager_.get(), brain_.get());
+  vectorProvider_->setElevationAdmissionLimits(elevationLimits);
 
   // Waypoint control provider (with large-list element reader)
   auto waypointIo = std::make_shared<WaypointControlServiceProviderIo>(
@@ -159,7 +174,7 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
   waypointProvider_ = std::make_unique<WaypointControlServiceProvider>(
       parseId(config_.identity.waypointSourceId), waypointIo, brain_.get(), maxForwardSpeed,
       config_.planner.maxListWaitCycles, supervisor_.get(), zoneMap_.get(), modeManager_.get());
-  waypointProvider_->setStaticDepthLimit(config_.constraints.maxDepthM);
+  waypointProvider_->setElevationAdmissionLimits(elevationLimits);
 
   // Platform report providers: publish specs + capabilities once on startup
   specsReportProvider_ = std::make_unique<ReportProvider<UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>>(
