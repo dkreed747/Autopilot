@@ -1,5 +1,6 @@
 #include "autopilot/umaa/VectorControlServiceProvider.hpp"
 
+#include <cmath>
 #include <memory>
 
 #include "InternalTypes.h"
@@ -15,13 +16,15 @@ using arlcore::umaa::services::IncomingCommandBehavior;
 VectorControlServiceProvider::VectorControlServiceProvider(const arlcore::NumericGuid& source,
                                                            std::shared_ptr<VectorControlServiceProviderIo> io,
                                                            IAutopilot* autopilot, flt64_t maxForwardSpeedMps,
-                                                           const ISafetyGate* safetyGate, ICommandModeGate* modeGate)
+                                                           const ISafetyGate* safetyGate, ICommandModeGate* modeGate,
+                                                           const ISeafloorReference* seafloor)
     : CommandProviderBase(source, io),
       sourceId_(source),
       autopilot_(autopilot),
       maxForwardSpeedMps_(maxForwardSpeedMps),
       safetyGate_(safetyGate),
-      modeGate_(modeGate) {
+      modeGate_(modeGate),
+      seafloor_(seafloor) {
   // A new vector command replaces an in-flight vector command (same driving resource).
   setBehavior(IncomingCommandBehavior::CANCEL_EXISTING);
 }
@@ -58,6 +61,10 @@ bool VectorControlServiceProvider::isCommandValid(const GlobalVectorCommandType&
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command direction variant is unsupported")
     return false;
   }
+  if (!std::isfinite(dir->headingRad)) {
+    UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command heading is not finite")
+    return false;
+  }
   const std::optional<SpeedValue> speed = tolerance::extractSpeed(cmd.speed());
   if (!speed.has_value()) {
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command speed variant is unsupported")
@@ -77,14 +84,20 @@ bool VectorControlServiceProvider::isCommandValid(const GlobalVectorCommandType&
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command endTime is already in the past")
     return false;
   }
-  if (staticMaxDepthM_.has_value() && cmd.elevation().has_value()) {
+  if (cmd.elevation().has_value()) {
     const std::optional<ElevationValue> el = tolerance::extractElevation(cmd.elevation().value());
-    if (el.has_value() && el->frame == ElevationFrame::DEPTH && el->valueM > staticMaxDepthM_.value()) {
-      UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command depth " << el->valueM
-                                                                  << " m exceeds the configured "
-                                                                     "constraints.max_depth_m of "
-                                                                  << staticMaxDepthM_.value() << " m")
+    // A vector elevation is flown here and now, so the live floor converts the frames: rejecting
+    // up front beats admitting a setpoint the clamp holds away until the failure delay expires.
+    const std::optional<flt64_t> floorDepthM = seafloor_ != nullptr ? seafloor_->floorDepthM() : std::nullopt;
+    std::string reason;
+    if (el.has_value() && !elevationAdmissible(el.value(), elevationLimits_, floorDepthM, &reason)) {
+      UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Vector command rejected: " << reason)
       return false;
+    }
+    if (el.has_value() && el->frame == ElevationFrame::ALTITUDE_ASF && !floorDepthM.has_value()) {
+      UMAA_LOG_WARN(util::SYSTEM_LOGGER,
+                    "Vector command elevation is in the ALTITUDE_ASF frame but no altitude above "
+                    "sea floor is available right now; it cannot be checked against a depth bound")
     }
   }
   return true;

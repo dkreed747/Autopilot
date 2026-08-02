@@ -31,7 +31,7 @@ local run so peers find each other without multicast.
 |---|---|---|
 | UMAA waypoint missions: large-list routes, gate (not bubble) capture, miss/replan budgets | `src/umaa/WaypointControlServiceProvider.cpp`, `src/guidance/DubinsPathPlanner.cpp` | `./tools/mission_runner autopilot.yaml out my.csv` |
 | UMAA vector commands: heading/speed/elevation setpoints w/ tolerance tracking | `src/umaa/VectorControlServiceProvider.cpp` | console **Vector** panel, or `POST /api/vector` |
-| True Dubins planning + PI cross-track tracking (`planner.xte.*`; `ki=0` = pure P) | `src/guidance/DubinsPath*.cpp`, `src/guidance/CrossTrackController.cpp` | set `vehicle_control.sim.current_east_mps: 0.3`, compare `ki: 0` vs `0.05` |
+| True Dubins planning + curvature-feedforward tracking (`planner.tracker.*`), bounded cross-track approach law, optional integral for standing current (`planner.xte.ki`) | `src/guidance/DubinsPath*.cpp`, `src/guidance/PathTracker.cpp`, `src/guidance/CrossTrackController.cpp` | `./tools/heading_probe autopilot.yaml probe-out`, then [docs/tuning.md](docs/tuning.md) |
 | Zone-aware planning: direct solve → Dubins-RRT* detour, mid-route replan on constraint change | `src/guidance/DubinsRrtStar.cpp` | draw a keep-out across an active route in the console |
 | MM constraints: water zones / speed / depth, standing active set, per-conditional state reports | `src/safety/ConstraintSupervisor.cpp` | console **Constraints** panel |
 | Violation FSM: MONITORING → RECOVERING (grace) → SAFE_MODE (latched), recovery drive-out | `src/safety/ConstraintSupervisor.cpp`, `src/safety/RecoveryGuidance.cpp` | activate a keep-out you are inside |
@@ -42,6 +42,8 @@ local run so peers find each other without multicast.
 | Failsafes: nav-staleness zero-speed hold, non-finite sample screening, MANUAL suppression | `src/core/AutopilotBrain.cpp` | `loop.nav_staleness_timeout_ms` |
 | Web mission console: chart, mission editor w/ live Dubins preview, constraints/mode/vector panels, WASD RC with layered deadman | `tools/mission_console.cpp`, `tools/web/` | [tools/README.md](tools/README.md) |
 | Headless mission runner + plotting | `tools/mission_runner.cpp`, `tools/plot_mission.py` | `python3 tools/plot_mission.py out/` |
+| Inner-loop identification: heading step response to a measured `heading_loop_tau_s` | `tools/heading_probe.cpp`, `src/guidance/HeadingLoopIdentifier.cpp` | `./tools/heading_probe autopilot.yaml probe-out --dry-run` |
+| Objective tracking analysis: geometry-conditioned arc/straight metrics + acceptance gates | `tools/analyze_tracking.py` | `python3 tools/analyze_tracking.py out --gate` |
 
 ## Architecture
 
@@ -62,8 +64,12 @@ Layers:
   reports, nav observers).
 - **vehicle/** — `IVehicleControl` strategy; `SimVehicleControl` is the
   in-tree implementation. Real platforms implement `IVehicleControl`
-  (init/shutdown, `sendControlVector`, `isManualEngaged`) and are selected via
-  `vehicle_control.type`.
+  (init/shutdown, `sendControlVector`, `isManualEngaged`), register a name in
+  `src/vehicle/VehicleControlTypes.cpp` and a branch in
+  `src/vehicle/VehicleControlFactory.cpp`, and are selected by
+  `vehicle_control.type`. An unregistered type fails startup rather than
+  falling back to the simulator. See
+  [docs/adding-a-vehicle.md](docs/adding-a-vehicle.md).
 
 The mission tools link only `autopilot::core` (config + route/guidance/zone
 slice) — they talk to the app purely over DDS and are staged to move into their
@@ -75,8 +81,24 @@ One YAML for app and tools: [`config/autopilot.yaml`](config/autopilot.yaml) —
 the inline comments are the reference. Loading fail-fasts on malformed values
 (ranges, UUIDs, enums) and warns on suspicious ones (`src/config/ConfigValidation.cpp`).
 Identity UUIDs must be well-formed; `console.platform_id` different from
-`identity.platform_id` makes console commands REMOTE. The copy in `build/` is
-refreshed on every build.
+`identity.platform_id` makes console commands REMOTE. Unrecognised keys warn and
+removed keys are rejected by name, so a tuned value cannot vanish silently
+(`src/config/ConfigKeyRegistry.cpp`). The copy in `build/` is refreshed on every
+build.
+
+Tuning the control law to a platform is a procedure, not a table of numbers:
+[docs/tuning.md](docs/tuning.md).
+
+## Documentation
+
+- [docs/adding-a-vehicle.md](docs/adding-a-vehicle.md) — implement `IVehicleControl` for a real
+  platform and register it with the factory.
+- [docs/tuning.md](docs/tuning.md) — bring-up order: capabilities, heading-loop probe, tracker
+  gains, objective validation.
+- [tools/README.md](tools/README.md) — mission console, mission runner, heading probe, analysis
+  scripts.
+- [docs/README.md](docs/README.md) — the rest of `docs/`: console screenshots and the CI tracking
+  baselines.
 
 ## Tests
 
@@ -85,10 +107,12 @@ ctest --preset amd64-debug          # or amd64-release
 ./build/autopilot_test --gtest_filter='DubinsPathPlannerTest.*'
 ```
 
-GTest/GMock, ~180 cases across 22 suites: planner/solver/RRT* (incl. randomized
-and drift/PI regression), zone geometry/map, constraint clamp/supervisor,
-safety end-to-end (recovery, SRP, safe-mode), operational modes/gating/arbiter,
-sim vehicle, config loader/validation.
+GTest/GMock, 279 cases across 33 suites: planner/solver/RRT* (incl. randomized
+and drift regression), the path tracker and its closed-loop tracking regression,
+heading-loop identification, cross-track controller, zone geometry/map,
+constraint clamp/supervisor, safety end-to-end (recovery, SRP, safe-mode),
+operational modes/gating/arbiter, sim vehicle, vehicle-control factory, nav
+state, planner-params factory, tolerance extraction, config loader/validation.
 
 ## Deployment
 
@@ -127,12 +151,13 @@ Local image build: `docker build --target autopilot .` (or `mission-console` /
 
 ## CI
 
-`.gitlab-ci.yml`: `build-test` (full build + ctest in the dev image) →
-`build-images` (Kaniko, three `--target` runs, shared cache) →
-`smoke-autopilot` / `smoke-console` / `smoke-runner` (the split images
-round-trip constraints, modes, vectors, and a full mission over unicast-peer
-DDS on the per-build network). Override `BASE_IMAGE_TAG` to test against an
-unmerged dev-container image.
+`.gitlab-ci.yml`: `build-test` (full build + ctest in the dev image) and
+`analyze-baselines` (the tracking analysis reproduces every committed recording;
+stdlib-only, no build, seconds) → `build-images` (Kaniko, three `--target` runs,
+shared cache) → `smoke-autopilot` / `smoke-console` / `smoke-runner` (the split
+images round-trip constraints, modes, vectors, and a full mission over
+unicast-peer DDS on the per-build network). Override `BASE_IMAGE_TAG` to test
+against an unmerged dev-container image.
 
 ## Maintaining
 
@@ -145,6 +170,9 @@ unmerged dev-container image.
   directory (the images symlink them at `/opt/autopilot`).
 - SDK: pinned `umaa-cpp` submodule; `-DAUTOPILOT_USE_SYSTEM_UMAA_CPP=ON`
   builds against an installed SDK instead (tests require the submodule).
-- Recorded reference runs live in `docs/mission-results/` (each has the input
-  `mission.csv` plus recorded track/status); re-run them with `mission_runner`
-  to regression-check guidance changes.
+- Recorded reference runs live in `docs/mission-results/`, verified by the
+  `analyze-baselines` CI job. `lawnmower-20m-r1` is the reference for the shipped
+  law; the rest are pre-refactor recordings that cannot pass the acceptance gates
+  and are kept as measurement fixtures, not targets. Re-recording one breaks CI
+  until its `expectations.csv` is regenerated — see
+  [docs/README.md](docs/README.md).

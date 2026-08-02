@@ -2,13 +2,17 @@
 //! records the track, command status, and planned path to files (see tools/README.md).
 
 #include <GeographicLib/LocalCartesian.hpp>
+#include <UMAA/MO/GlobalWaypointControl/GlobalWaypointExecutionStatusReportType.hpp>
 #include <UMAA/SA/GlobalPoseStatus/GlobalPoseReportType.hpp>
 #include <UMAA/SA/SpeedStatus/SpeedReportType.hpp>
+#include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
 #include <chrono>
 #include <filesystem>  // NOLINT(build/c++17)
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -30,9 +34,40 @@ using arlcore::autopilot::MissionWaypoint;
 using arlcore::autopilot::tools::WaypointMissionClient;
 using arlcore::io::CycloneReader;
 using arlcore::io::ReadStatus;
+using UMAA::MO::GlobalWaypointControl::GlobalWaypointExecutionStatusReportType;
 using UMAA::MO::GlobalWaypointControl::GlobalWaypointType;
 using UMAA::SA::GlobalPoseStatus::GlobalPoseReportType;
 using UMAA::SA::SpeedStatus::SpeedReportType;
+using UMAA::SA::VelocityStatus::VelocityReportType;
+
+//! \brief Seconds since the Unix epoch, so a recording can be aligned with vehicle-side logs.
+static flt64_t wallClockEpochS() {
+  return std::chrono::duration<flt64_t>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+//! \brief Write an epoch timestamp at full precision: ten integer digits already exhaust the
+//! stream's default, which would quantize the stamp to whole seconds.
+static void writeEpochS(std::ofstream* out, flt64_t epochS) {
+  const std::streamsize prior = out->precision(17);
+  *out << epochS;
+  out->precision(prior);
+}
+
+//! \brief Seconds since `stamp`, or empty when the source has not reported yet.
+static void writeAgeS(std::ofstream* out, bool has, const std::chrono::steady_clock::time_point& stamp) {
+  if (has) {
+    *out << std::chrono::duration<flt64_t>(std::chrono::steady_clock::now() - stamp).count();
+  }
+}
+
+//! \brief Emit an optional capability as a meta.csv value, blank when the platform omits it.
+static void writeMetaOptional(std::ofstream* out, const std::string& key, const std::optional<flt64_t>& value) {
+  *out << key << ",";
+  if (value.has_value()) {
+    *out << value.value();
+  }
+  *out << "\n";
+}
 
 int main(int argc, char** argv) {
   const std::string configPath = (argc > 1) ? argv[1] : "autopilot.yaml";
@@ -105,21 +140,73 @@ int main(int argc, char** argv) {
     }
   }
 
+  const arlcore::autopilot::PlannerParams plannerParams = arlcore::autopilot::derivePlannerParams(config);
+
   // Export the ideal planned Dubins route for plotting: plan the same route with the same
-  // platform-derived parameters from the sim start pose and sample it.
+  // platform-derived parameters from the sim start pose and sample it. Curvature comes from
+  // the planned geometry itself so the analysis never has to differentiate the polyline.
   {
     GlobalPoseReportType startPose;
     startPose.position().geodeticLatitude(config.simVehicle.initialLatitudeDeg);
     startPose.position().geodeticLongitude(config.simVehicle.initialLongitudeDeg);
     startPose.attitude().yaw().yaw(config.simVehicle.initialHeadingRad);
     arlcore::autopilot::DubinsPathPlanner previewPlanner;
-    previewPlanner.plan(waypoints, startPose, arlcore::autopilot::derivePlannerParams(config));
+    previewPlanner.plan(waypoints, startPose, plannerParams);
     std::ofstream plannedCsv(outDir + "/planned_path.csv");
     plannedCsv.precision(10);
-    plannedCsv << "lat_deg,lon_deg\n";
-    for (const auto& [lat, lon] : previewPlanner.previewRoute(2.0)) {
-      plannedCsv << lat << "," << lon << "\n";
+    plannedCsv << "lat_deg,lon_deg,s_m,kappa_1pm,az_rad,leg_index\n";
+    for (const arlcore::autopilot::PreviewSample& s : previewPlanner.previewRouteDetailed(plannerParams.sampleStepM)) {
+      plannedCsv << s.latDeg << "," << s.lonDeg << "," << s.arcLengthM << "," << s.curvatureMathRadPerM << ","
+                 << s.azimuthRad << "," << s.legIndex << "\n";
     }
+  }
+
+  // Record which configuration produced this run: without it no threshold can be applied to
+  // the recording after the fact.
+  {
+    const arlcore::autopilot::CapabilityLimits& surf = config.platformCapabilities.surface;
+    std::ofstream meta(outDir + "/meta.csv");
+    meta.precision(10);
+    meta << "key,value\n";
+    meta << "config_path," << configPath << "\n";
+    meta << "mission_csv," << missionPath << "\n";
+    meta << "wall_utc_start_s,";
+    writeEpochS(&meta, wallClockEpochS());
+    meta << "\n";
+    meta << "turn_radius_m," << plannerParams.turnRadiusM << "\n";
+    writeMetaOptional(&meta, "max_turn_rate_rps", surf.maxTurnRateRps);
+    writeMetaOptional(&meta, "cruising_speed_mps", surf.cruisingSpeedMps);
+    writeMetaOptional(&meta, "max_forward_speed_mps", surf.maxForwardSpeedMps);
+    // The kinematic minimum radius the margin is measured against.
+    const std::optional<flt64_t> repSpeed =
+        surf.cruisingSpeedMps.has_value() ? surf.cruisingSpeedMps : surf.maxForwardSpeedMps;
+    std::optional<flt64_t> minRadius;
+    if (repSpeed.has_value() && surf.maxTurnRateRps.has_value() && surf.maxTurnRateRps.value() > 0.0) {
+      minRadius = repSpeed.value() / surf.maxTurnRateRps.value();
+    }
+    writeMetaOptional(&meta, "min_turn_radius_m", minRadius);
+    meta << "turn_radius_margin," << config.planner.turnRadiusMargin << "\n";
+    meta << "sample_step_m," << plannerParams.sampleStepM << "\n";
+    meta << "lead_distance_m," << plannerParams.leadDistanceM << "\n";
+    meta << "pos_capture_m," << plannerParams.posCaptureM << "\n";
+    const arlcore::autopilot::PathTracker::Params& tr = plannerParams.tracker;
+    meta << "heading_loop_tau_s," << tr.headingLoopTauS << "\n";
+    meta << "feedforward_limit_rad," << tr.feedforwardLimitRad << "\n";
+    meta << "cross_track_approach_rad," << tr.crossTrackApproachRad << "\n";
+    meta << "cross_track_gain_per_m," << tr.crossTrackGainPerM << "\n";
+    meta << "xte_kp_scale," << tr.xte.kpScale << "\n";
+    meta << "xte_ki," << tr.xte.ki << "\n";
+    meta << "xte_integrator_limit_rad," << tr.xte.integratorLimitRad << "\n";
+    meta << "xte_integrator_gate_m," << tr.xte.integratorGateM << "\n";
+    meta << "xte_correction_limit_rad," << tr.xte.correctionLimitRad << "\n";
+    meta << "sim_heading_gain_rps_per_rad," << config.simVehicle.headingGainRpsPerRad << "\n";
+    meta << "sim_heading_lag_s," << config.simVehicle.headingLagS << "\n";
+    meta << "control_period_ms," << config.loop.controlPeriodMs << "\n";
+    meta << "sim_cycle_rate_hz," << config.simVehicle.cycleRateHz << "\n";
+    meta << "current_east_mps," << config.simVehicle.currentEastMps << "\n";
+    meta << "current_north_mps," << config.simVehicle.currentNorthMps << "\n";
+    meta << "initial_latitude_deg," << config.simVehicle.initialLatitudeDeg << "\n";
+    meta << "initial_longitude_deg," << config.simVehicle.initialLongitudeDeg << "\n";
   }
 
   // Nav readers for the track recording; the mission client owns the command-side IO.
@@ -127,6 +214,17 @@ int main(int argc, char** argv) {
       participant, UMAA::SA::GlobalPoseStatus::GlobalPoseReportTypeTopic, rqos);
   auto speedReader =
       std::make_shared<CycloneReader<SpeedReportType>>(participant, UMAA::SA::SpeedStatus::SpeedReportTypeTopic, rqos);
+  auto velocityReader = std::make_shared<CycloneReader<VelocityReportType>>(
+      participant, UMAA::SA::VelocityStatus::VelocityReportTypeTopic, rqos);
+  auto execReader = std::make_shared<CycloneReader<GlobalWaypointExecutionStatusReportType>>(
+      participant, UMAA::MO::GlobalWaypointControl::GlobalWaypointExecutionStatusReportTypeTopic, rqos);
+
+  // Attribute each execution-status report back to its waypoint index, so the analysis can
+  // reset its projection pointer at the same leg boundaries the planner uses.
+  std::map<arlcore::NumericGuid, int32_t> waypointIndexById;
+  for (std::size_t i = 0; i < waypoints.size(); i++) {
+    waypointIndexById[arlcore::NumericGuid(waypoints[i].waypointID())] = static_cast<int32_t>(i);
+  }
 
   // The runner acts as this platform's onboard autonomy: its commands classify LOCAL and
   // (with implicit transitions enabled) drive the autopilot into AUTONOMOUS.
@@ -147,12 +245,21 @@ int main(int argc, char** argv) {
 
   std::ofstream track(outDir + "/track.csv");
   track.precision(10);
-  track << "elapsed_s,lat_deg,lon_deg,yaw_rad,speed_mps,depth_m,alt_asf_m\n";
+  // Append-only: the first seven columns stay byte-identical so archived recordings and any
+  // ad-hoc tooling over them keep parsing. Everything downstream reads by header name.
+  track << "elapsed_s,lat_deg,lon_deg,yaw_rad,speed_mps,depth_m,alt_asf_m"
+        << ",wall_utc_s,yaw_rate_rps,vel_north_mps,vel_east_mps,vel_down_mps,vel_age_s"
+        << ",waypoint_index,cross_track_error_m,distance_to_waypoint_m,distance_remaining_m"
+        << ",cumulative_distance_m,waypoints_remaining,exec_age_s\n";
   std::ofstream statusLog(outDir + "/status.log");
 
   const auto start = std::chrono::steady_clock::now();
   const auto deadline = start + std::chrono::minutes(20);
   flt64_t lastSpeed = 0.0;
+  std::optional<VelocityReportType> lastVel;
+  std::chrono::steady_clock::time_point lastVelAt;
+  std::optional<GlobalWaypointExecutionStatusReportType> lastExec;
+  std::chrono::steady_clock::time_point lastExecAt;
   std::string finalStatus = "TIMEOUT";
 
   while (client.active() && std::chrono::steady_clock::now() < deadline) {
@@ -161,6 +268,20 @@ int main(int argc, char** argv) {
     SpeedReportType speed;
     if (speedReader->readLatest(&speed) == ReadStatus::SUCCESS && speed.speedOverGround().has_value()) {
       lastSpeed = speed.speedOverGround().value();
+    }
+    VelocityReportType velocity;
+    if (velocityReader->readLatest(&velocity) == ReadStatus::SUCCESS) {
+      lastVel = velocity;
+      lastVelAt = std::chrono::steady_clock::now();
+    }
+    // Drain rather than readLatest: the topic is bus-wide, so another commander's report must
+    // not be mistaken for this session's.
+    GlobalWaypointExecutionStatusReportType exec;
+    while (execReader->read(&exec) == ReadStatus::SUCCESS) {
+      if (arlcore::NumericGuid(exec.sessionID()) == sessionId) {
+        lastExec = exec;
+        lastExecAt = std::chrono::steady_clock::now();
+      }
     }
     GlobalPoseReportType pose;
     if (poseReader->readLatest(&pose) == ReadStatus::SUCCESS) {
@@ -173,6 +294,32 @@ int main(int argc, char** argv) {
       if (pose.altitudeASF().has_value()) {
         track << pose.altitudeASF().value();
       }
+      track << ",";
+      writeEpochS(&track, wallClockEpochS());
+      track << ",";
+      if (lastVel.has_value()) {
+        track << lastVel->attitudeRate().yawRate() << "," << lastVel->velocity().northSpeed() << ","
+              << lastVel->velocity().eastSpeed() << "," << lastVel->velocity().downSpeed() << ",";
+      } else {
+        track << ",,,,";
+      }
+      writeAgeS(&track, lastVel.has_value(), lastVelAt);
+      track << ",";
+      if (lastExec.has_value()) {
+        const auto idx = waypointIndexById.find(arlcore::NumericGuid(lastExec->waypointID()));
+        if (idx != waypointIndexById.end()) {
+          track << idx->second;
+        }
+        track << ",";
+        if (lastExec->crossTrackError().has_value()) {
+          track << lastExec->crossTrackError().value();
+        }
+        track << "," << lastExec->distanceToWaypoint() << "," << lastExec->distanceRemaining() << ","
+              << lastExec->cumulativeDistance() << "," << lastExec->waypointsRemaining() << ",";
+      } else {
+        track << ",,,,,,";
+      }
+      writeAgeS(&track, lastExec.has_value(), lastExecAt);
       track << "\n";
     }
 

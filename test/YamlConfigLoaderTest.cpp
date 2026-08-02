@@ -3,8 +3,10 @@
 #include <cstdio>
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "autopilot/config/AutopilotConfig.hpp"
+#include "autopilot/config/ConfigValidation.hpp"
 #include "autopilot/config/YamlConfigLoader.hpp"
 
 static const char* const kTestConfigPath = "autopilot_test_config.yaml";
@@ -121,6 +123,11 @@ TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
       "  max_speed_mps: 4.5\n"
       "  min_speed_mps:\n"  // explicit null stays unset
       "  max_depth_m: 25.0\n"
+      "  min_altitude_asf_m: 6.0\n"
+      "platform_capabilities:\n"
+      "  underwater:\n"
+      "    enabled: true\n"
+      "    reports_altitude_asf: true\n"
       "zones:\n"
       "  safety_margin_m: 8.0\n"
       "  compliance_hysteresis_m: 3.0\n"
@@ -165,6 +172,9 @@ TEST_F(YamlConfigLoaderTest, LoadsConstraintAndSafetyFields) {
   EXPECT_FALSE(config.constraints.minSpeedMps.has_value());
   ASSERT_TRUE(config.constraints.maxDepthM.has_value());
   EXPECT_DOUBLE_EQ(config.constraints.maxDepthM.value(), 25.0);
+  ASSERT_TRUE(config.constraints.minAltitudeAsfM.has_value());
+  EXPECT_DOUBLE_EQ(config.constraints.minAltitudeAsfM.value(), 6.0);
+  EXPECT_TRUE(config.platformCapabilities.reportsAltitudeAsf);
   EXPECT_DOUBLE_EQ(config.zones.safetyMarginM, 8.0);
   EXPECT_DOUBLE_EQ(config.zones.complianceHysteresisM, 3.0);
   EXPECT_EQ(config.zones.ellipseSegments, 16);
@@ -233,10 +243,14 @@ TEST_F(YamlConfigLoaderTest, LegacyFlatArbitrationKeysAreIgnored) {
   arlcore::autopilot::AutopilotConfig config;
   ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
 
-  // THEN: the obsolete flat keys are ignored (warned), safe_priority still applies
+  // THEN: the obsolete flat keys are ignored, safe_priority still applies, and the two ignored
+  //       keys are reported so they are visible rather than silently dropped. They warn rather
+  //       than error because a priority number is still expressible, just under another path.
   EXPECT_EQ(config.arbitration.local.vectorPriority, 100);
   EXPECT_EQ(config.arbitration.local.waypointPriority, 10);
   EXPECT_EQ(config.arbitration.safePriority, 800);
+  EXPECT_EQ(config.unknownKeys.size(), 2u);
+  EXPECT_TRUE(config.removedKeys.empty());
 }
 
 TEST_F(YamlConfigLoaderTest, EmptyFileYieldsValidDefaults) {
@@ -271,6 +285,9 @@ TEST_F(YamlConfigLoaderTest, RejectsOutOfRangeValues) {
       "planner:\n  rrt:\n    goal_bias: 1.5\n",
       "constraints:\n  min_speed_mps: 3.0\n  max_speed_mps: 1.0\n",
       "constraints:\n  min_depth_m: 30.0\n  max_depth_m: 5.0\n",
+      "constraints:\n  min_altitude_asf_m: -1.0\n",
+      // a bottom clearance the platform cannot report an altitude for is unenforceable
+      "constraints:\n  min_altitude_asf_m: 5.0\n",
       "safety:\n  grace_period_s: -1\n",
       "safety:\n  violation_confirm_ticks: 0\n",
       "safety:\n  state_report_period_ms: 0\n",
@@ -278,7 +295,12 @@ TEST_F(YamlConfigLoaderTest, RejectsOutOfRangeValues) {
       "safety:\n  safe_mode:\n    srp:\n      csv_path: \"srp.csv\"\n",
       "safety:\n  safe_mode:\n    srp:\n      csv_path: \"srp.csv\"\n"
       "      origin_lat_deg: 95.0\n      origin_lon_deg: 0.0\n",
+      "vehicle_control:\n  type: \"hovercraft\"\n",
       "vehicle_control:\n  sim:\n    cycle_rate_hz: 0\n",
+      "vehicle_control:\n  sim:\n    heading_gain_rps_per_rad: -1.0\n",
+      "vehicle_control:\n  sim:\n    heading_gain_rps_per_rad: .nan\n",
+      "vehicle_control:\n  sim:\n    heading_lag_s: -0.5\n",
+      "vehicle_control:\n  sim:\n    heading_lag_s: .inf\n",
       "vehicle_control:\n  sim:\n    initial_latitude_deg: 123.0\n",
       "platform_capabilities:\n  surface:\n    max_turn_rate_rps: 0\n",
       "platform_capabilities:\n  surface:\n    cruising_speed_mps: -3.0\n",
@@ -309,7 +331,6 @@ TEST_F(YamlConfigLoaderTest, WarnsButAcceptsMarginalValues) {
       {"planner:\n  turn_radius_margin: 0.8\n", true},
       {"zones:\n  ellipse_segments: 512\n", true},
       {"loop:\n  control_period_ms: 2000\n", true},
-      {"vehicle_control:\n  type: \"hovercraft\"\n", true},
       {"safety:\n  safe_mode:\n    strategy: \"zero_speed_hold\"\n", true},
   };
 
@@ -344,11 +365,17 @@ TEST_F(YamlConfigLoaderTest, LoadsCrossTrackAndSimDriftFields) {
       "    integrator_limit_rad: 0.3\n"
       "    integrator_gate_m: 8.0\n"
       "    correction_limit_rad: 1.0\n"
-      "    lead_time_s: 1.5\n"
+      "  tracker:\n"
+      "    heading_loop_tau_s: 0.8\n"
+      "    feedforward_limit_rad: 0.6\n"
+      "    cross_track_approach_rad: 0.5\n"
+      "    cross_track_gain_per_m: 0.2\n"
       "vehicle_control:\n"
       "  sim:\n"
       "    current_east_mps: 0.3\n"
-      "    current_north_mps: -0.1\n");
+      "    current_north_mps: -0.1\n"
+      "    heading_gain_rps_per_rad: 1.4\n"
+      "    heading_lag_s: 0.25\n");
   arlcore::autopilot::AutopilotConfig config;
 
   // WHEN: the config is loaded
@@ -361,16 +388,96 @@ TEST_F(YamlConfigLoaderTest, LoadsCrossTrackAndSimDriftFields) {
   EXPECT_DOUBLE_EQ(config.planner.xte.integratorLimitRad, 0.3);
   EXPECT_DOUBLE_EQ(config.planner.xte.integratorGateM, 8.0);
   EXPECT_DOUBLE_EQ(config.planner.xte.correctionLimitRad, 1.0);
-  EXPECT_DOUBLE_EQ(config.planner.xte.leadTimeS, 1.5);
+  EXPECT_DOUBLE_EQ(config.planner.tracker.headingLoopTauS, 0.8);
+  EXPECT_DOUBLE_EQ(config.planner.tracker.feedforwardLimitRad, 0.6);
+  EXPECT_DOUBLE_EQ(config.planner.tracker.crossTrackApproachRad, 0.5);
+  EXPECT_DOUBLE_EQ(config.planner.tracker.crossTrackGainPerM, 0.2);
   EXPECT_DOUBLE_EQ(config.simVehicle.currentEastMps, 0.3);
   EXPECT_DOUBLE_EQ(config.simVehicle.currentNorthMps, -0.1);
+  EXPECT_DOUBLE_EQ(config.simVehicle.headingGainRpsPerRad, 1.4);
+  EXPECT_DOUBLE_EQ(config.simVehicle.headingLagS, 0.25);
+  EXPECT_TRUE(config.unknownKeys.empty());
+  EXPECT_TRUE(config.removedKeys.empty());
 
   // WHEN: defaults are loaded from an empty file
   writeConfig("");
   arlcore::autopilot::AutopilotConfig defaults;
   ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &defaults));
-  // THEN: the xte defaults reproduce the legacy pure-P law
+  // THEN: the xte defaults leave the integral off, so the law is pure P
   EXPECT_DOUBLE_EQ(defaults.planner.xte.ki, 0.0);
   EXPECT_DOUBLE_EQ(defaults.planner.xte.kpScale, 1.0);
   EXPECT_DOUBLE_EQ(defaults.planner.xte.correctionLimitRad, 1.2);
+  // ... and the tracker defaults match the shipped config, since PlannerParams carries them
+  EXPECT_DOUBLE_EQ(defaults.planner.tracker.headingLoopTauS, 1.11);
+  EXPECT_DOUBLE_EQ(defaults.planner.tracker.feedforwardLimitRad, 0.7);
+  EXPECT_DOUBLE_EQ(defaults.planner.tracker.crossTrackApproachRad, 0.6);
+}
+
+TEST_F(YamlConfigLoaderTest, RemovedKeysAreRejectedRatherThanSilentlyIgnored) {
+  // GIVEN: configs carrying keys the loader no longer reads: the superseded lead_time_s, each of
+  //        the deleted trim knobs, and trim_tau_limit_s, which was renamed and then removed and
+  //        which every archived experiment config silently ran the default for
+  const char* const kRemoved[] = {
+      "planner:\n  xte:\n    lead_time_s: 1.0\n",
+      "planner:\n  tracker:\n    trim_gain: 0.1\n",
+      "planner:\n  tracker:\n    trim_tau_limit_frac: 1.5\n",
+      "planner:\n  tracker:\n    trim_tau_limit_s: 0.5\n",
+      "planner:\n  tracker:\n    trim_limit_rad: 0.35\n",
+      "planner:\n  tracker:\n    trim_rate_floor_frac: 0.1\n",
+      "planner:\n  tracker:\n    trim_cross_track_gate_m: 2.0\n",
+      "planner:\n  tracker:\n    saturation_frac: 0.98\n",
+  };
+
+  // WHEN: each is loaded, which validates as part of loading
+  for (const char* const yaml : kRemoved) {
+    writeConfig(yaml);
+    arlcore::autopilot::AutopilotConfig config;
+    // THEN: the load fails and the offending key is named, so a tuned value cannot vanish and an
+    //       operator cannot fly a config that describes a law the software no longer implements
+    EXPECT_FALSE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config)) << yaml;
+    ASSERT_EQ(config.removedKeys.size(), 1u) << yaml;
+    EXPECT_NE(config.removedKeys[0].find("planner."), std::string::npos) << yaml;
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+    EXPECT_FALSE(arlcore::autopilot::validateConfig(config, &errors, &warnings)) << yaml;
+    EXPECT_FALSE(errors.empty()) << yaml;
+  }
+}
+
+TEST_F(YamlConfigLoaderTest, AnUnknownKeyWarnsAndStillLoads) {
+  // GIVEN: a config with a misspelled key (heading_loop_tau, missing the unit suffix)
+  writeConfig(
+      "planner:\n"
+      "  tracker:\n"
+      "    heading_loop_tau: 0.8\n");
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: the config is loaded
+  // THEN: it loads, because a gap in the key registry must never be able to ground the vehicle,
+  //       but the key is reported so the typo is visible rather than silently ignored
+  EXPECT_TRUE(arlcore::autopilot::YamlConfigLoader::load(kTestConfigPath, &config));
+  ASSERT_EQ(config.unknownKeys.size(), 1u);
+  EXPECT_EQ(config.unknownKeys[0], "planner.tracker.heading_loop_tau");
+  EXPECT_DOUBLE_EQ(config.planner.tracker.headingLoopTauS, 1.11);
+  std::vector<std::string> errors;
+  std::vector<std::string> warnings;
+  EXPECT_TRUE(arlcore::autopilot::validateConfig(config, &errors, &warnings));
+  EXPECT_FALSE(warnings.empty());
+}
+
+TEST_F(YamlConfigLoaderTest, EveryKeyInTheShippedConfigIsKnown) {
+  // GIVEN: the shipped config, which the build copies next to the test binary
+  arlcore::autopilot::AutopilotConfig config;
+
+  // WHEN: it is loaded
+  ASSERT_TRUE(arlcore::autopilot::YamlConfigLoader::load(AUTOPILOT_SHIPPED_CONFIG, &config));
+
+  // THEN: the key registry recognises every key in it. This is what stops the registry rotting:
+  //       a key added to the loader and the shipped config but not the registry fails here.
+  for (const std::string& unknown : config.unknownKeys) {
+    ADD_FAILURE() << "config/autopilot.yaml carries a key the registry does not know: " << unknown;
+  }
+  for (const std::string& removed : config.removedKeys) {
+    ADD_FAILURE() << "config/autopilot.yaml still carries a removed key: " << removed;
+  }
 }

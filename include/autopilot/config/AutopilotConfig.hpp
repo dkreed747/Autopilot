@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "InternalTypes.h"
 
@@ -97,15 +98,25 @@ struct RrtConfig {
   flt64_t finalCheckStepM = 1.0;  // fine recheck of the accepted path
 };
 
-//! \brief Cross-track tracking-law tuning. Defaults reproduce the legacy pure-P behavior;
-//! ki > 0 nulls the standing offset a lateral current or trim leaves behind.
+//! \brief Cross-track integral tuning. The proportional shape lives in TrackerConfig; ki > 0
+//! nulls the standing offset a lateral current or trim leaves behind, which pure P cannot.
 struct XteConfig {
-  flt64_t kpScale = 1.0;              // P gain scale: correction = atan2(kp*xte, turn_radius)
+  flt64_t kpScale = 1.0;              // scales tracker.cross_track_gain_per_m
   flt64_t ki = 0.0;                   // integral gain, rad per meter-second (0 = pure P)
   flt64_t integratorLimitRad = 0.35;  // |integral| clamp (~20 deg of crab)
   flt64_t integratorGateM = 5.0;      // integrate only while |xte| is inside the gate
   flt64_t correctionLimitRad = 1.2;   // total correction clamp
-  flt64_t leadTimeS = 1.0;            // tangent phase-lead seconds
+};
+
+//! \brief Path-tracking control-law tuning. Holding a planned arc means biasing the commanded
+//! heading ahead of the path tangent by the heading error the inner loop needs to produce that
+//! arc's turn rate, which is omega * heading_loop_tau_s. Measure the time constant with
+//! tools/heading_probe: nothing in flight corrects it.
+struct TrackerConfig {
+  flt64_t headingLoopTauS = 1.11;       // steady-state 1/K of the inner heading loop
+  flt64_t feedforwardLimitRad = 0.7;    // curvature feedforward clamp
+  flt64_t crossTrackApproachRad = 0.6;  // the angle the cross-track term saturates at
+  flt64_t crossTrackGainPerM = 0.15;    // cross-track gain, scaled by xte.kp_scale
 };
 
 struct PlannerConfig {
@@ -116,6 +127,7 @@ struct PlannerConfig {
   bool elevationCountsAsMiss = true;
   int32_t maxReplans = 10;
   flt64_t sampleStepM = 2.0;  // path polyline sampling resolution
+  TrackerConfig tracker;
   XteConfig xte;
   RrtConfig rrt;
 };
@@ -127,6 +139,10 @@ struct ConstraintsConfig {
   std::optional<flt64_t> minSpeedMps;
   std::optional<flt64_t> maxDepthM;  // deepest commanded depth allowed
   std::optional<flt64_t> minDepthM;  // shallowest commanded depth allowed
+  //! Bottom-side peer of maxDepthM: the closest to the sea floor a setpoint may be commanded.
+  //! Needs platform_capabilities.underwater.reports_altitude_asf, and it bounds DEPTH-framed
+  //! commands too whenever the seafloor reference is live.
+  std::optional<flt64_t> minAltitudeAsfM;
 };
 
 //! \brief Water-zone geometry margins and conversion settings.
@@ -214,6 +230,10 @@ struct PlatformCapabilitiesConfig {
   flt64_t minWaterDepthM = 0.0;
   CapabilityLimits surface;
   bool underwaterEnabled = false;
+  //! Whether the platform publishes altitude above the sea floor in its GlobalPoseReport. The
+  //! gate for ALTITUDE_ASF commands: without it there is no seafloor reference, so an ASF
+  //! setpoint can neither be tracked by the platform nor bounded against a depth limit.
+  bool reportsAltitudeAsf = false;
   CapabilityLimits underwater;
 };
 
@@ -225,7 +245,12 @@ struct SimVehicleConfig {
   flt64_t initialLatitudeDeg = 39.0;
   flt64_t initialLongitudeDeg = -76.5;
   flt64_t initialHeadingRad = 0.0;
-  flt64_t accelMps2 = 1.0;       // surge acceleration/deceleration limit
+  flt64_t accelMps2 = 1.0;  // surge acceleration/deceleration limit
+  // Inner heading loop: a proportional servo saturated at the platform turn rate, plus an
+  // optional actuator lag. A gain of 1/dt reproduces a pure rate limiter, so the previous
+  // deadbeat behavior stays reachable.
+  flt64_t headingGainRpsPerRad = 0.9;
+  flt64_t headingLagS = 0.5;
   flt64_t floorDepthM = 60.0;    // sea-floor depth below the surface (for depth/ASF simulation)
   flt64_t currentEastMps = 0.0;  // uniform water current (drift) for exercising the XTE integral
   flt64_t currentNorthMps = 0.0;
@@ -252,6 +277,11 @@ struct AutopilotConfig {
   PlatformSpecsConfig platformSpecs;
   PlatformCapabilitiesConfig platformCapabilities;
   ConsoleConfig console;
+  // Keys the loader saw but does not read. Unknown ones warn (a registry gap must not be able to
+  // ground the vehicle); removed ones are errors carrying the reason, because loading a config
+  // that describes a control law the software no longer implements is worse than refusing it.
+  std::vector<std::string> unknownKeys;
+  std::vector<std::string> removedKeys;
 };
 
 }  // namespace arlcore::autopilot

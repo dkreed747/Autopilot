@@ -2,6 +2,7 @@
 
 #include "InternalTypes.h"
 #include "autopilot/guidance/ControlVector.hpp"
+#include "autopilot/guidance/ElevationUtils.hpp"
 #include "autopilot/guidance/MissionRoute.hpp"
 #include "autopilot/guidance/ToleranceUtils.hpp"
 
@@ -27,7 +28,7 @@ static void decodeVector(const UMAA::MO::GlobalVectorControl::GlobalVectorComman
     const std::optional<ElevationValue> elev = tolerance::extractElevation(cmd.elevation().value());
     if (elev.has_value()) {
       out->elevValueM = elev->valueM;
-      out->elevFrame = elev->frame == ElevationFrame::DEPTH ? "depth" : "asf";
+      out->elevFrame = elevation::frameName(elev->frame);
     }
   }
   out->endTime = cmd.endTime();

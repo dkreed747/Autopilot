@@ -254,3 +254,26 @@ TEST(ZoneSetTest, EmptySetIsAlwaysCompliant) {
   EXPECT_NEAR(q->x, 7.0, 1e-9);
   EXPECT_NEAR(q->y, 9.0, 1e-9);
 }
+
+TEST(ZoneSetTest, AZoneWithNonFiniteGeometryBindsRatherThanDisappearing) {
+  // GIVEN: a zone set holding a normal keep-out and one whose vertices are non-finite. The
+  //        supervisor now rejects such geometry at the DDS boundary, but ZoneSet is also
+  //        constructed directly by the planner and the tools, so it must fail closed on its own.
+  arlcore::autopilot::ZoneSet set;
+  set.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT, square100());
+  const flt64_t bad = std::nan("");
+  set.addZone(arlcore::autopilot::ZoneKind::KEEP_OUT,
+              arlcore::autopilot::LocalPolygon({{bad, bad}, {bad, 0.0}, {0.0, bad}}));
+
+  // WHEN: clearance is evaluated somewhere clear of the good zone
+  const flt64_t clearance = set.clearanceM({-30.0, 50.0});
+  const arlcore::autopilot::ClearanceInfo info = set.clearanceInfo({-30.0, 50.0});
+
+  // THEN: the position reads as violating, not as clear. std::min(a, NaN) returns a, so before
+  //       this guard the unevaluable zone was silently dropped from the minimum and every
+  //       geometric consumer -- route admission, planner avoidance, vector-mode standoff --
+  //       treated it as absent while the conditional evaluator still saw a live constraint.
+  EXPECT_LT(clearance, 0.0);
+  EXPECT_FALSE(set.pointCompliant({-30.0, 50.0}, 5.0));
+  EXPECT_LT(info.clearanceM, 0.0);
+}

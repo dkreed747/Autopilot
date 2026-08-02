@@ -6,9 +6,11 @@
 #include "CommandProviderBase.h"
 #include "InternalTypes.h"
 #include "autopilot/core/IAutopilot.hpp"
+#include "autopilot/guidance/ISeafloorReference.hpp"
 #include "autopilot/modes/ICommandModeGate.hpp"
 #include "autopilot/safety/ConstraintTypes.hpp"
 #include "autopilot/safety/ISafetyGate.hpp"
+#include "autopilot/umaa/ElevationAdmission.hpp"
 #include "autopilot/umaa/VectorControlServiceProviderIo.hpp"
 
 namespace arlcore::autopilot {
@@ -25,11 +27,13 @@ class VectorControlServiceProvider
  public:
   VectorControlServiceProvider(const arlcore::NumericGuid& source, std::shared_ptr<VectorControlServiceProviderIo> io,
                                IAutopilot* autopilot, flt64_t maxForwardSpeedMps,
-                               const ISafetyGate* safetyGate = nullptr, ICommandModeGate* modeGate = nullptr);
+                               const ISafetyGate* safetyGate = nullptr, ICommandModeGate* modeGate = nullptr,
+                               const ISeafloorReference* seafloor = nullptr);
 
-  //! \brief Static (config-time) depth ceiling: commands deeper than this are rejected at
-  //! validation instead of driving against the output clamp forever.
-  void setStaticDepthLimit(std::optional<flt64_t> maxDepthM) { staticMaxDepthM_ = maxDepthM; }
+  //! \brief Static (config-time) elevation limits: commands outside them are rejected at
+  //! validation instead of driving against the output clamp forever. A vector elevation is flown
+  //! at the current position, so the live seafloor reference also converts between the frames.
+  void setElevationAdmissionLimits(const ElevationAdmissionLimits& limits) { elevationLimits_ = limits; }
 
  protected:
   bool isCommandValid(const GlobalVectorCommandType& cmd) override;
@@ -53,9 +57,10 @@ class VectorControlServiceProvider
   arlcore::NumericGuid sourceId_;
   IAutopilot* autopilot_;
   flt64_t maxForwardSpeedMps_;  // <= 0 means no limit
-  std::optional<flt64_t> staticMaxDepthM_;
+  ElevationAdmissionLimits elevationLimits_;
   const ISafetyGate* safetyGate_;
   ICommandModeGate* modeGate_;
+  const ISeafloorReference* seafloor_;
 
   // Hold bookkeeping (one session at a time under CANCEL_EXISTING): the epoch recorded when
   // the hold began; an authoritative mode change bumps the gate's epoch and flushes the hold.

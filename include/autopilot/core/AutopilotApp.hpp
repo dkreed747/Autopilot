@@ -34,7 +34,7 @@
 #include "autopilot/umaa/VectorControlServiceProvider.hpp"
 #include "autopilot/umaa/VelocityObserver.hpp"
 #include "autopilot/umaa/WaypointControlServiceProvider.hpp"
-#include "autopilot/vehicle/SimVehicleControl.hpp"
+#include "autopilot/vehicle/IVehicleControl.hpp"
 
 namespace arlcore::autopilot {
 
@@ -61,8 +61,6 @@ class AutopilotApp {
   AutopilotConfig config_;
 
   dds::domain::DomainParticipant participant_ = dds::core::null;
-  dds::sub::Subscriber subscriber_ = dds::core::null;
-  dds::pub::Publisher publisher_ = dds::core::null;
 
   NavState navState_;
   std::unique_ptr<IVehicleControl> vehicle_;

@@ -49,7 +49,31 @@ std::vector<MissionWaypoint> loadMissionCsv(const std::string& path, const Geogr
       }
       if (fields.size() >= 7 && !fields[5].empty() && !fields[6].empty()) {
         wp.elevValueM = std::stod(fields[5]);
-        wp.elevFrame = fields[6];
+        // Normalised and then checked against the known frames rather than defaulted. An
+        // unrecognised frame used to fall through to DEPTH, so a row meaning "3 m above the sea
+        // floor" became "3 m below the surface" - and a CRLF-terminated file turned a correct
+        // "asf" into "asf\r" and did the same thing.
+        std::string frameName = fields[6];
+        while (!frameName.empty() && (frameName.back() == '\r' || frameName.back() == ' ')) {
+          frameName.pop_back();
+        }
+        for (char& c : frameName) {
+          c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (frameName != "asf" && frameName != "depth") {
+          UMAA_LOG_ERROR(util::SYSTEM_LOGGER,
+                         "Rejecting mission CSV: unknown elevation frame '" << fields[6] << "' (expected asf or depth)")
+          return {};
+        }
+        wp.elevFrame = frameName;
+      }
+      if (wp.elevValueM.has_value() && !std::isfinite(wp.elevValueM.value())) {
+        UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Rejecting mission CSV: elevation is not finite in row '" << line << "'")
+        return {};
+      }
+      if (wp.arrivalYawRad.has_value() && !std::isfinite(wp.arrivalYawRad.value())) {
+        UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Rejecting mission CSV: arrival yaw is not finite in row '" << line << "'")
+        return {};
       }
     } catch (const std::exception&) {
       // A malformed field fails the WHOLE file: silently flying a partial route is worse

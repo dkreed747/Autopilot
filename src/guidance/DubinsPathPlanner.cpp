@@ -11,6 +11,7 @@
 #include "InternalTypes.h"
 #include "Logger.h"
 #include "autopilot/guidance/AngleMath.hpp"
+#include "autopilot/guidance/ElevationUtils.hpp"
 #include "autopilot/guidance/ToleranceUtils.hpp"
 
 namespace arlcore::autopilot {
@@ -30,23 +31,10 @@ static flt64_t wpLon(const GlobalWaypointType& w) { return w.position().value().
 static flt64_t azToMath(flt64_t azRad) { return wrapPi(M_PI_2 - azRad); }
 static flt64_t mathToAz(flt64_t mathRad) { return wrapPi(M_PI_2 - mathRad); }
 
-//! \brief Current pose elevation in the requested frame, if available.
-static std::optional<flt64_t> poseElevation(const GlobalPoseReportType& p, ElevationFrame frame) {
-  switch (frame) {
-    case ElevationFrame::DEPTH:
-      return p.depth().has_value() ? std::optional<flt64_t>(p.depth().value()) : std::nullopt;
-    case ElevationFrame::ALTITUDE_MSL:
-      return p.altitude().has_value() ? std::optional<flt64_t>(p.altitude().value()) : std::nullopt;
-    case ElevationFrame::ALTITUDE_AGL:
-      return p.altitudeAGL().has_value() ? std::optional<flt64_t>(p.altitudeAGL().value()) : std::nullopt;
-    case ElevationFrame::ALTITUDE_ASF:
-      return p.altitudeASF().has_value() ? std::optional<flt64_t>(p.altitudeASF().value()) : std::nullopt;
-    case ElevationFrame::ALTITUDE_GEODETIC:
-      return p.altitudeGeodetic().has_value() ? std::optional<flt64_t>(p.altitudeGeodetic().value()) : std::nullopt;
-    default:
-      return std::nullopt;
-  }
-}
+//! \brief How much heading change one curvature-preview window may span. It bounds both the
+//! feedforward's preview horizon and the 2*pi branch ambiguity in meanPathCurvature, which unwraps
+//! a theta difference and is therefore only sign-correct below a half turn.
+static constexpr flt64_t kCurvaturePreviewTurnRad = 0.25;
 
 //! \brief Capture-gate half-width for a waypoint (its position tolerance or the default).
 static flt64_t gateHalfWidthM(const GlobalWaypointType& wp, const PlannerParams& params) {
@@ -67,9 +55,13 @@ DubinsPathPlanner::Leg::Leg(std::vector<DubinsPath> chain, flt64_t runway, flt64
     : paths(std::move(chain)), runwayM(runway), endAzimuthRad(endAz) {
   pathStartM.reserve(paths.size());
   dubinsLengthM = 0.0;
+  minTurnRadiusM = std::numeric_limits<flt64_t>::infinity();
   for (const DubinsPath& p : paths) {
     pathStartM.push_back(dubinsLengthM);
     dubinsLengthM += p.lengthM();
+    if (p.rhoM() > 0.0) {
+      minTurnRadiusM = std::min(minTurnRadiusM, p.rhoM());
+    }
   }
   lengthM = dubinsLengthM + runwayM;
 }
@@ -80,6 +72,20 @@ Dubins2DPose DubinsPathPlanner::Leg::sampleChain(flt64_t sM) const {
     --i;
   }
   return paths[i].sample(sM - pathStartM[i]);
+}
+
+flt64_t DubinsPathPlanner::Leg::curvatureAtChain(flt64_t sM) const {
+  // Everything from the virtual goal onward is straight, and an empty chain has no curvature.
+  if (sM >= dubinsLengthM) {
+    return 0.0;
+  }
+  const flt64_t s = std::max(0.0, sM);
+  // The index walk mirrors sampleChain so the two agree on which path owns a given arc length.
+  std::size_t i = paths.size() - 1;
+  while (i > 0 && s < pathStartM[i]) {
+    --i;
+  }
+  return paths[i].curvatureAt(s - pathStartM[i]);
 }
 
 std::string DubinsPathPlanner::Leg::word() const {
@@ -109,6 +115,22 @@ Dubins2DPose DubinsPathPlanner::sampleExtended(const Leg& leg, flt64_t sM) {
   end.x += over * std::cos(end.theta);
   end.y += over * std::sin(end.theta);
   return end;
+}
+
+flt64_t DubinsPathPlanner::meanPathCurvature(const Leg& leg, flt64_t sM, flt64_t windowM) {
+  // wrapPi below resolves the 2*pi branch differences that chained RRT* paths can carry in their
+  // absolute theta, which is only sign-correct while the window spans well under a half turn. The
+  // bound is enforced here rather than trusted from the caller, because the two live in different
+  // functions and a window that violates it drives the feedforward the wrong way.
+  const flt64_t safeWindowM = std::min(std::max(0.0, windowM), kCurvaturePreviewTurnRad * leg.minTurnRadiusM);
+  if (safeWindowM <= 1e-6) {
+    return -leg.curvatureAtChain(sM);  // math frame -> azimuth frame
+  }
+  // Derived from sampleExtended, so it agrees with the tracked geometry by construction and
+  // needs no special case for the runway, the fly-through extension, or a degenerate leg.
+  const flt64_t thetaStart = sampleExtended(leg, sM).theta;
+  const flt64_t thetaEnd = sampleExtended(leg, sM + safeWindowM).theta;
+  return -wrapPi(thetaEnd - thetaStart) / safeWindowM;
 }
 
 bool DubinsPathPlanner::legClear(const Leg& leg, flt64_t fromS) const {
@@ -262,7 +284,7 @@ void DubinsPathPlanner::plan(const std::vector<GlobalWaypointType>& waypoints, c
   waypoints_ = waypoints;
   params_ = params;
   params_.sampleStepM = std::max(0.5, params_.sampleStepM);
-  xteCtl_.configure(params_.xte);
+  tracker_.configure(params_.tracker);
   missCounts_.assign(waypoints_.size(), 0);
   targetIndex_ = 0;
   routeComplete_ = waypoints_.empty();
@@ -270,7 +292,8 @@ void DubinsPathPlanner::plan(const std::vector<GlobalWaypointType>& waypoints, c
   replanCount_ = 0;
   hasLastPos_ = false;
   legProgressS_ = 0.0;
-  xteCtl_.reset();
+  tracker_.resetLeg();
+  previewCapLogged_ = false;
   lastGateAlongM_.reset();
   elevApproachBudget_.reset();
   elevApproachesUsed_ = 0;
@@ -356,7 +379,7 @@ bool DubinsPathPlanner::replanCurrentLegFrom(const GlobalPoseReportType& pose) {
     return false;
   }
   legProgressS_ = 0.0;
-  xteCtl_.reset();
+  tracker_.resetLeg();
   lastGateAlongM_.reset();
   elevApproachBudget_.reset();
   elevApproachesUsed_ = 0;
@@ -368,11 +391,20 @@ bool DubinsPathPlanner::replanCurrentLegFrom(const GlobalPoseReportType& pose) {
 
 std::vector<std::pair<flt64_t, flt64_t>> DubinsPathPlanner::previewRoute(flt64_t stepM) const {
   std::vector<std::pair<flt64_t, flt64_t>> out;
+  for (const PreviewSample& sample : previewRouteDetailed(stepM)) {
+    out.emplace_back(sample.latDeg, sample.lonDeg);
+  }
+  return out;
+}
+
+std::vector<PreviewSample> DubinsPathPlanner::previewRouteDetailed(flt64_t stepM) const {
+  std::vector<PreviewSample> out;
   if (waypoints_.empty()) {
     return out;
   }
   const flt64_t step = std::max(0.5, stepM);
   Dubins2DPose legStart = planStartPose_;
+  flt64_t routeS = 0.0;
   for (std::size_t i = 0; i < waypoints_.size(); i++) {
     const std::optional<Leg> built = buildLeg(legStart, i);
     if (!built.has_value()) {
@@ -380,13 +412,18 @@ std::vector<std::pair<flt64_t, flt64_t>> DubinsPathPlanner::previewRoute(flt64_t
     }
     const Leg& leg = built.value();
     for (flt64_t s = 0.0; s <= leg.lengthM + step * 0.5; s += step) {
-      const Dubins2DPose p = sampleExtended(leg, std::min(s, leg.lengthM));
-      flt64_t lat = 0.0;
-      flt64_t lon = 0.0;
+      const flt64_t legS = std::min(s, leg.lengthM);
+      const Dubins2DPose p = sampleExtended(leg, legS);
+      PreviewSample sample;
       flt64_t h = 0.0;
-      localFrame_.Reverse(p.x, p.y, 0.0, lat, lon, h);
-      out.emplace_back(lat, lon);
+      localFrame_.Reverse(p.x, p.y, 0.0, sample.latDeg, sample.lonDeg, h);
+      sample.arcLengthM = routeS + legS;
+      sample.curvatureMathRadPerM = leg.curvatureAtChain(legS);
+      sample.azimuthRad = mathToAz(p.theta);
+      sample.legIndex = static_cast<int32_t>(i);
+      out.push_back(sample);
     }
+    routeS += leg.lengthM;
     legStart = Dubins2DPose{wpX_[i], wpY_[i], azToMath(leg.endAzimuthRad)};
   }
   return out;
@@ -406,15 +443,20 @@ CaptureResult DubinsPathPlanner::evaluateCapture(const GlobalPoseReportType& pos
   if (wp.elevation().has_value()) {
     const std::optional<ElevationValue> el = tolerance::extractElevation(wp.elevation().value());
     if (el.has_value()) {
-      const std::optional<flt64_t> cur = poseElevation(pose, el->frame);
+      const std::optional<flt64_t> cur = elevation::poseElevation(pose, el->frame);
+      result.elevationEvaluable = cur.has_value() && std::isfinite(cur.value());
       result.elevationAchieved =
-          cur.has_value() && tolerance::elevationAchieved(el.value(), cur.value(), params_.elevCaptureM);
+          result.elevationEvaluable && tolerance::elevationAchieved(el.value(), cur.value(), params_.elevCaptureM);
     } else {
       result.elevationAchieved = false;
     }
   }
 
   const bool attitudeOk = !result.attitudeAchieved.has_value() || result.attitudeAchieved.value();
+  // An unevaluable elevation deliberately still gates capture: completing a depth-required
+  // waypoint whose depth was never measured is a false success reported over UMAA. A transient
+  // dropout is absorbed by the miss budget instead - the route only fails once it is exhausted,
+  // which is the same rule a vehicle that simply cannot make depth already meets.
   result.captured =
       result.positionAchieved && attitudeOk && (result.elevationAchieved || !params_.elevationCountsAsMiss);
   return result;
@@ -426,7 +468,7 @@ void DubinsPathPlanner::advanceToNextWaypoint() {
   const flt64_t fromY = wpY_[targetIndex_];
   targetIndex_++;
   legProgressS_ = 0.0;
-  xteCtl_.reset();
+  tracker_.resetLeg();
   lastGateAlongM_.reset();
   elevApproachBudget_.reset();
   elevApproachesUsed_ = 0;
@@ -478,7 +520,7 @@ void DubinsPathPlanner::registerMiss(const Dubins2DPose& current) {
     return;
   }
   legProgressS_ = 0.0;
-  xteCtl_.reset();
+  tracker_.resetLeg();
   lastGateAlongM_.reset();
   elevApproachBudget_.reset();
   elevApproachesUsed_ = 0;
@@ -502,7 +544,7 @@ void DubinsPathPlanner::spiralReplan(const Dubins2DPose& current) {
     return;
   }
   legProgressS_ = 0.0;
-  xteCtl_.reset();
+  tracker_.resetLeg();
   lastGateAlongM_.reset();
   UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner spiral pass "
                                          << elevApproachesUsed_ << "/" << elevApproachBudget_.value_or(0)
@@ -520,8 +562,8 @@ std::optional<flt64_t> DubinsPathPlanner::elevationErrorM(const GlobalPoseReport
   if (!el.has_value()) {
     return std::nullopt;
   }
-  const std::optional<flt64_t> cur = poseElevation(pose, el->frame);
-  if (!cur.has_value()) {
+  const std::optional<flt64_t> cur = elevation::poseElevation(pose, el->frame);
+  if (!cur.has_value() || !std::isfinite(cur.value())) {
     return std::nullopt;
   }
   return std::fabs(el->valueM - cur.value());
@@ -630,7 +672,7 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_
       return hold;
     }
     legProgressS_ = 0.0;
-    xteCtl_.reset();
+    tracker_.resetLeg();
     lastGateAlongM_.reset();
     elevApproachBudget_.reset();
   }
@@ -646,7 +688,8 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_
 
   // Advance the monotonic progress pointer by searching a bounded window around the previous
   // progress on a parametrization extended past the path end so progress keeps flowing through the gate.
-  flt64_t pathXteM = 0.0;  // signed cross-track error from the planned path (+ = starboard)
+  flt64_t pathXteM = 0.0;   // signed cross-track error from the planned path (+ = starboard)
+  flt64_t pathAzRad = 0.0;  // planned-path tangent azimuth at the projection point
   {
     const flt64_t back = std::min(legProgressS_, 2.0 * step);
     // The forward window must stay small relative to the leg: a tight loop leg (a spiral
@@ -666,24 +709,44 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_
     }
     legProgressS_ = bestS;
     const Dubins2DPose closest = sampleExtended(leg, bestS);
+    pathAzRad = mathToAz(closest.theta);
     const flt64_t tx = std::cos(closest.theta);
     const flt64_t ty = std::sin(closest.theta);
     // Starboard-positive lateral offset from the path tangent.
     pathXteM = ty * (xE - closest.x) - tx * (yN - closest.y);
   }
 
-  // Path-frame tracking law: command the planned-path tangent (sampled ~1 s ahead of the
-  // closest point as phase lead for the rate-limited heading loop) plus a cross-track
-  // correction atan(xte / turnRadius) that converges back onto the path within roughly one
-  // turn radius without saturating the vehicle's turn authority.
+  // Path-frame tracking law: the planned-path tangent at the projection point, plus a curvature
+  // feedforward sized by the inner heading loop's time constant, plus a bounded cross-track
+  // correction. The feedforward is what lets the vehicle hold the planned arc: the platform
+  // accepts a heading rather than a turn rate, so an arc requires standing off the tangent by
+  // exactly the heading error the loop needs to produce that arc's turn rate.
   const flt64_t vMps = std::max(groundSpeedMps, 0.5);
-  const flt64_t tangentS = legProgressS_ + std::max(2.0 * step, params_.leadTimeS * vMps);
-  const Dubins2DPose tangentPoint = sampleExtended(leg, tangentS);
-  const flt64_t pathAz = mathToAz(tangentPoint.theta);
-  const flt64_t correction = xteCtl_.correction(pathXteM, params_.turnRadiusM, dtS);
+  // Preview curvature by the loop's own time constant so the feedforward arrives with the arc
+  // rather than one time constant behind it. The cap is floored because PlannerParams is a public
+  // aggregate and std::clamp with hi < lo is undefined.
+  const flt64_t previewCapM = std::max(0.0, kCurvaturePreviewTurnRad * params_.turnRadiusM);
+  const flt64_t previewWantedM = vMps * params_.tracker.headingLoopTauS;
+  const flt64_t previewM = std::clamp(previewWantedM, 0.0, previewCapM);
+  if (previewWantedM > previewCapM && !previewCapLogged_) {
+    previewCapLogged_ = true;
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Curvature preview capped at "
+                                           << previewCapM << " m but the loop time constant asks for " << previewWantedM
+                                           << " m, so the feedforward is previewing less than one time "
+                                              "constant ahead; raise planner.turn_radius_margin or lower "
+                                              "planner.tracker.heading_loop_tau_s")
+  }
+
+  PathTracker::Inputs trackerIn;
+  trackerIn.pathAzimuthRad = pathAzRad;
+  trackerIn.pathCurvatureAzRadPerM = meanPathCurvature(leg, legProgressS_, previewM);
+  trackerIn.crossTrackErrorM = pathXteM;
+  trackerIn.groundSpeedMps = groundSpeedMps;
+  trackerIn.dtS = dtS;
+  const PathTracker::Output tracked = tracker_.update(trackerIn);
 
   ControlVector cv;
-  cv.headingRad = wrapPi(pathAz - correction);
+  cv.headingRad = tracked.headingRad;
   cv.speedMps = waypointSpeedMps(wp);
   if (wp.elevation().has_value()) {
     const std::optional<ElevationValue> el = tolerance::extractElevation(wp.elevation().value());
@@ -692,7 +755,12 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_
       cv.elevationFrame = el->frame;
     }
   }
-  lastVector_ = cv;
+  // Only cache a usable vector: this becomes the route-complete/failed hold, and a non-finite
+  // heading there is refused by the brain's finiteness screen, which would leave the vehicle
+  // driving on its previous setpoint instead of stopping.
+  if (std::isfinite(cv.headingRad)) {
+    lastVector_ = cv;
+  }
 
   // Capture gate: a segment of half-width gateHalfM through the waypoint, perpendicular to
   // the arrival heading.
@@ -705,6 +773,16 @@ ControlVector DubinsPathPlanner::update(const GlobalPoseReportType& pose, flt64_
 
   // Progress reporting.
   const CaptureResult cap = evaluateCapture(pose, gateLateralM);
+  if (!cap.elevationEvaluable && !elevUnevaluableLogged_) {
+    elevUnevaluableLogged_ = true;
+    UMAA_LOG_WARN(util::SYSTEM_LOGGER, "DubinsPathPlanner waypoint "
+                                           << targetIndex_
+                                           << " elevation cannot be evaluated (the pose carries no value in the "
+                                              "commanded frame); gate crossings will spend the miss budget")
+  } else if (cap.elevationEvaluable && elevUnevaluableLogged_) {
+    elevUnevaluableLogged_ = false;
+    UMAA_LOG_INFO(util::SYSTEM_LOGGER, "DubinsPathPlanner waypoint elevation is evaluable again")
+  }
   progress_.distanceToWaypointM = dist;
   progress_.positionAchieved = dist <= gateHalfM;
   progress_.attitudeAchieved = cap.attitudeAchieved;

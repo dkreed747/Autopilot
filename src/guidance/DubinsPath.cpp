@@ -157,6 +157,22 @@ static Dubins2DPose advance(const Dubins2DPose& from, SegType type, flt64_t sM, 
   return out;
 }
 
+//! \brief Signed curvature of one segment type, math convention (LEFT positive).
+static flt64_t segmentCurvature(SegType type, flt64_t rho) {
+  if (rho <= 0.0) {
+    return 0.0;
+  }
+  switch (type) {
+    case SegType::LEFT:
+      return 1.0 / rho;
+    case SegType::RIGHT:
+      return -1.0 / rho;
+    case SegType::STRAIGHT:
+      break;
+  }
+  return 0.0;
+}
+
 std::optional<DubinsPath> DubinsPath::solve(const Dubins2DPose& start, const Dubins2DPose& goal, flt64_t rhoM) {
   if (!std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(start.theta) || !std::isfinite(goal.x) ||
       !std::isfinite(goal.y) || !std::isfinite(goal.theta) || !std::isfinite(rhoM)) {
@@ -174,7 +190,8 @@ std::optional<DubinsPath> DubinsPath::solve(const Dubins2DPose& start, const Dub
   // cannot be honored without a turning circle).
   constexpr flt64_t kMinRho = 1e-3;
   if (rhoM < kMinRho) {
-    path.rho_ = 1.0;
+    // No turning circle exists, so rho_ stays 0 rather than carrying a sentinel radius.
+    path.rho_ = 0.0;
     path.start_.theta = std::atan2(dy, dx);
     path.types_ = {SegType::STRAIGHT, SegType::STRAIGHT, SegType::STRAIGHT};
     path.lengths_ = {dist, 0.0, 0.0};
@@ -227,6 +244,20 @@ Dubins2DPose DubinsPath::sample(flt64_t sM) const {
     s -= segLen;
   }
   return pose;
+}
+
+flt64_t DubinsPath::curvatureAt(flt64_t sM) const {
+  // The segment walk mirrors sample() exactly so the two can never disagree about which
+  // segment owns a given arc length.
+  flt64_t s = std::clamp(sM, 0.0, lengthM());
+  for (std::size_t i = 0; i < 3; i++) {
+    const flt64_t segLen = lengths_[i];
+    if (s <= segLen) {
+      return segmentCurvature(types_[i], rho_);
+    }
+    s -= segLen;
+  }
+  return segmentCurvature(types_[2], rho_);
 }
 
 std::array<DubinsSegment, 3> DubinsPath::segments() const {

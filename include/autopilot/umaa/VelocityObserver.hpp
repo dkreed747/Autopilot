@@ -2,7 +2,9 @@
 #define AUTOPILOT_UMAA_VELOCITYOBSERVER_HPP_
 
 #include <UMAA/SA/VelocityStatus/VelocityReportType.hpp>
+#include <cmath>
 
+#include "Logger.h"
 #include "Observer.h"
 #include "autopilot/core/NavState.hpp"
 
@@ -13,7 +15,15 @@ class VelocityObserver : public arlcore::Observer<UMAA::SA::VelocityStatus::Velo
  public:
   explicit VelocityObserver(NavState* nav) : nav_(nav) {}
 
-  void update(const UMAA::SA::VelocityStatus::VelocityReportType& report) override { nav_->setVelocity(report); }
+  //! Screens the yaw rate before storing: a non-finite sample would otherwise replace a good
+  //! report and refresh its timestamp, making a bad source look fresh to the tracker.
+  void update(const UMAA::SA::VelocityStatus::VelocityReportType& report) override {
+    if (!std::isfinite(report.attitudeRate().yawRate())) {
+      UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Dropping Velocity report with a non-finite yaw rate")
+      return;
+    }
+    nav_->setVelocity(report);
+  }
 
  private:
   NavState* nav_;

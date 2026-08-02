@@ -24,6 +24,12 @@ target_link_libraries(mission-tools PUBLIC autopilot::core)
 add_executable(mission_runner mission_runner.cpp)
 target_link_libraries(mission_runner PRIVATE mission-tools)
 
+# Heading probe: identifies the platform's inner turn loop (K, omega_max, e_sat, tau) from
+# commanded-heading steps over the UMAA Global Vector control service. The tracker's curvature
+# feedforward is sized from its output, so this runs before tuning.
+add_executable(heading_probe heading_probe.cpp)
+target_link_libraries(heading_probe PRIVATE mission-tools)
+
 # Mission console: live monitoring + mission-command web GUI (REST/SSE bridge
 # to DDS), serving the vanilla-JS app in tools/web via the vendored httplib.
 add_executable(mission_console mission_console.cpp)
@@ -49,5 +55,5 @@ install(TARGETS mission_console
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime-console)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web/
   DESTINATION ${CMAKE_INSTALL_DATADIR}/autopilot/web COMPONENT runtime-console)
-install(TARGETS mission_runner
+install(TARGETS mission_runner heading_probe
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime-runner)

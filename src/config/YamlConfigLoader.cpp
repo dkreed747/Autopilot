@@ -6,6 +6,7 @@
 #include <string>
 
 #include "Logger.h"
+#include "autopilot/config/ConfigKeyRegistry.hpp"
 #include "autopilot/config/ConfigValidation.hpp"
 
 namespace arlcore::autopilot {
@@ -82,11 +83,6 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
     readScalar(opMode, "idle_revert_s", &out->operationalMode.idleRevertS);
 
     const YAML::Node arb = root["arbitration"];
-    if (arb && (arb["vector_priority"] || arb["waypoint_priority"])) {
-      UMAA_LOG_WARN(util::SYSTEM_LOGGER,
-                    "arbitration.vector_priority/waypoint_priority are obsolete; "
-                    "use arbitration.local / arbitration.remote blocks (defaults applied)")
-    }
     if (arb) {
       const YAML::Node local = arb["local"];
       readScalar(local, "vector_priority", &out->arbitration.local.vectorPriority);
@@ -125,13 +121,17 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
     readScalar(planner, "max_replans", &out->planner.maxReplans);
     readScalar(planner, "sample_step_m", &out->planner.sampleStepM);
     if (planner) {
+      const YAML::Node tracker = planner["tracker"];
+      readScalar(tracker, "heading_loop_tau_s", &out->planner.tracker.headingLoopTauS);
+      readScalar(tracker, "feedforward_limit_rad", &out->planner.tracker.feedforwardLimitRad);
+      readScalar(tracker, "cross_track_approach_rad", &out->planner.tracker.crossTrackApproachRad);
+      readScalar(tracker, "cross_track_gain_per_m", &out->planner.tracker.crossTrackGainPerM);
       const YAML::Node xte = planner["xte"];
       readScalar(xte, "kp_scale", &out->planner.xte.kpScale);
       readScalar(xte, "ki", &out->planner.xte.ki);
       readScalar(xte, "integrator_limit_rad", &out->planner.xte.integratorLimitRad);
       readScalar(xte, "integrator_gate_m", &out->planner.xte.integratorGateM);
       readScalar(xte, "correction_limit_rad", &out->planner.xte.correctionLimitRad);
-      readScalar(xte, "lead_time_s", &out->planner.xte.leadTimeS);
       const YAML::Node rrt = planner["rrt"];
       readScalar(rrt, "seed", &out->planner.rrt.seed);
       readScalar(rrt, "max_iterations", &out->planner.rrt.maxIterations);
@@ -147,6 +147,7 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
     readOptional(constraints, "min_speed_mps", &out->constraints.minSpeedMps);
     readOptional(constraints, "max_depth_m", &out->constraints.maxDepthM);
     readOptional(constraints, "min_depth_m", &out->constraints.minDepthM);
+    readOptional(constraints, "min_altitude_asf_m", &out->constraints.minAltitudeAsfM);
 
     const YAML::Node zones = root["zones"];
     readScalar(zones, "safety_margin_m", &out->zones.safetyMarginM);
@@ -201,6 +202,8 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
       readScalar(sim, "initial_longitude_deg", &out->simVehicle.initialLongitudeDeg);
       readScalar(sim, "initial_heading_rad", &out->simVehicle.initialHeadingRad);
       readScalar(sim, "accel_mps2", &out->simVehicle.accelMps2);
+      readScalar(sim, "heading_gain_rps_per_rad", &out->simVehicle.headingGainRpsPerRad);
+      readScalar(sim, "heading_lag_s", &out->simVehicle.headingLagS);
       readScalar(sim, "floor_depth_m", &out->simVehicle.floorDepthM);
       readScalar(sim, "current_east_mps", &out->simVehicle.currentEastMps);
       readScalar(sim, "current_north_mps", &out->simVehicle.currentNorthMps);
@@ -228,6 +231,7 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
       const YAML::Node uw = caps["underwater"];
       if (uw) {
         readScalar(uw, "enabled", &out->platformCapabilities.underwaterEnabled);
+        readScalar(uw, "reports_altitude_asf", &out->platformCapabilities.reportsAltitudeAsf);
         readCapabilityLimits(uw, &out->platformCapabilities.underwater);
       }
     }
@@ -239,6 +243,10 @@ bool YamlConfigLoader::load(const std::string& path, AutopilotConfig* out) {
     UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Invalid value in autopilot config '" << path << "': " << ex.what())
     return false;
   }
+
+  // Classify every key in the file before validating, so validation can report a stale or
+  // misspelled key by name instead of the loader silently ignoring it.
+  ConfigKeyRegistry::collect(path, &out->unknownKeys, &out->removedKeys);
 
   std::vector<std::string> errors;
   std::vector<std::string> warnings;

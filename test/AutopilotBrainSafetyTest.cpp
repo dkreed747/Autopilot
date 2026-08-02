@@ -76,11 +76,34 @@ static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType vectorCommand(
   return cmd;
 }
 
+//! \brief A vector command carrying an altitude-above-sea-floor elevation requirement.
+static UMAA::MO::GlobalVectorControl::GlobalVectorCommandType asfVectorCommand(flt64_t headingRad, flt64_t speedMps,
+                                                                               flt64_t asfM) {
+  UMAA::MO::GlobalVectorControl::GlobalVectorCommandType cmd = vectorCommand(headingRad, speedMps);
+  UMAA::Common::Measurement::ElevationRequirementVariantType elev;
+  elev.ElevationRequirementVariantTypeSubtypes().AltitudeASFRequirementVariantVariant(
+      UMAA::Common::Measurement::AltitudeASFRequirementVariantType());
+  elev.ElevationRequirementVariantTypeSubtypes().AltitudeASFRequirementVariantVariant().altitude().altitude(asfM);
+  cmd.elevation() = elev;
+  return cmd;
+}
+
 static UMAA::SA::GlobalPoseStatus::GlobalPoseReportType poseAt(flt64_t yawRad) {
   UMAA::SA::GlobalPoseStatus::GlobalPoseReportType pose;
   pose.position().geodeticLatitude(39.0);
   pose.position().geodeticLongitude(-76.5);
   pose.attitude().yaw().yaw(yawRad);
+  return pose;
+}
+
+//! \brief The same pose plus the vertical fields; both are needed for a seafloor reference.
+static UMAA::SA::GlobalPoseStatus::GlobalPoseReportType poseAtWithVertical(flt64_t yawRad, flt64_t depthM,
+                                                                           std::optional<flt64_t> asfM) {
+  UMAA::SA::GlobalPoseStatus::GlobalPoseReportType pose = poseAt(yawRad);
+  pose.depth() = depthM;
+  if (asfM.has_value()) {
+    pose.altitudeASF() = asfM.value();
+  }
   return pose;
 }
 
@@ -223,4 +246,125 @@ TEST_F(AutopilotBrainSafetyTest, StalePoseGuardSkipsIdleVehicle) {
 
   // THEN: nothing is commanded (there is nothing to hold against)
   EXPECT_FALSE(vehicle_.last.has_value());
+}
+
+TEST_F(AutopilotBrainSafetyTest, ANonFiniteControlVectorCommandsAStopRatherThanNothingAtAll) {
+  // GIVEN: a vehicle already driving on a normal vector command
+  nav_.setPose(poseAt(0.4));
+  brain_->setVectorSetpoint(vectorCommand(0.4, 3.0));
+  brain_->onNavUpdate();
+  ASSERT_TRUE(vehicle_.last.has_value());
+  ASSERT_DOUBLE_EQ(vehicle_.last->speedMps, 3.0);
+  const int32_t before = vehicle_.sendCount;
+
+  // WHEN: a poisoned command is set and a nav update runs
+  brain_->setVectorSetpoint(vectorCommand(std::nan(""), 3.0));
+  brain_->onNavUpdate();
+
+  // THEN: something is still sent, and it is a stop. Returning without sending would leave the
+  //       platform driving its previous 3 m/s setpoint indefinitely, turning a refusal into
+  //       "carry on". The nav-staleness hold cannot cover this: navigation is healthy here and it
+  //       is the command that is poisoned.
+  EXPECT_GT(vehicle_.sendCount, before);
+  ASSERT_TRUE(vehicle_.last.has_value());
+  EXPECT_TRUE(std::isfinite(vehicle_.last->headingRad));
+  EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 0.0);
+
+  // WHEN: a finite command arrives again
+  brain_->setVectorSetpoint(vectorCommand(0.4, 2.0));
+  brain_->onNavUpdate();
+
+  // THEN: normal actuation resumes; the hold is not a latch
+  EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 2.0);
+}
+
+TEST_F(AutopilotBrainSafetyTest, ANonFiniteVectorStillCannotActuateWhileManualIsEngaged) {
+  // GIVEN: MANUAL engaged and a poisoned command
+  nav_.setPose(poseAt(0.0));
+  vehicle_.manualEngaged = true;
+  brain_->setVectorSetpoint(vectorCommand(std::nan(""), 3.0));
+  const int32_t before = vehicle_.sendCount;
+
+  // WHEN: a nav update runs
+  brain_->onNavUpdate();
+
+  // THEN: nothing is sent. The substituted hold must not become a way for the autopilot to
+  //       actuate around a hardware override.
+  EXPECT_EQ(vehicle_.sendCount, before);
+}
+
+TEST_F(AutopilotBrainSafetyTest, AsfSetpointIsClampedThroughTheLiveSeafloorReference) {
+  // GIVEN: a 20 m depth ceiling and a pose that puts the sea floor 60 m down
+  arlcore::autopilot::ConstraintSnapshot snapshot;
+  snapshot.revision = 1;
+  snapshot.maxDepthM = 20.0;
+  source_.set(snapshot);
+  brain_->setConstraintSource(&source_);
+  nav_.setPose(poseAtWithVertical(0.0, 10.0, 50.0));
+
+  // WHEN: an altitude 5 m off the bottom is commanded, which is 55 m down
+  brain_->setVectorSetpoint(asfVectorCommand(1.0, 3.0, 5.0));
+  brain_->onNavUpdate();
+
+  // THEN: the setpoint reaches the vehicle raised to the altitude that sits on the depth ceiling,
+  // still in the frame it was commanded in
+  ASSERT_TRUE(vehicle_.last.has_value());
+  ASSERT_TRUE(vehicle_.last->elevationM.has_value());
+  EXPECT_DOUBLE_EQ(vehicle_.last->elevationM.value(), 40.0);
+  EXPECT_EQ(vehicle_.last->elevationFrame, arlcore::autopilot::ElevationFrame::ALTITUDE_ASF);
+}
+
+TEST_F(AutopilotBrainSafetyTest, AsfSetpointIsWithheldWhenTheSeafloorReferenceIsGone) {
+  // GIVEN: the same depth ceiling but a pose carrying no altitude above the sea floor
+  arlcore::autopilot::ConstraintSnapshot snapshot;
+  snapshot.revision = 1;
+  snapshot.maxDepthM = 20.0;
+  source_.set(snapshot);
+  brain_->setConstraintSource(&source_);
+  nav_.setPose(poseAtWithVertical(0.0, 10.0, std::nullopt));
+
+  // WHEN: an ASF elevation is commanded
+  brain_->setVectorSetpoint(asfVectorCommand(1.0, 3.0, 5.0));
+  brain_->onNavUpdate();
+
+  // THEN: the elevation demand is withheld rather than sent unbounded, and heading/speed still
+  // drive - the platform holds the depth it is at
+  ASSERT_TRUE(vehicle_.last.has_value());
+  EXPECT_FALSE(vehicle_.last->elevationM.has_value());
+  EXPECT_DOUBLE_EQ(vehicle_.last->speedMps, 3.0);
+  EXPECT_DOUBLE_EQ(vehicle_.last->headingRad, 1.0);
+}
+
+TEST_F(AutopilotBrainSafetyTest, LosingTheBottomLockDoesNotFailTheVectorCommand) {
+  // GIVEN: hard tolerances with a very short failure delay, and a command already fully achieved
+  // over a sea floor 50 m down
+  arlcore::autopilot::AutopilotConfig config = testConfig();
+  config.vectorTolerances.hard = true;
+  config.vectorTolerances.failureDelayS = 0.05;
+  arlcore::autopilot::AutopilotBrain brain(&nav_, &vehicle_, config);
+  nav_.setPose(poseAtWithVertical(0.0, 20.0, 30.0));
+  brain.setVectorSetpoint(asfVectorCommand(0.0, 0.0, 30.0));
+  brain.onNavUpdate();
+  ASSERT_TRUE(brain.vectorProgress().elevationAchieved);
+
+  // WHEN: the altimeter drops out for longer than the failure delay
+  nav_.setPose(poseAtWithVertical(0.0, 20.0, std::nullopt));
+  brain.onNavUpdate();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  brain.onNavUpdate();
+
+  // THEN: the elevation reads as not achieved, honestly, but the command is not failed for
+  // something the autopilot cannot judge
+  EXPECT_FALSE(brain.vectorProgress().elevationAchieved);
+  EXPECT_FALSE(brain.vectorProgress().hardViolation);
+
+  // WHEN: the altimeter returns but reports an altitude far from the commanded one
+  nav_.setPose(poseAtWithVertical(0.0, 45.0, 5.0));
+  brain.onNavUpdate();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  brain.onNavUpdate();
+
+  // THEN: an evaluable violation does fail the command, so the suspension above is not a blanket
+  // exemption from the hard tolerance
+  EXPECT_TRUE(brain.vectorProgress().hardViolation);
 }

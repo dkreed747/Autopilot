@@ -35,7 +35,7 @@ Rules below are binding. **MUST**/**NEVER** are absolute. **PREFER** means: do t
 - Extensions MUST be `.hpp` and `.cpp`.
 - One class per file; filename MUST match the class name. Extra types are allowed only when tightly coupled to it (RAII handles, internal config structs).
 - Pure virtual interfaces live in `I<InterfaceName>.hpp`.
-- Headers live under `include/autopilot/<group>/` (groups: core, config, guidance, safety, modes, umaa, vehicle); sources mirror the layout under `src/<group>/`. Include style: `#include "autopilot/<group>/Name.hpp"`. Tools use `tools/clients/` and `tools/monitors/` with `#include "clients/Name.hpp"`.
+- Headers live under `include/autopilot/<group>/` (groups: core, config, guidance, safety, modes, umaa, vehicle); sources mirror the layout under `src/<group>/`. Include style: `#include "autopilot/<group>/Name.hpp"`. Tools use `tools/clients/`, `tools/monitors/` and `tools/analysis/` with `#include "clients/Name.hpp"`.
 - Include guards: `AUTOPILOT_<GROUP>_<NAME>_HPP_` (tools: `AUTOPILOT_TOOLS_<SUB>_<NAME>_HPP_`).
 - Do NOT add copyright headers; the standard header text is pending and will be applied in a dedicated pass.
 

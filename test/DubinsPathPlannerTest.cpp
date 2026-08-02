@@ -30,6 +30,7 @@ struct PlannerSimVehicle {
   flt64_t driftEastMps = 0.0;  // uniform lateral current the controller cannot see
   flt64_t driftNorthMps = 0.0;
   std::optional<flt64_t> depthM;
+  bool reportsAsf = true;  // false models a platform with no altimeter, or a lost bottom lock
 
   GlobalPoseReportType pose() const {
     GlobalPoseReportType p;
@@ -42,7 +43,9 @@ struct PlannerSimVehicle {
     p.attitude().yaw().yaw(yawRad);
     if (depthM.has_value()) {
       p.depth() = depthM.value();
-      p.altitudeASF() = std::max(0.0, floorDepthM - depthM.value());
+      if (reportsAsf) {
+        p.altitudeASF() = std::max(0.0, floorDepthM - depthM.value());
+      }
     }
     return p;
   }
@@ -413,6 +416,32 @@ TEST(DubinsPathPlannerTest, AltitudeAboveSeaFloorWaypointCompletes) {
   EXPECT_NEAR(vehicle.depthM.value(), 45.0, 1.5);
 }
 
+TEST(DubinsPathPlannerTest, AnUnmeasurableAltitudeNeverCompletesTheWaypoint) {
+  // GIVEN: the same reachable ASF waypoint, but a vehicle publishing no altitude above the sea
+  // floor - it is sitting at the commanded altitude and cannot prove it
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  vehicle.depthM = 45.0;  // floor at 60 -> exactly the commanded 15 m ASF
+  vehicle.floorDepthM = 60.0;
+  vehicle.reportsAsf = false;
+  arlcore::autopilot::PlannerParams params = testParams();
+  params.maxDepthRateMps = 0.5;
+  params.maxMissesPerWaypoint = 2;
+  params.maxReplans = 4;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 300.0, 3.0, std::nullopt, std::nullopt, 15.0)};
+  planner.plan(route, vehicle.pose(), params);
+
+  // WHEN: the vehicle flies until the miss budget is exhausted
+  runMission(&planner, &vehicle, 20000, 0.1);
+
+  // THEN: the route fails rather than reporting a capture it could not verify. A transient
+  // dropout is absorbed by the miss budget; a permanent one is a failure the operator can see,
+  // which beats completing a depth-required waypoint on an unmeasured depth.
+  EXPECT_FALSE(planner.routeComplete());
+  EXPECT_TRUE(planner.failed());
+  EXPECT_FALSE(planner.progress().elevationAchieved);
+}
+
 TEST(DubinsPathPlannerTest, CrossTrackErrorIsJudgedAgainstThePlannedPath) {
   // GIVEN: a vehicle facing east so the planned path begins with a turn
   arlcore::autopilot::DubinsPathPlanner planner;
@@ -488,7 +517,7 @@ TEST(DubinsPathPlannerTest, PiNullsDriftWithoutOscillation) {
   vehicle.driftEastMps = 0.3;
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 600.0, 3.0)};
   arlcore::autopilot::PlannerParams params = testParams();
-  params.xte.ki = 0.05;
+  params.tracker.xte.ki = 0.05;
   planner.plan(route, vehicle.pose(), params);
 
   // WHEN: the vehicle flies the leg while the settled cross-track error is recorded
@@ -518,7 +547,7 @@ TEST(DubinsPathPlannerTest, IntegratorResetsOnReplan) {
   vehicle.driftEastMps = 0.3;
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 600.0, 3.0)};
   arlcore::autopilot::PlannerParams params = testParams();
-  params.xte.ki = 0.05;
+  params.tracker.xte.ki = 0.05;
   planner.plan(route, vehicle.pose(), params);
   for (int32_t i = 0; i < 200; i++) {
     const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
@@ -539,7 +568,7 @@ TEST(DubinsPathPlannerTest, IntegratorStaysFrozenDuringGrossCapture) {
   PlannerSimVehicle vehicle;
   std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 600.0, 3.0)};
   arlcore::autopilot::PlannerParams params = testParams();
-  params.xte.ki = 0.05;
+  params.tracker.xte.ki = 0.05;
   planner.plan(route, vehicle.pose(), params);
   vehicle.xE = 100.0;  // 100 m starboard of the leg, far outside the 5 m integrator gate
 
@@ -548,7 +577,7 @@ TEST(DubinsPathPlannerTest, IntegratorStaysFrozenDuringGrossCapture) {
     const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), vehicle.speedMps, 0.5);
     vehicle.step(cv, 0.5);
     if (planner.progress().crossTrackErrorM.has_value() &&
-        std::fabs(planner.progress().crossTrackErrorM.value()) > params.xte.integratorGateM) {
+        std::fabs(planner.progress().crossTrackErrorM.value()) > params.tracker.xte.integratorGateM) {
       // THEN: the integrator does not wind up on capture error
       EXPECT_EQ(planner.xteIntegratorRad(), 0.0);
     }
@@ -571,6 +600,137 @@ TEST(DubinsPathPlannerTest, ColinearArrivalYawPlansDirectLeg) {
 
   // THEN: the leg is essentially the straight-line distance, not a looping detour
   EXPECT_FALSE(planner.failed());
-  EXPECT_LT(planner.progress().distanceRemainingM, 150.0)
-      << "leg=" << planner.progress().distanceRemainingM;
+  EXPECT_LT(planner.progress().distanceRemainingM, 150.0) << "leg=" << planner.progress().distanceRemainingM;
+}
+
+TEST(DubinsPathPlannerTest, PreviewCurvatureAgreesWithTheSampledTangent) {
+  // GIVEN: a planned lawnmower route whose lane spacing forces genuine arcs
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 200.0, 3.0), makeWaypoint(20.0, 200.0, 3.0),
+                                           makeWaypoint(20.0, 0.0, 3.0), makeWaypoint(40.0, 0.0, 3.0)};
+  planner.plan(route, vehicle.pose(), testParams());
+
+  // WHEN: the route is previewed finely and each sample's curvature is compared against the
+  //       azimuth change to the next sample (azimuth = pi/2 - theta, so d(az)/ds = -curvature)
+  const std::vector<arlcore::autopilot::PreviewSample> preview = planner.previewRouteDetailed(0.25);
+  ASSERT_GT(preview.size(), 100u);
+  int32_t curvedChecked = 0;
+  int32_t straightChecked = 0;
+  for (std::size_t k = 0; k + 1 < preview.size(); k++) {
+    const arlcore::autopilot::PreviewSample& a = preview[k];
+    const arlcore::autopilot::PreviewSample& b = preview[k + 1];
+    const flt64_t ds = b.arcLengthM - a.arcLengthM;
+    // Skip leg boundaries and segment transitions, where curvature steps by construction.
+    if (a.legIndex != b.legIndex || ds <= 0.0 || a.curvatureMathRadPerM != b.curvatureMathRadPerM) {
+      continue;
+    }
+    // THEN: the tangent turns at exactly the rate the reported curvature claims
+    const flt64_t azChange = arlcore::autopilot::wrapPi(b.azimuthRad - a.azimuthRad);
+    EXPECT_NEAR(azChange, -a.curvatureMathRadPerM * ds, 1e-6) << "k=" << k << " kappa=" << a.curvatureMathRadPerM;
+    curvedChecked += a.curvatureMathRadPerM != 0.0 ? 1 : 0;
+    straightChecked += a.curvatureMathRadPerM == 0.0 ? 1 : 0;
+  }
+  // THEN: both arcs and straights were actually exercised
+  EXPECT_GT(curvedChecked, 20);
+  EXPECT_GT(straightChecked, 20);
+}
+
+TEST(DubinsPathPlannerTest, PreviewCurvatureIsZeroOnTheFinalApproachRunway) {
+  // GIVEN: a planned route whose legs each end in a straight final-approach runway
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(60.0, 120.0, 3.0, 0.0), makeWaypoint(-40.0, 200.0, 3.0, 0.0)};
+  planner.plan(route, vehicle.pose(), testParams());
+
+  // WHEN: the last preview sample of every leg is inspected
+  const std::vector<arlcore::autopilot::PreviewSample> preview = planner.previewRouteDetailed(0.5);
+  ASSERT_FALSE(preview.empty());
+  int32_t legEnds = 0;
+  for (std::size_t k = 0; k < preview.size(); k++) {
+    const bool lastOfLeg = k + 1 == preview.size() || preview[k + 1].legIndex != preview[k].legIndex;
+    if (!lastOfLeg) {
+      continue;
+    }
+    // THEN: it carries no curvature, so the feedforward is not biased on the runway
+    EXPECT_DOUBLE_EQ(preview[k].curvatureMathRadPerM, 0.0) << "leg=" << preview[k].legIndex;
+    legEnds++;
+  }
+  EXPECT_EQ(legEnds, 2);
+}
+
+TEST(DubinsPathPlannerTest, PreviewRouteMatchesTheDetailedPositions) {
+  // GIVEN: a planned multi-waypoint route
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 150.0, 3.0), makeWaypoint(120.0, 150.0, 3.0)};
+  planner.plan(route, vehicle.pose(), testParams());
+
+  // WHEN: both preview forms are sampled at the same step
+  const std::vector<std::pair<flt64_t, flt64_t>> plain = planner.previewRoute(2.0);
+  const std::vector<arlcore::autopilot::PreviewSample> detailed = planner.previewRouteDetailed(2.0);
+
+  // THEN: the legacy form is exactly the detailed positions, so existing callers are unchanged
+  ASSERT_EQ(plain.size(), detailed.size());
+  for (std::size_t k = 0; k < plain.size(); k++) {
+    EXPECT_DOUBLE_EQ(plain[k].first, detailed[k].latDeg) << "k=" << k;
+    EXPECT_DOUBLE_EQ(plain[k].second, detailed[k].lonDeg) << "k=" << k;
+  }
+}
+
+TEST(DubinsPathPlannerTest, ACorruptPoseNeitherSteersNorPoisonsTheRouteCompleteHold) {
+  // GIVEN: a planned route flown to completion with one NaN-latitude pose injected part way
+  //        through. Note what such a pose actually does: the projection goes NaN, so every
+  //        candidate distance in the progress search compares false and the progress pointer holds,
+  //        leaving the path tangent finite from the last good sample. Only the cross-track error
+  //        goes NaN, and the tracking law screens that term. So a corrupt fix degrades to
+  //        tangent-following rather than producing a non-finite command.
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 60.0, 3.0)};
+  planner.plan(route, vehicle.pose(), testParams());
+
+  bool injected = false;
+  for (int32_t i = 0; i < 4000 && !planner.routeComplete() && !planner.failed(); i++) {
+    if (i == 40 && !injected) {
+      injected = true;
+      GlobalPoseReportType bad = vehicle.pose();
+      bad.position().geodeticLatitude(std::nan(""));
+      const arlcore::autopilot::ControlVector degraded = planner.update(bad, vehicle.speedMps, 0.1);
+      EXPECT_TRUE(std::isfinite(degraded.headingRad)) << "a corrupt fix must degrade, not command NaN";
+      continue;
+    }
+    vehicle.step(planner.update(vehicle.pose(), vehicle.speedMps, 0.1), 0.1);
+  }
+  ASSERT_TRUE(injected);
+  ASSERT_TRUE(planner.routeComplete());
+
+  // WHEN: the route-complete hold vector is requested afterwards
+  const arlcore::autopilot::ControlVector hold = planner.update(vehicle.pose(), vehicle.speedMps, 0.1);
+
+  // THEN: it is finite and commands a stop. This is what the cache guard in update() protects:
+  //       a non-finite heading reaching lastVector_ becomes the hold, the brain's finiteness
+  //       screen then refuses to send anything at all, and the vehicle keeps driving on its
+  //       previous setpoint instead of stopping at the end of the route. No pose can reach that
+  //       state today, so the guard is defence in depth rather than a fix for a live path.
+  EXPECT_TRUE(std::isfinite(hold.headingRad));
+  EXPECT_DOUBLE_EQ(hold.speedMps, 0.0);
+}
+
+TEST(DubinsPathPlannerTest, ANegativeTurnRadiusCannotInvertThePreviewClamp) {
+  // GIVEN: planner params carrying a negative turn radius. PlannerParamsFactory cannot produce
+  //        one, but PlannerParams is a public aggregate that tests and tools fill directly, and
+  //        std::clamp with hi < lo is undefined behaviour.
+  arlcore::autopilot::DubinsPathPlanner planner;
+  PlannerSimVehicle vehicle;
+  arlcore::autopilot::PlannerParams params = testParams();
+  params.turnRadiusM = -5.0;
+  std::vector<GlobalWaypointType> route = {makeWaypoint(0.0, 60.0, 3.0)};
+  planner.plan(route, vehicle.pose(), params);
+
+  // WHEN: a control cycle runs
+  const arlcore::autopilot::ControlVector cv = planner.update(vehicle.pose(), 3.0, 0.1);
+
+  // THEN: the command is finite: the preview cap is floored at zero rather than inverting
+  EXPECT_TRUE(std::isfinite(cv.headingRad));
 }

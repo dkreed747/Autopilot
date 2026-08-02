@@ -14,6 +14,7 @@
 #include "autopilot/safety/ConstraintTypes.hpp"
 #include "autopilot/safety/ISafetyGate.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
+#include "autopilot/umaa/ElevationAdmission.hpp"
 #include "autopilot/umaa/WaypointControlServiceProviderIo.hpp"
 
 namespace arlcore::autopilot {
@@ -34,9 +35,10 @@ class WaypointControlServiceProvider
                                  const ISafetyGate* safetyGate = nullptr, const ZoneMap* zoneMap = nullptr,
                                  ICommandModeGate* modeGate = nullptr);
 
-  //! \brief Static (config-time) depth ceiling: commands deeper than this are rejected at
-  //! validation instead of spiraling forever against the output clamp.
-  void setStaticDepthLimit(std::optional<flt64_t> maxDepthM) { staticMaxDepthM_ = maxDepthM; }
+  //! \brief Static (config-time) elevation limits: waypoints outside them are rejected at
+  //! validation instead of spiraling forever against the output clamp. Checked frame-natively
+  //! only - the floor under the vehicle now says nothing about the floor at a distant waypoint.
+  void setElevationAdmissionLimits(const ElevationAdmissionLimits& limits) { elevationLimits_ = limits; }
 
  protected:
   bool isCommandValid(const GlobalWaypointCommandType& cmd) override;
@@ -79,7 +81,7 @@ class WaypointControlServiceProvider
                                  GlobalWaypointCommandTypeWaypointsListElement>
       listReader_;
   flt64_t maxForwardSpeedMps_;
-  std::optional<flt64_t> staticMaxDepthM_;
+  ElevationAdmissionLimits elevationLimits_;
   // TODO(@user): audit long-run growth of the shared large-list reader's table when
   // foreign commanders publish lists that never bind to a session here.
   int32_t maxListWaitCycles_;

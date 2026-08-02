@@ -1,6 +1,7 @@
 #include "autopilot/safety/ConstraintSupervisor.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <utility>
 
@@ -11,6 +12,7 @@
 #include "UmaaUtils.h"
 #include "WaterZoneConditional.h"
 #include "autopilot/core/AutopilotBrain.hpp"
+#include "autopilot/guidance/ElevationUtils.hpp"
 
 namespace arlcore::autopilot {
 
@@ -40,6 +42,15 @@ static std::optional<ElevationBound> toElevationBound(const ElevationVariantType
     default:
       return std::nullopt;
   }
+}
+
+//! \brief Whether a geodetic point is usable as zone geometry. GeographicLib's LatFix returns NaN
+//! for an out-of-range latitude rather than throwing, and a NaN projection then propagates into a
+//! polygon whose containment test answers false and whose clearance is NaN, so the zone silently
+//! stops constraining anything. Screening at the boundary is the only place this is catchable.
+static bool zonePointUsable(const GeoPoint& p) {
+  return std::isfinite(p.latDeg) && std::isfinite(p.lonDeg) && p.latDeg >= -90.0 && p.latDeg <= 90.0 &&
+         p.lonDeg >= -180.0 && p.lonDeg <= 180.0;
 }
 
 //! \brief Convert a WaterZoneConditional into the app's zone record. Returns nullopt when the
@@ -73,8 +84,20 @@ static std::optional<ZoneRecord> convertWaterZone(const WaterZoneConditional& zo
     ZoneShape converted;
     if (shape.ShapeVariantTypeSubtypes()._d() == ShapeVariantTypeEnum::POLYGONVARIANT_D) {
       const auto& polygon = shape.ShapeVariantTypeSubtypes().PolygonVariantVariant();
+      bool usable = true;
       for (const auto& point : polygon.referencePoints()) {
-        converted.polygon.push_back(GeoPoint{point.geodeticLatitude(), point.geodeticLongitude()});
+        const GeoPoint vertex{point.geodeticLatitude(), point.geodeticLongitude()};
+        if (!zonePointUsable(vertex)) {
+          usable = false;
+          break;
+        }
+        converted.polygon.push_back(vertex);
+      }
+      if (!usable) {
+        UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Water zone " << record.conditionalId
+                                                          << " polygon has a non-finite or out-of-range vertex; "
+                                                             "shape rejected rather than partially applied")
+        continue;
       }
       if (converted.polygon.size() < 3) {
         UMAA_LOG_WARN(util::SYSTEM_LOGGER,
@@ -89,6 +112,14 @@ static std::optional<ZoneRecord> convertWaterZone(const WaterZoneConditional& zo
       converted_ellipse.semiMajorM = ellipse.semiMajorRadius();
       converted_ellipse.semiMinorM = ellipse.semiMinorRadius();
       converted_ellipse.orientationRad = ellipse.direction();
+      if (!zonePointUsable(converted_ellipse.center) || !std::isfinite(converted_ellipse.semiMajorM) ||
+          !std::isfinite(converted_ellipse.semiMinorM) || !std::isfinite(converted_ellipse.orientationRad) ||
+          converted_ellipse.semiMajorM <= 0.0 || converted_ellipse.semiMinorM <= 0.0) {
+        UMAA_LOG_ERROR(util::SYSTEM_LOGGER, "Water zone " << record.conditionalId
+                                                          << " ellipse has a non-finite or non-positive parameter; "
+                                                             "shape rejected rather than partially applied")
+        continue;
+      }
       converted.ellipse = converted_ellipse;
     } else {
       UMAA_LOG_WARN(util::SYSTEM_LOGGER,
@@ -240,15 +271,15 @@ void ConstraintSupervisor::updateSafety() {
     lastSafetyTick_ = now;
     return;
   }
+  const std::optional<std::chrono::steady_clock::time_point> lastTick = lastSafetyTick_;
   lastSafetyTick_ = now;
 
   const std::optional<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType> pose = nav_->pose();
   const GeoPoint at{pose.has_value() ? pose->position().geodeticLatitude() : 0.0,
                     pose.has_value() ? pose->position().geodeticLongitude() : 0.0};
-  const flt64_t depthM = (pose.has_value() && pose->depth().has_value()) ? pose->depth().value() : 0.0;
-  const std::optional<flt64_t> asfM = (pose.has_value() && pose->altitudeASF().has_value())
-                                          ? std::optional<flt64_t>(pose->altitudeASF().value())
-                                          : std::nullopt;
+  const DepthAsf vertical = pose.has_value() ? elevation::poseDepthAsf(pose.value()) : DepthAsf{};
+  const flt64_t depthM = vertical.depthM;
+  const std::optional<flt64_t> asfM = vertical.asfM;
 
   bool anyConfirmed = false;
   bool anyConfirmedZone = false;
@@ -272,12 +303,39 @@ void ConstraintSupervisor::updateSafety() {
         tracker.cls = ConstraintClass::ELEVATION;
       }
 
+      // A conditional that cannot be evaluated this tick (a zone whose elevation band needs an
+      // altitude the pose is not carrying, a speed conditional with no speed over ground) must
+      // hold its tracker AND keep contributing to the tick's aggregates. Skipping the aggregation
+      // below would make an already-confirmed violation read as satisfied, which starts the
+      // all-clear timer and drops the vehicle out of safe mode while it is still in the zone and
+      // the constraint is unverifiable. Its deadline is frozen the same way the stale-pose path
+      // above freezes every deadline: unverifiable time must not count against the grace period.
       const std::optional<bool> eval = conditional->evaluateConditional();
-      if (!eval.has_value()) {
-        continue;  // not evaluable this tick; hold state
+      const bool evaluable = eval.has_value();
+      if (!evaluable) {
+        if (tracker.confirmed && lastTick.has_value()) {
+          const auto frozen = now - lastTick.value();
+          tracker.confirmedAt += frozen;
+          if (tracker.compliantSince.has_value()) {
+            tracker.compliantSince.value() += frozen;
+          }
+        }
+        if (!tracker.unevaluableLogged) {
+          tracker.unevaluableLogged = true;
+          UMAA_LOG_WARN(util::SYSTEM_LOGGER, "Constraint " << conditional->getName() << " (" << id
+                                                           << ") cannot be evaluated; holding its state and "
+                                                              "freezing its grace deadline")
+        }
+      } else if (tracker.unevaluableLogged) {
+        tracker.unevaluableLogged = false;
+        UMAA_LOG_INFO(util::SYSTEM_LOGGER,
+                      "Constraint " << conditional->getName() << " (" << id << ") is evaluable again")
       }
-      const bool violated = !eval.value();
-      if (violated) {
+
+      const bool violated = evaluable && !eval.value();
+      if (!evaluable) {
+        // Fall through to the aggregation with the tracker untouched.
+      } else if (violated) {
         tracker.compliantSince.reset();
         if (!tracker.confirmed && ++tracker.rawViolatingTicks >= config_.safety.violationConfirmTicks) {
           tracker.confirmed = true;

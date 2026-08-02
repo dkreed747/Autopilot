@@ -12,9 +12,9 @@
 
 #include "InternalTypes.h"
 #include "autopilot/guidance/ControlVector.hpp"
-#include "autopilot/guidance/CrossTrackController.hpp"
 #include "autopilot/guidance/DubinsPath.hpp"
 #include "autopilot/guidance/DubinsRrtStar.hpp"
+#include "autopilot/guidance/PathTracker.hpp"
 #include "autopilot/guidance/ProgressTypes.hpp"
 #include "autopilot/safety/ZoneGeometry.hpp"
 #include "autopilot/safety/ZoneMap.hpp"
@@ -32,21 +32,37 @@ struct PlannerParams {
   flt64_t elevCaptureM = 1.0;        // default elevation capture tolerance
   int32_t maxMissesPerWaypoint = 3;  // misses before the route fails
   bool elevationCountsAsMiss = true;
-  int32_t maxReplans = 10;           // guard against endless replanning (spirals excluded)
-  flt64_t sampleStepM = 2.0;         // path polyline sampling resolution
-  flt64_t maxDepthRateMps = 0.0;     // platform depth-change limit (0 = unknown/surface-only)
-  flt64_t zoneMarginM = 5.0;         // required clearance from active zone boundaries
-  flt64_t leadTimeS = 1.0;           // tangent phase-lead seconds ahead of the progress pointer
-  CrossTrackController::Params xte;  // cross-track PI tuning (ki = 0 -> legacy pure P)
-  DubinsRrtParams rrt;               // fallback planner tuning (rho/margin filled per leg)
+  int32_t maxReplans = 10;        // guard against endless replanning (spirals excluded)
+  flt64_t sampleStepM = 2.0;      // path polyline sampling resolution
+  flt64_t maxDepthRateMps = 0.0;  // platform depth-change limit (0 = unknown/surface-only)
+  flt64_t zoneMarginM = 5.0;      // required clearance from active zone boundaries
+  PathTracker::Params tracker;    // tracking law: curvature feedforward + cross-track
+  DubinsRrtParams rrt;            // fallback planner tuning (rho/margin filled per leg)
+};
+
+//! \brief One sample of the ideal planned route, carrying the geometry a tracking analysis
+//! needs: arc length, signed curvature, the tangent azimuth, and the waypoint index whose leg
+//! produced it.
+//! Note the two angle conventions in this struct are deliberately different and must not be
+//! reconciled: curvatureMathRadPerM is math frame (positive is a port turn) because the recorded
+//! CSV and its analysis derive the same sign from the polyline, while azimuthRad is true-north
+//! clockwise-positive like every other azimuth in the system.
+struct PreviewSample {
+  flt64_t latDeg = 0.0;
+  flt64_t lonDeg = 0.0;
+  flt64_t arcLengthM = 0.0;
+  flt64_t curvatureMathRadPerM = 0.0;
+  flt64_t azimuthRad = 0.0;
+  int32_t legIndex = 0;
 };
 
 //! \brief Drives a vehicle through a series of 3D waypoints along true Dubins paths, each leg
 //! ending in a straight final-approach runway so arrival happens with position and attitude
 //! settled.
-//! Tracking commands the planned-path tangent (sampled slightly ahead for phase lead) plus a
-//! cross-track correction atan(xte / turnRadius); cross-track error is measured from the
-//! planned Dubins path itself, which is also the UMAA track-tolerance reference.
+//! Tracking is delegated to PathTracker: the planned-path tangent at the projection point, a
+//! curvature feedforward sized by the inner heading loop's measured time constant, and a bounded
+//! cross-track correction. Cross-track error is measured from the planned Dubins path itself,
+//! which is also the UMAA track-tolerance reference.
 //! Capture is a gate, not a bubble: a segment of the position-tolerance half-width through the
 //! waypoint, perpendicular to the arrival heading, so the vehicle always flies through the
 //! waypoint; crossing outside the gate is a miss that replans the leg from the live pose.
@@ -78,7 +94,7 @@ class DubinsPathPlanner {
                        flt64_t dtS);
 
   //! \brief The cross-track integrator state, for tests and diagnostics.
-  flt64_t xteIntegratorRad() const { return xteCtl_.integratorRad(); }
+  flt64_t xteIntegratorRad() const { return tracker_.xteIntegratorRad(); }
 
   //! \brief Latest progress snapshot (mapped into the UMAA waypoint execution status report).
   const WaypointProgress& progress() const { return progress_; }
@@ -91,6 +107,11 @@ class DubinsPathPlanner {
   //! plan start pose) as geodetic (lat, lon) points every `stepM`. For diagnostics/plots;
   //! call after plan().
   std::vector<std::pair<flt64_t, flt64_t>> previewRoute(flt64_t stepM = 2.0) const;
+
+  //! \brief previewRoute with the per-sample geometry a tracking analysis needs (arc length,
+  //! curvature, tangent azimuth, originating waypoint index). Arc length is cumulative across
+  //! the whole route, so leg boundaries are found via legIndex rather than a reset to zero.
+  std::vector<PreviewSample> previewRouteDetailed(flt64_t stepM = 2.0) const;
 
  private:
   //! \brief One planned leg: a chain of Dubins paths (a single direct solution, or the
@@ -105,9 +126,15 @@ class DubinsPathPlanner {
     flt64_t runwayM;                  // straight final approach ending at the waypoint
     flt64_t lengthM;                  // dubinsLengthM + runwayM
     flt64_t endAzimuthRad;            // arrival azimuth at the waypoint (true-north, [-pi, pi])
+    flt64_t minTurnRadiusM;           // tightest arc in the chain; infinity when all-straight
 
     //! \brief The pose at arc length s along the chained curved portion (clamped).
     Dubins2DPose sampleChain(flt64_t sM) const;
+
+    //! \brief Signed curvature (math convention) at arc length s along the leg: the chained
+    //! path's curvature inside the curved portion, and 0 in the straight final-approach runway
+    //! and the fly-through extension past it, matching sampleExtended.
+    flt64_t curvatureAtChain(flt64_t sM) const;
 
     //! \brief The chained word names, e.g. "LSL+RSR" (diagnostics/logs).
     std::string word() const;
@@ -119,6 +146,12 @@ class DubinsPathPlanner {
   //! \brief Sample the leg's path at arc length s, extending past the end along the arrival
   //! heading so guidance keeps flowing through the waypoint.
   static Dubins2DPose sampleExtended(const Leg& leg, flt64_t sM);
+
+  //! \brief Mean signed curvature over [sM, sM + windowM], in the azimuth frame (positive turns
+  //! to starboard). Averaging rather than point-sampling matters because curvature steps at
+  //! every segment boundary and no platform can follow a step in turn rate; the mean is also
+  //! guaranteed consistent with sampleExtended, being derived from it.
+  static flt64_t meanPathCurvature(const Leg& leg, flt64_t sM, flt64_t windowM);
 
   //! \brief Build the leg from a local start pose to waypoint `wpIndex` through the pipeline:
   //! arrival-azimuth compliance (scanning alternates when the waypoint has no attitude
@@ -192,7 +225,9 @@ class DubinsPathPlanner {
   std::size_t targetIndex_ = 0;
   std::optional<Leg> currentLeg_;
   flt64_t legProgressS_ = 0.0;             // monotonic arc-length progress along the current leg
-  CrossTrackController xteCtl_;            // reset at every leg boundary/replan
+  PathTracker tracker_;                    // XTE integral reset at every leg boundary/replan
+  bool previewCapLogged_ = false;          // latches the capped-preview warning to once per route
+  bool elevUnevaluableLogged_ = false;     // latches the unevaluable-elevation warning to one episode
   std::optional<flt64_t> lastGateAlongM_;  // previous signed along-track distance to the gate
   bool routeComplete_ = false;
   bool failed_ = false;

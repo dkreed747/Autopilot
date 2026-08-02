@@ -43,6 +43,16 @@ class DubinsPath {
   //! \brief The pose at arc length `sM` along the path (clamped to [0, lengthM()]).
   Dubins2DPose sample(flt64_t sM) const;
 
+  //! \brief The turn radius the path was solved with; 0 for a degenerate straight run that has
+  //! no turning circle.
+  flt64_t rhoM() const { return rho_; }
+
+  //! \brief Signed curvature at arc length `sM` (clamped like sample()): +1/rho on a LEFT
+  //! segment, -1/rho on a RIGHT one, 0 on a STRAIGHT one. Math convention, so positive is
+  //! counterclockwise in theta and therefore a decreasing azimuth. Discontinuous at segment
+  //! boundaries by construction; a boundary belongs to the preceding segment, matching sample().
+  flt64_t curvatureAt(flt64_t sM) const;
+
   //! \brief The three segments of the path (a degenerate word may contain zero-length segments).
   std::array<DubinsSegment, 3> segments() const;
 
