@@ -29,7 +29,7 @@ class SimVehicleControl : public IVehicleControl {
  public:
   SimVehicleControl(
       const PlatformCapabilitiesConfig& caps, const SimVehicleConfig& simConfig,
-      const arlcore::NumericGuid& navSourceId,
+      const arlcore::NumericGuid& navSourceId, const arlcore::NumericGuid& platformId,
       std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::GlobalPoseStatus::GlobalPoseReportType>> poseSender,
       std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::SpeedStatus::SpeedReportType>> speedSender,
       std::shared_ptr<arlcore::io::SenderBase<UMAA::SA::VelocityStatus::VelocityReportType>> velocitySender);

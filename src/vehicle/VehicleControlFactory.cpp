@@ -19,7 +19,8 @@ static std::unique_ptr<IVehicleControl> makeSimVehicleControl(const AutopilotCon
   }
   return std::make_unique<SimVehicleControl>(
       config.platformCapabilities, config.simVehicle,
-      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.navSourceId), navSenders.pose,
+      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.navSourceId),
+      arlcore::UuidFactory::getInstance().parseGuidFromString(config.identity.platformId), navSenders.pose,
       navSenders.speed, navSenders.velocity);
 }
 

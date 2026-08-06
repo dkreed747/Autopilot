@@ -40,7 +40,8 @@ struct SimFixture {
 
   std::unique_ptr<arlcore::autopilot::SimVehicleControl> make() {
     return std::make_unique<arlcore::autopilot::SimVehicleControl>(
-        caps, sim, arlcore::UuidFactory::getInstance().generateGuid(), poseIo, speedIo, velocityIo);
+        caps, sim, arlcore::UuidFactory::getInstance().generateGuid(),
+        arlcore::UuidFactory::getInstance().generateGuid(), poseIo, speedIo, velocityIo);
   }
 };
 
