@@ -180,12 +180,14 @@ bool AutopilotApp::initialize(const AutopilotConfig& config) {
   specsReportProvider_ = std::make_unique<ReportProvider<UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>>(
       parseId(config_.identity.specsSourceId),
       std::make_shared<CycloneSender<UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportType>>(
-          participant_, UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportTypeTopic, wqos));
+          participant_, UMAA::EO::UVPlatformSpecs::UVPlatformSpecsReportTypeTopic, wqos),
+      parseId(config_.identity.platformId));
   capabilitiesReportProvider_ =
       std::make_unique<ReportProvider<UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType>>(
           parseId(config_.identity.capabilitiesSourceId),
           std::make_shared<CycloneSender<UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportType>>(
-              participant_, UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportTypeTopic, wqos));
+              participant_, UMAA::EO::UVPlatformSpecs::UVPlatformCapabilitiesReportTypeTopic, wqos),
+          parseId(config_.identity.platformId));
 
   auto specs = makePlatformSpecsReport(config_.platformSpecs);
   auto capabilities = makePlatformCapabilitiesReport(config_.platformCapabilities);
@@ -259,8 +261,8 @@ bool AutopilotApp::initializeConstraintServices() {
                                                                       wqos),
       std::make_shared<CycloneSender<cond::YawRateConditionalType>>(participant_, cond::YawRateConditionalTypeTopic,
                                                                     wqos));
-  conditionalReportProvider_ =
-      std::make_shared<arlcore::umaa::conditional::ConditionalReportProvider>(constraintsId, reportIo);
+  conditionalReportProvider_ = std::make_shared<arlcore::umaa::conditional::ConditionalReportProvider>(
+      constraintsId, reportIo, parseId(config_.identity.platformId));
 
   // Factory io: shares the SA nav consumers; the specialization readers see both the
   // console-published payloads and our own re-published instances (loopback)
@@ -409,7 +411,8 @@ bool AutopilotApp::initializeOperationalModeServices() {
       std::make_unique<ReportProvider<UMAA::MM::OperationalModeStatus::OperationalModeReportType>>(
           parseId(config_.identity.operationalModeStatusSourceId),
           std::make_shared<CycloneSender<UMAA::MM::OperationalModeStatus::OperationalModeReportType>>(
-              participant_, UMAA::MM::OperationalModeStatus::OperationalModeReportTypeTopic, wqos));
+              participant_, UMAA::MM::OperationalModeStatus::OperationalModeReportTypeTopic, wqos),
+          parseId(config_.identity.platformId));
 
   auto modeIo = std::make_shared<OperationalModeControlProviderIo>(
       std::make_shared<CycloneReader<OperationalModeCommandType>>(
@@ -464,8 +467,6 @@ void AutopilotApp::publishOperationalMode(OperationalMode mode) {
       report.operationalMode() = OperationalModeEnumType::STANDBY;
       break;
   }
-  // ReportProvider::send stamps only source().id(); parentID identifies the platform.
-  report.source().parentID(parseId(config_.identity.platformId).getGuid());
   operationalModeReportProvider_->send(&report);
   lastModeReportAt_ = std::chrono::steady_clock::now();
 }

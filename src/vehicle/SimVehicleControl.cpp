@@ -19,14 +19,15 @@ using UMAA::SA::VelocityStatus::VelocityReportType;
 
 SimVehicleControl::SimVehicleControl(const PlatformCapabilitiesConfig& caps, const SimVehicleConfig& simConfig,
                                      const arlcore::NumericGuid& navSourceId,
+                                     const arlcore::NumericGuid& platformId,
                                      std::shared_ptr<arlcore::io::SenderBase<GlobalPoseReportType>> poseSender,
                                      std::shared_ptr<arlcore::io::SenderBase<SpeedReportType>> speedSender,
                                      std::shared_ptr<arlcore::io::SenderBase<VelocityReportType>> velocitySender)
     : caps_(caps),
       simConfig_(simConfig),
-      poseProvider_(navSourceId, std::move(poseSender)),
-      speedProvider_(navSourceId, std::move(speedSender)),
-      velocityProvider_(navSourceId, std::move(velocitySender)),
+      poseProvider_(navSourceId, std::move(poseSender), platformId),
+      speedProvider_(navSourceId, std::move(speedSender), platformId),
+      velocityProvider_(navSourceId, std::move(velocitySender), platformId),
       frame_(simConfig.initialLatitudeDeg, simConfig.initialLongitudeDeg, 0.0),
       headingRad_(simConfig.initialHeadingRad) {}
 
